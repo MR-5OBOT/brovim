@@ -281,7 +281,6 @@ function setScrollPosition({ scrollX, scrollY }) {
       globalThis.focus();
       document.body.focus();
       if ((scrollX > 0) || (scrollY > 0)) {
-        Marks.setPreviousPosition();
         globalThis.scrollTo(scrollX, scrollY);
       }
     });

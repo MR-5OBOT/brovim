@@ -80,11 +80,6 @@ const OPEN_IN_NEW_BG_TAB = {
   indicator: "Open link in new tab",
   clickModifiers: { metaKey: isMac, ctrlKey: !isMac },
 };
-const OPEN_IN_NEW_FG_TAB = {
-  name: "open-in-new-foreground-tab",
-  indicator: "Open link in new tab and switch to it",
-  clickModifiers: { shiftKey: true, metaKey: isMac, ctrlKey: !isMac },
-};
 const OPEN_WITH_QUEUE = {
   name: "open-with-queue",
   indicator: "Open multiple links in new tabs",
@@ -112,11 +107,6 @@ const OPEN_INCOGNITO = {
     chrome.runtime.sendMessage({ handler: "openUrlInIncognito", url: link.href });
   },
 };
-const DOWNLOAD_LINK_URL = {
-  name: "download-link-url",
-  indicator: "Download link URL",
-  clickModifiers: { altKey: true, ctrlKey: false, metaKey: false },
-};
 const COPY_LINK_TEXT = {
   name: "copy-link-text",
   indicator: "Copy link text",
@@ -131,32 +121,14 @@ const COPY_LINK_TEXT = {
     }
   },
 };
-const HOVER_LINK = {
-  name: "hover-link",
-  indicator: "Hover link",
-  linkActivator(link) {
-    new HoverMode(link);
-  },
-};
-const FOCUS_LINK = {
-  name: "focus-link",
-  indicator: "Focus link",
-  linkActivator(link) {
-    link.focus();
-  },
-};
 
 const availableModes = [
   OPEN_IN_CURRENT_TAB,
   OPEN_IN_NEW_BG_TAB,
-  OPEN_IN_NEW_FG_TAB,
   OPEN_WITH_QUEUE,
   COPY_LINK_URL,
   OPEN_INCOGNITO,
-  DOWNLOAD_LINK_URL,
   COPY_LINK_TEXT,
-  HOVER_LINK,
-  FOCUS_LINK,
 ];
 
 const HintCoordinator = {
@@ -313,16 +285,8 @@ const LinkHints = {
     if (count == null) count = 1;
     if (mode == null) mode = OPEN_IN_CURRENT_TAB;
 
-    switch (registryEntry?.options.action) {
-      case "copy-text":
-        mode = COPY_LINK_TEXT;
-        break;
-      case "hover":
-        mode = HOVER_LINK;
-        break;
-      case "focus":
-        mode = FOCUS_LINK;
-        break;
+    if (registryEntry?.options.action === "copy-text") {
+      mode = COPY_LINK_TEXT;
     }
 
     if ((count > 0) || (mode === OPEN_WITH_QUEUE)) {
@@ -339,9 +303,6 @@ const LinkHints = {
   activateModeToOpenInNewTab(count) {
     this.activateMode(count, { mode: OPEN_IN_NEW_BG_TAB });
   },
-  activateModeToOpenInNewForegroundTab(count) {
-    this.activateMode(count, { mode: OPEN_IN_NEW_FG_TAB });
-  },
   activateModeToCopyLinkUrl(count) {
     this.activateMode(count, { mode: COPY_LINK_URL });
   },
@@ -350,9 +311,6 @@ const LinkHints = {
   },
   activateModeToOpenIncognito(count) {
     this.activateMode(count, { mode: OPEN_INCOGNITO });
-  },
-  activateModeToDownloadLink(count) {
-    this.activateMode(count, { mode: DOWNLOAD_LINK_URL });
   },
 };
 
@@ -1546,16 +1504,6 @@ const LocalHints = {
     return { linkText: linkText.trim(), showLinkText };
   },
 };
-
-class HoverMode extends Mode {
-  constructor(link) {
-    super();
-    super.init({ name: "hover-mode", singleton: "hover-mode", exitOnEscape: true });
-    this.link = link;
-    DomUtils.simulateHover(this.link);
-    this.onExit(() => DomUtils.simulateUnhover(this.link));
-  }
-}
 
 Object.assign(globalThis, {
   LinkHints,

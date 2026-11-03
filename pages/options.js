@@ -14,10 +14,7 @@ const options = {
   linkHintNumbers: "string",
   newTabCustomUrl: "string",
   newTabDestination: "option",
-  nextPatterns: "string",
   openVomnibarOnNewTabPage: "boolean",
-  previousPatterns: "string",
-  regexFindMode: "boolean",
   scrollStepSize: "number",
   searchEngines: "string",
   settingsVersion: "string", // This is a hidden field.

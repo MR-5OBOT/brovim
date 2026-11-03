@@ -182,27 +182,6 @@ context("Next zoom level", () => {
   });
 });
 
-context("Selecting frames", () => {
-  should("nextFrame", async () => {
-    const focusedFrames = [];
-    stub(chrome.webNavigation, "getAllFrames", () => [{ frameId: 1 }, { frameId: 2 }]);
-    stub(
-      chrome.tabs,
-      "sendMessage",
-      withPromise((_tabId, message, options) => {
-        if (message.handler == "getFocusStatus") {
-          return { focused: options.frameId == 2, focusable: true };
-        } else if (message.handler == "focusFrame") {
-          focusedFrames.push(options.frameId);
-        }
-      }),
-    );
-
-    await BackgroundCommands.nextFrame(1, 0);
-    assert.equal([1], focusedFrames);
-  });
-});
-
 context("majorVersionHasIncreased", () => {
   should("return whether the major version has changed", () => {
     assert.equal(false, majorVersionHasIncreased(null));

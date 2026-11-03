@@ -15,8 +15,6 @@ import * as bgUtils from "./../bg_utils.js";
 import * as completionSearch from "./search_wrapper.js";
 import * as userSearchEngines from "../user_search_engines.js";
 import * as ranking from "./ranking.js";
-import { allCommands } from "../all_commands.js";
-import { Commands, RegistryEntry } from "../commands.js";
 import { RegexpCache } from "./ranking.js";
 
 // Set this to true to render relevancy when debugging the ranking scores.
@@ -98,26 +96,6 @@ export class Suggestion {
    <span class="title">${this.highlightQueryTerms(Utils.escapeHtml(this.title))}</span>
    ${relevancyHtml}
  </div>\
-`;
-    } else if (this.command) {
-      // Key mappings containing key modifiers are represented in the form of '<modifier-key>'
-      // (e.g <c-e>) and are parsed as HTML tags when used in a raw string. Escape them properly.
-      const escapeKeyForHtml = (key) => {
-        return key.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      };
-      const keybindings = this.command.keys.map((key) =>
-        `<span class="key-block">
-          <span class="key">${escapeKeyForHtml(key)}</span>
-          <span class="comma">, </span>
-        </span>`
-      ).join("\n");
-
-      // Don't show the source label for command suggestions. It's unnecessary because commands are
-      // currently never shown alongside other suggestion types.
-      this.html = `\
-  <div class="top-half">
-    <span class="title">${this.highlightQueryTerms(this.title)}</span>${keybindings}${relevancyHtml}
-  </div>
 `;
     } else {
       this.html = `\
@@ -375,79 +353,6 @@ export class BookmarkCompleter {
       suggestion.shortUrl || suggestion.url,
       suggestion.title,
     );
-  }
-}
-
-export class CommandCompleter {
-  async filter({ queryTerms }) {
-    // Get the key mapping for a command.
-    // Each entry contains the user-specified options and an array of possible mappings.
-    // Example:
-    // "closeTabsOnRight" : {
-    //    "count=2": ["c2l", "c2k"],
-    //    "count=3": ["c3l", "c3k"],
-    // }
-    const commandToOptionsToKeys =
-      (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys;
-
-    // Create a RegistryEntry for the default action (no options specified) of a command.
-    const createUnboundRegistryEntry = (command) => {
-      return new RegistryEntry({
-        keySequence: [],
-        command: command.name,
-        noRepeat: command.noRepeat,
-        repeatLimit: command.repeatLimit,
-        background: command.background,
-        topFrame: command.topFrame,
-        options: {},
-      });
-    };
-
-    const matchingCommands = allCommands.filter((c) => ranking.matches(queryTerms, c.desc));
-
-    const suggestions = [];
-    for (const commandInfo of matchingCommands) {
-      const variations = commandToOptionsToKeys[commandInfo.name] || {};
-
-      // Whether the default action of the command (no additional options) is bound to a key.
-      const isDefaultBound = Object.keys(variations).some((option) => option.length === 0);
-
-      // If the default action is not bound, add the entry explicitly to the suggestions.
-      // This makes unbound commands accessible from the Vomnibar.
-      if (!isDefaultBound) {
-        suggestions.push(
-          new Suggestion({
-            queryTerms,
-            description: "command",
-            title: commandInfo.desc,
-            deDuplicate: false,
-            command: {
-              registryEntry: createUnboundRegistryEntry(commandInfo),
-              keys: [],
-            },
-            relevancy: 1,
-          }),
-        );
-      }
-
-      // Add all bound/mapped command variations to the suggestions.
-      for (const [options, keys] of Object.entries(variations)) {
-        suggestions.push(
-          new Suggestion({
-            queryTerms,
-            description: "command",
-            title: commandInfo.desc + (options ? ` (${options})` : ""),
-            deDuplicate: false,
-            command: {
-              registryEntry: Commands.keyToRegistryEntry[keys[0]],
-              keys: keys,
-            },
-            relevancy: 1,
-          }),
-        );
-      }
-    }
-    return suggestions;
   }
 }
 

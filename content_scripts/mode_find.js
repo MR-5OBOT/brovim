@@ -147,9 +147,7 @@ class FindMode extends Mode {
     // find the right match as the user adds matching characters, or removes previously-matched
     // characters. See #1434.
     this.restoreSelection();
-    query = FindMode.query.isRegex
-      ? FindMode.getQueryFromRegexMatches()
-      : FindMode.query.parsedQuery;
+    query = FindMode.getQueryFromRegexMatches() || FindMode.query.parsedQuery;
     FindMode.query.hasResults = FindMode.execute(query, options);
   }
 
@@ -159,35 +157,12 @@ class FindMode extends Mode {
       this.query = {};
     }
     this.query.rawQuery = query;
-    // the query can be treated differently (e.g. as a plain string versus regex) depending on the
-    // presence of escape sequences. '\' is the escape character and needs to be escaped itself to
-    // be used as a normal character. here we grep for the relevant escape sequences.
-    this.query.isRegex = Settings.get("regexFindMode");
-    this.query.parsedQuery = this.query.rawQuery.replace(
-      /(\\{1,2})([rRI]?)/g,
-      (match, slashes, flag) => {
-        if ((flag === "") || (slashes.length !== 1)) {
-          return match;
-        }
-
-        switch (flag) {
-          case "r":
-            this.query.isRegex = true;
-            break;
-          case "R":
-            this.query.isRegex = false;
-            break;
-        }
-        return "";
-      },
-    );
+    this.query.parsedQuery = query;
 
     // Implement smartcase.
     this.query.ignoreCase = !Utils.hasUpperCase(this.query.parsedQuery);
 
-    const regexPattern = this.query.isRegex
-      ? this.query.parsedQuery
-      : Utils.escapeRegexSpecialCharacters(this.query.parsedQuery);
+    const regexPattern = Utils.escapeRegexSpecialCharacters(this.query.parsedQuery);
 
     // Grep for all matches in every text node,
     // so we can show a the number of results.
@@ -372,7 +347,6 @@ class FindMode extends Mode {
       return;
     }
 
-    Marks.setPreviousPosition();
     FindMode.query.hasResults = FindMode.execute(nextQuery, { backwards });
 
     if (FindMode.query.hasResults) {

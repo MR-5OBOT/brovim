@@ -1,5 +1,4 @@
 import "../test_helper.js";
-import { withPromise } from "../test_helper.js";
 import "../../../background_scripts/tab_recency.js";
 import "../../../background_scripts/bg_utils.js";
 import "../../../background_scripts/completion/search_engines.js";
@@ -7,7 +6,6 @@ import "../../../background_scripts/completion/search_wrapper.js";
 import * as userSearchEngines from "../../../background_scripts/user_search_engines.js";
 import {
   BookmarkCompleter,
-  CommandCompleter,
   DomainCompleter,
   HistoryCache,
   HistoryCompleter,
@@ -17,8 +15,6 @@ import {
   TabCompleter,
 } from "../../../background_scripts/completion/completers.js";
 import "../../../lib/url_utils.js";
-import { Commands, RegistryEntry } from "../../../background_scripts/commands.js";
-import { allCommands } from "../../../background_scripts/all_commands.js";
 
 const hours = (n) => 1000 * 60 * 60 * n;
 
@@ -365,58 +361,6 @@ context("multi completer", () => {
     assert.equal(2, results.length);
     assert.equal("http://example.com", results[0].url);
     assert.equal("http://other.com", results[1].url);
-  });
-});
-
-context("command completer", () => {
-  const commandCompleter = new CommandCompleter();
-  const multiCompleter = new MultiCompleter([commandCompleter]);
-
-  should("return all commands with default options if no mappings are specified", async () => {
-    stub(
-      chrome.storage.session,
-      "get",
-      withPromise(() => ({
-        commandToOptionsToKeys: {},
-      })),
-    );
-    stub(Commands, "keyToRegistryEntry", {});
-
-    const suggestions = await filterCompleter(commandCompleter, []);
-
-    // Checks that all available commands are returned as suggestions.
-    assert.equal(allCommands.length, suggestions.length);
-
-    // Check that by default no options (e.g. value=1.1) are applied to each command.
-    assert.isTrue(
-      suggestions.every((s) => Object.keys(s.command.registryEntry.options).length === 0),
-    );
-  });
-
-  should("create suggestions for different variations of the same command", async () => {
-    stub(
-      chrome.storage.session,
-      "get",
-      withPromise(() => ({
-        commandToOptionsToKeys: {
-          "setZoom": {
-            "value=1.1": ["z1"],
-            "value=1.2": ["z2"],
-          },
-        },
-      })),
-    );
-
-    stub(Commands, "keyToRegistryEntry", {
-      "z1": new RegistryEntry(),
-      "z2": new RegistryEntry(),
-    });
-
-    const suggestions = await filterCompleter(multiCompleter, ["set", "zoom"]);
-    assert.equal(
-      ["Set zoom", "Set zoom (value=1.1)", "Set zoom (value=1.2)", "Reset zoom"],
-      suggestions.map((s) => s.title),
-    );
   });
 });
 

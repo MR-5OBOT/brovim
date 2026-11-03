@@ -316,16 +316,6 @@ const Commands = {
     await chrome.storage.session.set({ mapKeyRegistry: this.mapKeyRegistry });
     await this.installKeyStateMapping();
     this.prepareHelpPageData();
-
-    // Push the key mappings from any passNextKey commands into storage so that they're's available
-    // to the front end so they can be detected during insert mode. We exclude single-key mappings
-    // for this command (i.e. printable keys) because we're considering that a configuration error:
-    // when users press printable keys in insert mode, they expect that character to be input, not
-    // to be droppped into a special Vimium mode.
-    const passNextKeys = Object.entries(this.keyToRegistryEntry)
-      .filter(([key, v]) => v.command == "passNextKey" && key.length > 1)
-      .map(([key]) => key);
-    await chrome.storage.session.set({ passNextKeyKeys: passNextKeys });
   },
 
   // This generates and installs a nested key-to-command mapping structure. There is an example in
@@ -423,15 +413,7 @@ const defaultKeyMappings = {
   "p": "openCopiedUrlInCurrentTab",
   "P": "openCopiedUrlInNewTab",
   "gi": "focusInput",
-  "[[": "goPrevious",
-  "]]": "goNext",
-  "gf": "nextFrame",
-  "gF": "mainFrame",
-  "gu": "goUp",
-  "gU": "goToRoot",
   "i": "enterInsertMode",
-  "v": "enterVisualMode",
-  "V": "enterVisualLineMode",
 
   // Link hints
   "f": "LinkHints.activateMode",
@@ -443,8 +425,6 @@ const defaultKeyMappings = {
   "/": "enterFindMode",
   "n": "performFind",
   "N": "performBackwardsFind",
-  "*": "findSelected",
-  "#": "findSelectedBackwards",
 
   // Vomnibar
   "o": "Vomnibar.activate",
@@ -452,9 +432,7 @@ const defaultKeyMappings = {
   "T": "Vomnibar.activateTabSelection",
   "b": "Vomnibar.activateBookmarks",
   "B": "Vomnibar.activateBookmarksInNewTab",
-  ":": "Vomnibar.activateCommandSelection",
   "ge": "Vomnibar.activateEditUrl",
-  "gE": "Vomnibar.activateEditUrlInNewTab",
 
   // Navigating history
   "H": "goBack",
@@ -468,11 +446,7 @@ const defaultKeyMappings = {
   "^": "visitPreviousTab",
   "<<": "moveTabLeft",
   ">>": "moveTabRight",
-  "g0": "firstTab",
-  "g$": "lastTab",
-  "W": "moveTabToNewWindow",
   "t": "createTab",
-  "yt": "duplicateTab",
   "x": "removeTab",
   "X": "restoreTab",
   "<a-p>": "togglePinTab",
@@ -480,10 +454,6 @@ const defaultKeyMappings = {
   "zi": "zoomIn",
   "zo": "zoomOut",
   "z0": "zoomReset",
-
-  // Marks
-  "m": "Marks.activateCreateMode",
-  "`": "Marks.activateGotoMode",
 
   // Misc
   "?": "showHelp",

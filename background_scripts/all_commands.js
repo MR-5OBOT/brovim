@@ -132,50 +132,10 @@ const allCommands = [
   },
 
   {
-    name: "goUp",
-    desc: "Go up the URL hierarchy",
-    group: "navigation",
-    advanced: true,
-  },
-
-  {
-    name: "goToRoot",
-    desc: "Go to the root of current URL hierarchy",
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
-  },
-
-  {
     name: "enterInsertMode",
     desc: "Enter insert mode",
     group: "navigation",
     noRepeat: true,
-  },
-
-  {
-    name: "enterVisualMode",
-    desc: "Enter visual mode",
-    group: "navigation",
-    noRepeat: true,
-  },
-
-  {
-    name: "enterVisualLineMode",
-    desc: "Enter visual line mode",
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "passNextKey",
-    desc: "Pass the next key to the page",
-    options: {
-      normal: "Optional. Enter Vimium's normal mode, and ignore any defined pass keys.",
-    },
-    group: "navigation",
-    advanced: true,
   },
 
   {
@@ -189,8 +149,8 @@ const allCommands = [
     name: "LinkHints.activateMode",
     desc: "Open a link in the current tab",
     options: {
-      action: "one of `hover`, `focus`, `copy-text`. When a link is selected, " +
-        "instead of clicking on the link, perform the specified action.",
+      action: "`copy-text`. When a link is selected, " +
+        "instead of clicking on the link, copy its text.",
     },
     group: "navigation",
     advanced: true,
@@ -203,24 +163,11 @@ const allCommands = [
   },
 
   {
-    name: "LinkHints.activateModeToOpenInNewForegroundTab",
-    desc: "Open a link in a new tab & switch to it",
-    group: "navigation",
-  },
-
-  {
     name: "LinkHints.activateModeWithQueue",
     desc: "Open multiple links in a new tab",
     group: "navigation",
     advanced: true,
     noRepeat: true,
-  },
-
-  {
-    name: "LinkHints.activateModeToDownloadLink",
-    desc: "Download link url",
-    group: "navigation",
-    advanced: true,
   },
 
   {
@@ -235,66 +182,6 @@ const allCommands = [
     desc: "Copy a link URL to the clipboard",
     group: "navigation",
     advanced: true,
-  },
-
-  {
-    name: "goPrevious",
-    desc: "Follow the link labeled previous or <",
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "goNext",
-    desc: "Follow the link labeled next or >",
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "nextFrame",
-    desc: "Select the next frame on the page",
-    group: "navigation",
-    background: true,
-  },
-
-  {
-    name: "mainFrame",
-    desc: "Select the page's main/top frame",
-    group: "navigation",
-    topFrame: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "Marks.activateCreateMode",
-    desc: "Create a new mark",
-    details: "Do this by typing the key bound to this command, and then a letter. " +
-      "This will set a mark bound to that letter. Lowercase letters are local marks and uppercase " +
-      "letters are global marks.",
-    options: {
-      swap: "Swap global and local marks. This option exists because in a browser, global marks " +
-        "are generally more useful than local marks, and so it may be desirable to make lowercase " +
-        "letters represent global marks rather than local marks.",
-    },
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "Marks.activateGotoMode",
-    desc: "Jump to a mark",
-    options: {
-      swap: "Swap global and local marks. This option exists because in a browser, global marks " +
-        "are generally more useful than local marks, and so it may be desirable to make lowercase " +
-        "letters represent global marks rather than local marks.",
-    },
-    group: "navigation",
-    advanced: true,
-    noRepeat: true,
   },
 
   //
@@ -365,22 +252,6 @@ const allCommands = [
     noRepeat: true,
   },
 
-  {
-    name: "Vomnibar.activateEditUrlInNewTab",
-    desc: "Edit the current URL and open in a new tab",
-    group: "vomnibar",
-    topFrame: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "Vomnibar.activateCommandSelection",
-    desc: "Execute a Vimium command",
-    group: "vomnibar",
-    topFrame: true,
-    noRepeat: true,
-  },
-
   //
   // Find
   //
@@ -402,20 +273,6 @@ const allCommands = [
     name: "performBackwardsFind",
     desc: "Cycle backward to the previous find match",
     group: "find",
-  },
-
-  {
-    name: "findSelected",
-    desc: "Find the selected text",
-    group: "find",
-    advanced: true,
-  },
-
-  {
-    name: "findSelectedBackwards",
-    desc: "Find the selected text, searching backwards",
-    group: "find",
-    advanced: true,
   },
 
   //
@@ -476,30 +333,6 @@ const allCommands = [
   },
 
   {
-    name: "firstTab",
-    desc: "Go to the first tab",
-    group: "tabs",
-    background: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "lastTab",
-    desc: "Go to the last tab",
-    group: "tabs",
-    background: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "duplicateTab",
-    desc: "Duplicate current tab",
-    group: "tabs",
-    background: true,
-    repeatLimit: 20,
-  },
-
-  {
     name: "togglePinTab",
     desc: "Pin or unpin current tab",
     group: "tabs",
@@ -535,40 +368,6 @@ const allCommands = [
     group: "tabs",
     background: true,
     repeatLimit: 20,
-  },
-
-  {
-    name: "moveTabToNewWindow",
-    desc: "Move tab to new window",
-    group: "tabs",
-    advanced: true,
-    background: true,
-    noRepeat: true,
-  },
-
-  {
-    name: "closeTabsOnLeft",
-    desc: "Close tabs on the left",
-    group: "tabs",
-    advanced: true,
-    background: true,
-  },
-
-  {
-    name: "closeTabsOnRight",
-    desc: "Close tabs on the right",
-    group: "tabs",
-    advanced: true,
-    background: true,
-  },
-
-  {
-    name: "closeOtherTabs",
-    desc: "Close all other tabs",
-    group: "tabs",
-    advanced: true,
-    background: true,
-    noRepeat: true,
   },
 
   {

@@ -10,11 +10,9 @@ import "../background_scripts/completion/search_engines.js";
 import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
-import * as marks from "../background_scripts/marks.js";
 
 import {
   BookmarkCompleter,
-  CommandCompleter,
   DomainCompleter,
   HistoryCompleter,
   MultiCompleter,
@@ -33,9 +31,6 @@ import * as TabOperations from "./tab_operations.js";
 // chrome.storage.session will be null in content scripts.
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
 
-// This is exported for use by "marks.js".
-globalThis.tabLoadedHandlers = {}; // tabId -> function()
-
 // A Vimium secret, available only within the current browser session. The secret is a generated
 // strong random string.
 const randomArray = globalThis.crypto.getRandomValues(new Uint8Array(32)); // 32-byte random token.
@@ -44,7 +39,6 @@ chrome.storage.session.set({ vimiumSecret: secretToken });
 
 const completionSources = {
   bookmarks: new BookmarkCompleter(),
-  commands: new CommandCompleter(),
   history: new HistoryCompleter(),
   domains: new DomainCompleter(),
   tabs: new TabCompleter(),
@@ -60,7 +54,6 @@ const completers = {
     completionSources.searchEngines,
   ]),
   bookmarks: new MultiCompleter([completionSources.bookmarks]),
-  commands: new MultiCompleter([completionSources.commands]),
   tabs: new MultiCompleter([completionSources.tabs]),
 };
 
@@ -296,35 +289,11 @@ const BackgroundCommands = {
     }
   }),
 
-  duplicateTab: createRepeatCommand(async (request) => {
-    const tab = await chrome.tabs.duplicate(request.tabId);
-    // Ensure subsequent invocations of this command place the next tab directly after this one.
-    request.tabId = tab.id;
-  }),
-
-  moveTabToNewWindow({ count, tab }) {
-    // TODO(philc): Switch to the promise API of chrome.tabs.query.
-    chrome.tabs.query(visibleTabsQueryArgs, function (tabs) {
-      const activeTabIndex = getTabIndex(tab, tabs);
-      const startTabIndex = Math.max(0, Math.min(activeTabIndex, tabs.length - count));
-      [tab, ...tabs] = tabs.slice(startTabIndex, startTabIndex + count);
-      chrome.windows.create({ tabId: tab.id, incognito: tab.incognito }, function (window) {
-        chrome.tabs.move(tabs.map((t) => t.id), { windowId: window.id, index: -1 });
-      });
-    });
-  },
-
   nextTab(request) {
     return selectTab("next", request);
   },
   previousTab(request) {
     return selectTab("previous", request);
-  },
-  firstTab(request) {
-    return selectTab("first", request);
-  },
-  lastTab(request) {
-    return selectTab("last", request);
   },
   async removeTab({ count, tab }) {
     await forCountTabs(count, tab, (tab) => {
@@ -367,51 +336,6 @@ const BackgroundCommands = {
     chrome.tabs.setZoom(tabId, 0); // setZoom of 0 sets to the tab default.
   },
 
-  async nextFrame({ count, tabId }) {
-    // We're assuming that these frames are returned in the order that they appear on the page. This
-    // seems to be the case empirically. If it's ever needed, we could also sort by frameId.
-    let frameIds = await getFrameIdsForTab(tabId);
-    const promises = frameIds.map(async (frameId) => {
-      // It is possible that this sendMessage call fails, if a frame gets unloaded while the request
-      // is in flight.
-      let isError = false;
-      const status = await (chrome.tabs.sendMessage(tabId, { handler: "getFocusStatus" }, {
-        frameId: frameId,
-      }).catch((_) => {
-        isError = true;
-      }));
-      return { frameId, status, isError };
-    });
-
-    const frameResponses = (await Promise.all(promises)).filter((r) => !r.isError);
-
-    const focusedFrameId = frameResponses.find(({ status }) => status.focused)?.frameId;
-    // It's theoretically possible that focusedFrameId is null if the user switched tabs or away
-    // from the browser while the request is in flight.
-    if (focusedFrameId == null) return;
-
-    // Prune any frames which gave an error response (i.e. they disappeared).
-    frameIds = frameResponses.filter((r) => r.status.focusable).map((r) => r.frameId);
-
-    const index = frameIds.indexOf(focusedFrameId);
-    count = count ?? 1;
-    const nextIndex = (index + count) % frameIds.length;
-    if (index == nextIndex) return;
-    await chrome.tabs.sendMessage(tabId, { handler: "focusFrame", highlight: true }, {
-      frameId: frameIds[nextIndex],
-    });
-  },
-
-  async closeTabsOnLeft(request) {
-    await removeTabsRelative("before", request);
-  },
-  async closeTabsOnRight(request) {
-    await removeTabsRelative("after", request);
-  },
-  async closeOtherTabs(request) {
-    await removeTabsRelative("both", request);
-  },
-
   async visitPreviousTab({ count, tab }) {
     await bgUtils.tabRecency.init();
     let tabIds = bgUtils.tabRecency.getTabsByRecency();
@@ -439,36 +363,8 @@ async function forCountTabs(count, currentTab, callback) {
   }
 }
 
-// Remove tabs before, after, or either side of the currently active tab
-async function removeTabsRelative(direction, { count, tab }) {
-  // count is null if the user didn't type a count prefix before issuing this command and didn't
-  // specify a count=n option in their keymapping settings. Interpret this as closing all tabs on
-  // either side.
-  if (count == null) count = 99999;
-  const activeTab = tab;
-  const tabs = await chrome.tabs.query(visibleTabsQueryArgs);
-  const activeIndex = getTabIndex(activeTab, tabs);
-  const toRemove = tabs.filter((tab, tabIndex) => {
-    if (tab.pinned || tab.id == activeTab.id) {
-      return false;
-    }
-    switch (direction) {
-      case "before":
-        return tabIndex < activeIndex &&
-          tabIndex >= activeIndex - count;
-      case "after":
-        return tabIndex > activeIndex &&
-          tabIndex <= activeIndex + count;
-      case "both":
-        return true;
-    }
-  });
-
-  await chrome.tabs.remove(toRemove.map((t) => t.id));
-}
-
 // Selects a tab before or after the currently selected tab.
-// - direction: "next", "previous", "first" or "last".
+// - direction: "next" or "previous".
 function selectTab(direction, { count, tab }) {
   chrome.tabs.query(visibleTabsQueryArgs, function (tabs) {
     if (tabs.length > 1) {
@@ -478,10 +374,6 @@ function selectTab(direction, { count, tab }) {
             return (getTabIndex(tab, tabs) + count) % tabs.length;
           case "previous":
             return ((getTabIndex(tab, tabs) - count) + (count * tabs.length)) % tabs.length;
-          case "first":
-            return Math.min(tabs.length - 1, count - 1);
-          case "last":
-            return Math.max(0, tabs.length - count);
         }
       })();
       chrome.tabs.update(tabs[toSelect].id, { active: true });
@@ -640,19 +532,7 @@ const sendRequestHandlers = {
     chrome.search.query({ disposition, text: query });
   },
 
-  domReady(_, sender) {
-    const isTopFrame = sender.frameId == 0;
-    if (!isTopFrame) return;
-    const tabId = sender.tab.id;
-    // The only feature that uses tabLoadedHandlers is marks.
-    if (tabLoadedHandlers[tabId]) tabLoadedHandlers[tabId]();
-    delete tabLoadedHandlers[tabId];
-  },
-
-  nextFrame: BackgroundCommands.nextFrame,
   selectSpecificTab,
-  createMark: marks.create,
-  gotoMark: marks.goto,
   // Send a message to all frames in the current tab. If request.frameId is provided, then send
   // messages to only the frame with that ID.
   sendMessageToFrames(request, sender) {

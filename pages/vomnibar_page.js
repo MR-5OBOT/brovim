@@ -80,7 +80,7 @@ class VomnibarUI {
     this.forceNewTab = forceNewTab;
   }
 
-  // name: one of [omni, bookmarks, commands, tabs].
+  // name: one of [omni, bookmarks, tabs].
   setCompleterName(name) {
     this.completerName = name;
     const capitalize = (s) => s[0].toUpperCase() + s.slice(1);
@@ -229,7 +229,7 @@ class VomnibarUI {
     } else if (action === "ctrl-enter") {
       // Populate the vomnibar with the current selection's URL.
       if (
-        !this.isUserSearchEngineActive() && this.completerName != "commands" &&
+        !this.isUserSearchEngineActive() &&
         (this.selection >= 0)
       ) {
         if (this.previousInputValue == null) {
@@ -327,14 +327,6 @@ class VomnibarUI {
     } else if (isPrimarySearchSuggestion(completion)) {
       query = UrlUtils.createSearchUrl(query, completion.searchUrl);
       this.hide(() => this.launchUrl(query, openInNewTab));
-    } else if (completion.command) {
-      this.hide(async () => {
-        await chrome.runtime.sendMessage({
-          handler: "runNormalModeCommand",
-          command: completion.command.registryEntry,
-          count: this.prefixCount,
-        });
-      });
     } else {
       this.hide(() => this.openCompletion(completion, openInNewTab));
     }

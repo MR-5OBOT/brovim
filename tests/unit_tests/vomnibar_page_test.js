@@ -1,15 +1,9 @@
 import * as testHelper from "./test_helper.js";
 import { withPromise } from "./test_helper.js";
 import "../../tests/unit_tests/test_chrome_stubs.js";
-import {
-  CommandCompleter,
-  MultiCompleter,
-  Suggestion,
-} from "../../background_scripts/completion/completers.js";
+import { Suggestion } from "../../background_scripts/completion/completers.js";
 import * as vomnibarPage from "../../pages/vomnibar_page.js";
 import * as userSearchEngines from "../../background_scripts/user_search_engines.js";
-import { Commands } from "../../background_scripts/commands.js";
-import { filterCompleter } from "./completion/completers_test.js";
 
 function newKeyEvent(properties) {
   return Object.assign(
@@ -140,16 +134,5 @@ context("vomnibar page", () => {
     ui.onHidden();
 
     assert.equal("https://www.example.com/search?q=hello", capturedUrl);
-  });
-
-  should("create command suggestions with correct HTML for key bindings", async () => {
-    await Commands.loadKeyMappings("");
-    const multiCompleter = new MultiCompleter([new CommandCompleter()]);
-    const suggestions = await filterCompleter(multiCompleter, ["go", "tab", "right"]);
-    stub(chrome.runtime, "sendMessage", withPromise(() => suggestions));
-    await ui.updateCompletions();
-    assert.equal(1, ui.completionList.childNodes.length);
-    const keys = Array.from(ui.completionList.querySelectorAll(".key")).map((x) => x.textContent);
-    assert.equal(["K", "gt"], keys);
   });
 });

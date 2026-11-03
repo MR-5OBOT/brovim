@@ -32,14 +32,6 @@ const Vomnibar = {
     this.open(sourceFrameId, options);
   },
 
-  activateCommandSelection(sourceFrameId, registryEntry) {
-    const options = Object.assign({}, registryEntry.options, {
-      completer: "commands",
-      selectFirst: true,
-    });
-    this.open(sourceFrameId, options);
-  },
-
   activateBookmarksInNewTab(sourceFrameId, registryEntry) {
     const options = Object.assign({}, registryEntry.options, {
       completer: "bookmarks",
@@ -54,15 +46,6 @@ const Vomnibar = {
       completer: "omni",
       selectFirst: false,
       query: globalThis.location.href,
-    });
-  },
-
-  activateEditUrlInNewTab(sourceFrameId) {
-    this.open(sourceFrameId, {
-      completer: "omni",
-      selectFirst: false,
-      query: globalThis.location.href,
-      newTab: true,
     });
   },
 

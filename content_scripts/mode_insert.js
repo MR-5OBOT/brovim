@@ -12,20 +12,6 @@ class InsertMode extends Mode {
     // If truthy, then we were activated by the user (with "i").
     this.global = options.global;
 
-    this.passNextKeyKeys = [];
-
-    // This list of keys is parsed from the user's key mapping config by commands.js, and stored in
-    // chrome.storage.session.
-    chrome.storage.session.get("passNextKeyKeys").then((value) => {
-      this.passNextKeyKeys = value.passNextKeyKeys || [];
-    });
-
-    chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName != "local") return;
-      if (changes.passNextKeyKeys == null) return;
-      this.passNextKeyKeys = changes.passNextKeyKeys.newValue;
-    });
-
     const handleKeyEvent = (event) => {
       if (!this.isActive(event)) {
         return this.continueBubbling;
@@ -38,11 +24,7 @@ class InsertMode extends Mode {
         return this.passEventToPage;
       }
 
-      // Check for a pass-next-key key.
-      const keyString = KeyboardUtils.getKeyCharString(event);
-      if (this.passNextKeyKeys.includes(keyString)) {
-        new PassNextKeyMode();
-      } else if ((event.type === "keydown") && KeyboardUtils.isEscape(event)) {
+      if ((event.type === "keydown") && KeyboardUtils.isEscape(event)) {
         if (DomUtils.isFocusable(activeElement)) {
           activeElement.blur();
         }
@@ -99,44 +81,4 @@ class InsertMode extends Mode {
 // This allows PostFindMode to suppress the permanently-installed InsertMode instance.
 InsertMode.suppressedEvent = null;
 
-// This implements the pasNexKey command.
-class PassNextKeyMode extends Mode {
-  constructor(count) {
-    if (count == null) {
-      count = 1;
-    }
-    super();
-    let seenKeyDown = false;
-    let keyDownCount = 0;
-
-    super.init({
-      name: "pass-next-key",
-      indicator: "Pass next key.",
-      // We exit on blur because, once we lose the focus, we can no longer track key events.
-      exitOnBlur: globalThis,
-      keypress: () => {
-        return this.passEventToPage;
-      },
-
-      keydown: () => {
-        seenKeyDown = true;
-        keyDownCount += 1;
-        return this.passEventToPage;
-      },
-
-      keyup: () => {
-        if (seenKeyDown) {
-          if (!(--keyDownCount > 0)) {
-            if (!(--count > 0)) {
-              this.exit();
-            }
-          }
-        }
-        return this.passEventToPage;
-      },
-    });
-  }
-}
-
 globalThis.InsertMode = InsertMode;
-globalThis.PassNextKeyMode = PassNextKeyMode;

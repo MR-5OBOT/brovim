@@ -26,10 +26,8 @@ class KeyHandlerMode extends Mode {
     this.commandHandler = commandHandler;
   }
 
-  // Reset the key state, optionally retaining the count provided.
-  reset(countPrefix) {
-    if (countPrefix == null) countPrefix = 0;
-    this.countPrefix = countPrefix;
+  // Reset the key state.
+  reset() {
     this.keyState = [this.keyMapping];
   }
 
@@ -60,7 +58,7 @@ class KeyHandlerMode extends Mode {
   onKeydown(event) {
     const keyChar = KeyboardUtils.getKeyCharString(event);
     const isEscape = KeyboardUtils.isEscape(event);
-    if (isEscape && ((this.countPrefix !== 0) || (this.keyState.length !== 1))) {
+    if (isEscape && (this.keyState.length !== 1)) {
       return DomUtils.consumeKeyup(event, () => this.reset());
     } else if (isEscape && HelpDialog && HelpDialog.isShowing()) {
       // If the help dialog loses the focus, then Escape should hide it; see point 2 in #2045.
@@ -74,10 +72,6 @@ class KeyHandlerMode extends Mode {
     } else if (this.isMappedKey(keyChar)) {
       this.handleKeyChar(keyChar);
       return this.suppressEvent;
-    } else if (this.isCountKey(keyChar)) {
-      const digit = parseInt(keyChar);
-      this.reset(this.keyState.length === 1 ? (this.countPrefix * 10) + digit : digit);
-      return this.suppressEvent;
     } else {
       if (keyChar) this.reset();
       return this.continueBubbling;
@@ -87,20 +81,12 @@ class KeyHandlerMode extends Mode {
   // This tests whether there is a mapping of keyChar in the current key state (and accounts for
   // pass keys).
   isMappedKey(keyChar) {
-    // TODO(philc): tweak the generated js.
     return ((this.keyState.filter((mapping) => keyChar in mapping))[0] != null) &&
       !this.isPassKey(keyChar);
   }
 
-  // This tests whether keyChar is a digit (and accounts for pass keys).
-  isCountKey(keyChar) {
-    return keyChar &&
-      ((this.countPrefix > 0 ? "0" : "1") <= keyChar && keyChar <= "9") &&
-      !this.isPassKey(keyChar);
-  }
-
   // Keystrokes are *never* considered pass keys if the user has begun entering a command. So, for
-  // example, if 't' is a passKey, then the "t"-s of 'gt' and '99t' are neverthless handled as
+  // example, if 't' is a passKey, then the "t"-s of 'gt' are neverthless handled as
   // regular keys.
   isPassKey(keyChar) {
     // Find all *continuation* mappings for keyChar in the current key state (i.e. not the full key
@@ -108,24 +94,18 @@ class KeyHandlerMode extends Mode {
     const mappings = this.keyState.filter((mapping) =>
       keyChar in mapping && (mapping !== this.keyMapping)
     );
-    // If there are no continuation mappings, and there's no count prefix, and keyChar is a pass
+    // If there are no continuation mappings, and keyChar is a pass
     // key, then it's a pass key.
     return mappings.length == 0 &&
-      this.countPrefix == 0 &&
       this.passKeys &&
       this.passKeys.includes(keyChar);
   }
 
   isInResetState() {
-    return (this.countPrefix === 0) && (this.keyState.length === 1);
+    return this.keyState.length === 1;
   }
 
   handleKeyChar(keyChar) {
-    // A count prefix applies only so long a keyChar is mapped in @keyState[0]; e.g. 7gj should be 1j.
-    if (!(keyChar in this.keyState[0])) {
-      this.countPrefix = 0;
-    }
-
     // Advance the key state. The new key state is the current mappings of keyChar, plus @keyMapping.
     const state = this.keyState.filter((mapping) => keyChar in mapping).map((mapping) =>
       mapping[keyChar]
@@ -135,9 +115,8 @@ class KeyHandlerMode extends Mode {
 
     if (this.keyState[0].command != null) {
       const command = this.keyState[0];
-      const count = this.countPrefix > 0 ? this.countPrefix : null;
       this.reset();
-      this.commandHandler({ command, count });
+      this.commandHandler({ command, count: 1 });
       if ((this.options.count != null) && (--this.options.count <= 0)) {
         this.exit();
       }
