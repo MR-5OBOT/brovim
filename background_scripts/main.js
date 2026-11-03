@@ -706,10 +706,7 @@ Utils.addChromeRuntimeOnMessageListener(
 // Remove chrome.storage.local/findModeRawQueryListIncognito if there are no remaining
 // incognito-mode windows. Since the common case is that there are none to begin with, we first
 // check whether the key is set at all.
-chrome.tabs.onRemoved.addListener(function (tabId) {
-  if (tabLoadedHandlers[tabId]) {
-    delete tabLoadedHandlers[tabId];
-  }
+chrome.tabs.onRemoved.addListener(function () {
   chrome.storage.session.get("findModeRawQueryListIncognito", function (items) {
     if (items.findModeRawQueryListIncognito) {
       return chrome.windows != null
