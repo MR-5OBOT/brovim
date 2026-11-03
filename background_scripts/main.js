@@ -107,6 +107,19 @@ if (!globalThis.isUnitTests) {
   chrome.tabs.onRemoved?.addListener((tabId) => {
     tabScreenshots.delete(tabId);
   });
+
+  chrome.commands?.onCommand?.addListener((command) => {
+    if (command === "open_tab_switcher") {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            handler: "runInTopFrame",
+            registryEntry: { command: "TabSwitcher.activate" },
+          }).catch(() => {});
+        }
+      });
+    }
+  });
 }
 
 const tabScreenshots = new Map();

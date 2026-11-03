@@ -3,6 +3,7 @@ import * as UIComponentMessenger from "./ui_component_messenger.js";
 let allTabs = [];
 let filteredTabs = [];
 let selectedIndex = 0;
+let isAltCycling = false;
 
 const filterInput = document.getElementById("tab-filter-input");
 const tabGrid = document.getElementById("tab-grid");
@@ -30,10 +31,17 @@ function filterTabs() {
     );
   }
 
-  // Find active tab index initially if query is empty
   if (!query) {
     const activeIdx = filteredTabs.findIndex((t) => t.active);
-    selectedIndex = activeIdx >= 0 ? activeIdx : 0;
+    if (activeIdx >= 0) {
+      if (isAltCycling && filteredTabs.length > 1) {
+        selectedIndex = (activeIdx + 1) % filteredTabs.length;
+      } else {
+        selectedIndex = activeIdx;
+      }
+    } else {
+      selectedIndex = 0;
+    }
   } else {
     selectedIndex = 0;
   }
@@ -142,6 +150,24 @@ function scrollSelectedIntoView() {
   }
 }
 
+function cycleNext(backwards = false) {
+  if (filteredTabs.length <= 1) return;
+  if (backwards) {
+    selectedIndex = (selectedIndex - 1 + filteredTabs.length) % filteredTabs.length;
+  } else {
+    selectedIndex = (selectedIndex + 1) % filteredTabs.length;
+  }
+  updateSelectedCard();
+}
+
+function commitSelection() {
+  if (filteredTabs[selectedIndex]) {
+    switchToTab(filteredTabs[selectedIndex].id);
+  } else {
+    hide();
+  }
+}
+
 async function switchToTab(tabId) {
   hide();
   await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tabId });
@@ -157,6 +183,7 @@ async function closeTab(tabId) {
 }
 
 function hide() {
+  isAltCycling = false;
   UIComponentMessenger.postMessage({ name: "hide" });
 }
 
@@ -172,17 +199,25 @@ function getGridColumnCount() {
 function handleKeydown(event) {
   const key = event.key;
 
+  // Escape to dismiss
   if (key === "Escape") {
     event.preventDefault();
     hide();
     return;
   }
 
+  // Alt+Q cycling or Q when Alt is held
+  if ((key.toLowerCase() === "q" || key === "Tab") && (event.altKey || isAltCycling)) {
+    event.preventDefault();
+    isAltCycling = true;
+    cycleNext(event.shiftKey);
+    return;
+  }
+
+  // Enter to switch
   if (key === "Enter") {
     event.preventDefault();
-    if (filteredTabs[selectedIndex]) {
-      switchToTab(filteredTabs[selectedIndex].id);
-    }
+    commitSelection();
     return;
   }
 
@@ -225,17 +260,34 @@ function handleKeydown(event) {
   }
 }
 
+function handleKeyup(event) {
+  if (event.key === "Alt" && isAltCycling) {
+    event.preventDefault();
+    commitSelection();
+  }
+}
+
 function init() {
   UIComponentMessenger.init();
   UIComponentMessenger.registerHandler((event) => {
     switch (event.data.name) {
       case "activate":
+        isAltCycling = event.data.isAltCycle ?? false;
         if (filterInput) {
           filterInput.value = "";
         }
         fetchTabs().then(() => {
-          filterInput?.focus();
+          if (!isAltCycling) {
+            filterInput?.focus();
+          }
         });
+        break;
+      case "cycleNext":
+        isAltCycling = true;
+        cycleNext(event.data.backwards ?? false);
+        break;
+      case "commitSelection":
+        commitSelection();
         break;
       case "hide":
         hide();
@@ -244,10 +296,12 @@ function init() {
   });
 
   filterInput?.addEventListener("input", () => {
+    isAltCycling = false;
     filterTabs();
   });
 
   globalThis.addEventListener("keydown", handleKeydown, true);
+  globalThis.addEventListener("keyup", handleKeyup, true);
 }
 
 if (document.readyState === "loading") {

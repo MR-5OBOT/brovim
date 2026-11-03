@@ -102,6 +102,15 @@
     // "default_area": "navbar",
     "default_popup": "pages/action.html"
   },
+  "commands": {
+    "open_tab_switcher": {
+      "suggested_key": {
+        "default": "Alt+Q",
+        "mac": "Alt+Q"
+      },
+      "description": "Open visual tab switcher"
+    }
+  },
   "web_accessible_resources": [
     {
       "resources": [
