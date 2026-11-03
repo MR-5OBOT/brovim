@@ -285,14 +285,6 @@ context("Test link hints for changing mode", () => {
     sendKeyboardEvent("Shift", "keyup");
     assert.equal("open-in-current-tab", linkHints.mode.name);
   });
-
-  should("change mode on ctrl", () => {
-    assert.equal("open-in-current-tab", linkHints.mode.name);
-    sendKeyboardEvent("Control", "keydown");
-    assert.equal("open-in-new-foreground-tab", linkHints.mode.name);
-    sendKeyboardEvent("Control", "keyup");
-    assert.equal("open-in-current-tab", linkHints.mode.name);
-  });
 });
 
 const createLinks = function (n) {
@@ -588,89 +580,6 @@ context("Input focus", () => {
   });
 });
 
-// TODO: these find prev/next link tests could be refactored into unit tests which invoke a function
-// which has a tighter contract than goNext(), since they test minor aspects of goNext()'s link
-// matching behavior, and we don't need to construct external state many times over just to test
-// that. i.e. these tests should look something like:
-// assert.equal(findLink(html("<a href=...">))[0].href, "first")
-// These could then move outside of the dom_tests file.
-context("Find prev / next links", () => {
-  setup(() => {
-    initializeModeState();
-    globalThis.location.hash = "";
-  });
-
-  should("find exact matches", () => {
-    document.getElementById("test-div").innerHTML = `\
-<a href='#first'>nextcorrupted</a>
-<a href='#second'>next page</a>\
-`;
-    stubSettings("nextPatterns", "next");
-    NormalModeCommands.goNext();
-    assert.equal("#second", globalThis.location.hash);
-  });
-
-  should("match against non-word patterns", () => {
-    document.getElementById("test-div").innerHTML = `\
-<a href='#first'>&gt;&gt;</a>\
-`;
-    stubSettings("nextPatterns", ">>");
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-
-  should("favor matches with fewer words", () => {
-    document.getElementById("test-div").innerHTML = `\
-<a href='#first'>lorem ipsum next</a>
-<a href='#second'>next!</a>\
-`;
-    stubSettings("nextPatterns", "next");
-    NormalModeCommands.goNext();
-    assert.equal("#second", globalThis.location.hash);
-  });
-
-  should("find link relation in header", () => {
-    document.getElementById("test-div").innerHTML = `\
-<link rel='next' href='#first'>\
-`;
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-
-  should("favor link relation to text matching", () => {
-    document.getElementById("test-div").innerHTML = `\
-<link rel='next' href='#first'>
-<a href='#second'>next</a>\
-`;
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-
-  should("match mixed case link relation", () => {
-    document.getElementById("test-div").innerHTML = `\
-<link rel='Next' href='#first'>\
-`;
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-
-  should("match against the title attribute", () => {
-    document.getElementById("test-div").innerHTML = `\
-<a title='Next page' href='#first'>unhelpful text</a>\
-`;
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-
-  should("match against the aria-label attribute", () => {
-    document.getElementById("test-div").innerHTML = `\
-<a aria-label='Next page' href='#first'>unhelpful text</a>\
-`;
-    NormalModeCommands.goNext();
-    assert.equal("#first", globalThis.location.hash);
-  });
-});
-
 context("Key mapping", () => {
   let normalMode, handlerCalled, handlerCalledCount;
 
@@ -704,21 +613,6 @@ context("Key mapping", () => {
     assert.isTrue(normalMode.isMappedKey("p"));
   });
 
-  should("recognize initial count keys", () => {
-    assert.isTrue(normalMode.isCountKey("1"));
-    assert.isTrue(normalMode.isCountKey("9"));
-  });
-
-  should("not recognize '0' as initial count key", () => {
-    assert.isFalse(normalMode.isCountKey("0"));
-  });
-
-  should("recognize subsequent count keys", () => {
-    sendKeyboardEvent("1");
-    assert.isTrue(normalMode.isCountKey("0"));
-    assert.isTrue(normalMode.isCountKey("9"));
-  });
-
   should("set and call command handler", () => {
     sendKeyboardEvent("m");
     assert.isTrue(handlerCalled);
@@ -729,46 +623,11 @@ context("Key mapping", () => {
     assert.isFalse(handlerCalled);
   });
 
-  should("accept a count prefix with a single digit", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("m");
-    assert.equal(2, handlerCalledCount);
-  });
-
-  should("accept a count prefix with multiple digits", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("0");
-    sendKeyboardEvent("m");
-    assert.equal(20, handlerCalledCount);
-  });
-
-  should("cancel a count prefix", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("m");
-    assert.equal(true, handlerCalled);
-    assert.equal(null, handlerCalledCount);
-  });
-
-  should("accept a count prefix for multi-key command mappings", () => {
-    sendKeyboardEvent("5");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("p");
-    assert.equal(5, handlerCalledCount);
-  });
-
   should("cancel a key prefix", () => {
     sendKeyboardEvent("z");
     assert.equal(false, handlerCalled);
     sendKeyboardEvent("m");
     assert.equal(true, handlerCalled);
-  });
-
-  should("cancel a count prefix after a prefix key", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("m");
-    assert.equal(null, handlerCalledCount);
   });
 
   should("cancel a prefix key on escape", () => {
@@ -810,79 +669,17 @@ context("Normal mode", () => {
     assert.equal(null, commandName);
   });
 
-  should("invoke commands for pass keys with a count", () => {
-    sendKeyboardEvent("1");
-    sendKeyboardEvent("p");
-    assert.equal("p", commandName);
-  });
-
   should("invoke commands for pass keys with a key queue", () => {
     sendKeyboardEvent("z");
     sendKeyboardEvent("p");
     assert.equal("zp", commandName);
   });
 
-  should("accept count prefixes of length 1", () => {
+  should("not treat digits as a count prefix", () => {
     sendKeyboardEvent("2");
     sendKeyboardEvent("m");
-    assert.equal(2, commandCount);
-  });
-
-  should("accept count prefixes of length 2", () => {
-    sendKeyboardEvents("12");
-    sendKeyboardEvent("m");
-    assert.equal(12, commandCount);
-  });
-
-  should("get the correct count for mixed inputs (single key)", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("m");
-    assert.equal(null, commandCount);
-  });
-
-  should("get the correct count for mixed inputs (multi key)", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("p");
-    assert.equal(2, commandCount);
-  });
-
-  should("get the correct count for mixed inputs (multi key, duplicates)", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("p");
-    assert.equal(null, commandCount);
-  });
-
-  should("get the correct count for mixed inputs (with leading mapped keys)", () => {
-    sendKeyboardEvent("z");
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("m");
-    assert.equal(2, commandCount);
-  });
-
-  should("get the correct count for mixed inputs (with leading unmapped keys)", () => {
-    sendKeyboardEvent("a");
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("m");
-    assert.equal(2, commandCount);
-  });
-
-  should("not get a count after unmapped keys", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("a");
-    sendKeyboardEvent("m");
-    assert.equal(null, commandCount);
-  });
-
-  should("get the correct count after unmapped keys", () => {
-    sendKeyboardEvent("2");
-    sendKeyboardEvent("a");
-    sendKeyboardEvent("3");
-    sendKeyboardEvent("m");
-    assert.equal(3, commandCount);
+    assert.equal("m", commandName);
+    assert.equal(1, commandCount);
   });
 
   should("not handle unmapped keys", () => {
@@ -956,171 +753,6 @@ context("Triggering insert mode", () => {
     assert.isFalse(InsertMode.permanentInstance.isActive());
   });
 });
-
-// NOTE(philc): I'm disabling the caret and visual mode tests because I think they're fallen into
-// disrepair, or we merged changes to master and neglected to update the tests. We should return to
-// these and fix+re-enable them.
-
-// context("Caret mode",
-//   setup(() => {
-//     document.getElementById("test-div").innerHTML = `\
-// <p><pre>
-//   It is an ancient Mariner,
-//   And he stoppeth one of three.
-//   By thy long grey beard and glittering eye,
-//   Now wherefore stopp'st thou me?
-// </pre></p>\
-// `;
-//     initializeModeState();
-//     this.initialVisualMode = new VisualMode;
-//   });
-
-//   teardown(() => document.getElementById("test-div").innerHTML = ""),
-
-//   should("enter caret mode", () => {
-//     assert.isFalse(this.initialVisualMode.modeIsActive);
-//     assert.equal("I", getSelection());
-//   });
-
-//   should("exit caret mode on escape", () => {
-//     sendKeyboardEvent("Escape", "keydown");
-//     assert.equal("", getSelection());
-//   });
-
-//   should("move caret with l and h", () => {
-//     assert.equal("I", getSelection());
-//     sendKeyboardEvent("l");
-//     assert.equal("t", getSelection());
-//     sendKeyboardEvent("h");
-//     assert.equal("I", getSelection());
-//   });
-
-//   should("move caret with w and b", () => {
-//     assert.equal("I", getSelection());
-//     sendKeyboardEvent("w");
-//     assert.equal("i", getSelection());
-//     sendKeyboardEvent("b");
-//     assert.equal("I", getSelection());
-//   });
-
-//   should("move caret with e", () => {
-//     assert.equal("I", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal(" ", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal(" ", getSelection());
-//   });
-
-//   should("move caret with j and k", () => {
-//     assert.equal("I", getSelection());
-//     sendKeyboardEvent("j");
-//     assert.equal("A", getSelection());
-//     sendKeyboardEvent("k");
-//     assert.equal("I", getSelection());
-//   });
-
-//   should("re-use an existing selection", () => {
-//     assert.equal("I", getSelection());
-//     sendKeyboardEvents("ww");
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvent("Escape", "keydown");
-//     new VisualMode;
-//     assert.equal("a", getSelection());
-//   });
-
-//   should("not move the selection on caret/visual mode toggle", () => {
-//     sendKeyboardEvents("ww");
-//     assert.equal("a", getSelection());
-//     for (let key of "vcvcvc".split()) {
-//       sendKeyboardEvent(key);
-//       assert.equal("a", getSelection());
-//     }
-//   })
-// );
-
-// // TODO(philc): Re-enable
-// context("Visual mode",
-//   setup(() => {
-//     document.getElementById("test-div").innerHTML = `\
-// <p><pre>
-//   It is an ancient Mariner,
-//   And he stoppeth one of three.
-//   By thy long grey beard and glittering eye,
-//   Now wherefore stopp'st thou me?
-// </pre></p>\
-// `;
-//     initializeModeState();
-//     this.initialVisualMode = new VisualMode;
-//     sendKeyboardEvent("w");
-//     sendKeyboardEvent("w");
-//     // We should now be at the "a" of "an".
-//     sendKeyboardEvent("v");
-//   });
-
-//   teardown(() => document.getElementById("test-div").innerHTML = ""),
-
-//   should("select word with e", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal("an", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal("an ancient", getSelection());
-//   });
-
-//   should("select opposite end of the selection with o", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal("an", getSelection());
-//     sendKeyboardEvent("e");
-//     assert.equal("an ancient", getSelection());
-//     sendKeyboardEvents("ow");
-//     assert.equal("ancient", getSelection());
-//     sendKeyboardEvents("oe");
-//     assert.equal("ancient Mariner", getSelection());
-//   });
-
-//   should("accept a count", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("2e");
-//     assert.equal("an ancient", getSelection());
-//   });
-
-//   should("select a word", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("aw");
-//     assert.equal("an", getSelection());
-//   });
-
-//   should("select a word with a count", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("2aw");
-//     assert.equal("an ancient", getSelection());
-//   });
-
-//   should("select a word with a count", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("2aw");
-//     assert.equal("an ancient", getSelection());
-//   });
-
-//   should("select to start of line", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("0");
-//     assert.equal("It is", getSelection().trim());
-//   });
-
-//   should("select to end of line", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("$");
-//     assert.equal("an ancient Mariner,", getSelection());
-//   });
-
-//   should("re-enter caret mode", () => {
-//     assert.equal("a", getSelection());
-//     sendKeyboardEvents("cww");
-//     assert.equal("M", getSelection());
-//   })
-// );
 
 const createMode = (options) => {
   const mode = new Mode();

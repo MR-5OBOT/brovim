@@ -47,9 +47,6 @@ export class Suggestion {
   tabId;
   // Whether this is a suggestion provided by a user's custom search engine.
   isCustomSearch;
-  // Set by CommandCompleter.
-  // { registryEntry: RegistryEntry, keys: Array[string] }
-  command;
   // Whether this is meant to be the first suggestion from the user's custom search engine which
   // represents their query as typed, verbatim.
   isPrimarySuggestion = false;

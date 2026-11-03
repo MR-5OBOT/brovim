@@ -198,11 +198,6 @@ textarea[name="searchEngines"] {
   white-space: pre;
 }
 
-input[name="previousPatterns"],
-input[name="nextPatterns"] {
-  width: 100%;
-}
-
 input#searchUrl {
   width: 100%;
 }

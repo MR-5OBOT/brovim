@@ -16,10 +16,12 @@ ul {
   background: #161224;
   text-align: left;
   border-radius: 12px;
-  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px #382c54, 0 0 24px rgba(104, 3, 155, 0.25);
+  /* Keep the shadow inside the iframe's 8px margin, or the iframe edge clips it into a visible box. */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.55), 0 0 6px rgba(104, 3, 155, 0.35);
   border: 1px solid #382c54;
   overflow: hidden;
   z-index: 2139999999;
+  color-scheme: dark;
 }
 
 #vomnibar-search-area {
@@ -28,6 +30,12 @@ ul {
   padding: 12px 14px;
   background: #1c152e;
   border-bottom: 1px solid #382c54;
+}
+
+#vomnibar-search-area .search-icon {
+  flex: none;
+  margin-right: 10px;
+  color: #8b7ca6;
 }
 
 #vomnibar input {

@@ -1,183 +1,92 @@
-# Vimium - The Hacker's Browser
+# Brovim
 
-Vimium is a browser extension that provides keyboard-based navigation and control of the web in the
-spirit of the Vim editor.
+Brovim is a browser extension for keyboard-driven browsing in the spirit of Vim. It is a streamlined
+fork of [Vimium](https://github.com/philc/vimium): niche modes were removed, and it adds a dark
+purple theme, a visual tab switcher with thumbnails, and ready-made search engine keywords.
 
-[Watch the demo video](https://www.youtube.com/watch?v=t67Sn0RGK54).
+## Install from source
 
-**Installation instructions:**
+**Chrome, Chromium, Brave, Helium, Edge:**
 
-- Chrome:
-  [Chrome web store](https://chromewebstore.google.com/detail/vimium/dbepggeogbaibhgnhhndojpepiihcmeb)
-- Edge:
-  [Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/vimium/djmieaghokpkpjfbpelnlkfgfjapaopa)
-- Firefox: [Firefox Add-ons](https://addons.mozilla.org/en-GB/firefox/addon/vimium-ff/)
+1. Open `chrome://extensions` and turn on Developer Mode.
+1. Click "Load unpacked" and select this directory.
 
-To install from source, see [here](CONTRIBUTING.md#installing-from-source).
+**Firefox:** run `./make.js write-firefox-manifest`, open `about:debugging` → "This Firefox" → "Load
+Temporary Add-on", and pick any file in this directory.
 
-Vimium's Options page can be reached via a link on the help dialog (type `?`) or via the button next
-to Vimium on the extension pages of Chrome and Edge (`chrome://extensions`), or Firefox
-(`about:addons`).
+The Options page opens from the help dialog (type `?`) or from the extension's details page.
 
-## Keyboard Bindings
+## Key bindings
 
-Modifier keys are specified as `<c-x>`, `<m-x>`, and `<a-x>` for ctrl+x, meta+x, and alt+x
-respectively. For shift+x and ctrl-shift-x, just type `X` and `<c-X>`. See the next section for how
-to customize these bindings.
+Type `?` on any page to see the bindings that are currently active.
 
-Once you have Vimium installed, you can see this list of key bindings at any time by typing `?`.
+| Keys                | Action                                                   |
+| ------------------- | -------------------------------------------------------- |
+| `j` `k` `h` `l`     | Scroll down / up / left / right                          |
+| `gg` `G`            | Scroll to top / bottom                                   |
+| `d` `u`             | Scroll half a page down / up                             |
+| `zH` `zL`           | Scroll all the way left / right                          |
+| `f` `F`             | Open a link in this tab / a new tab (hold Shift to flip) |
+| `<a-f>`             | Open several links in new tabs                           |
+| `yf`                | Copy a link's URL                                        |
+| `/` `n` `N`         | Find (plain text, smartcase), next match, previous match |
+| `o` `O`             | Vomnibar: URL, bookmark or history (this tab / new tab)  |
+| `b` `B`             | Vomnibar: bookmarks (this tab / new tab)                 |
+| `ge`                | Edit the current URL                                     |
+| `T`                 | Visual tab switcher                                      |
+| `Alt+Q`             | Tab switcher, Alt+Tab style (browser-wide shortcut)      |
+| `J` `K` (`gT` `gt`) | Previous / next tab                                      |
+| `^`                 | Go to the previously visited tab                         |
+| `t` `x` `X`         | New tab, close tab, restore closed tab                   |
+| `<<` `>>`           | Move the tab left / right                                |
+| `<a-p>` `<a-m>`     | Pin / mute the tab                                       |
+| `H` `L`             | History back / forward                                   |
+| `r` `R`             | Reload / hard reload                                     |
+| `yy` `p` `P`        | Copy the URL, open the clipboard URL here / in a new tab |
+| `i` `gi`            | Insert mode, focus the first text input                  |
+| `zi` `zo` `z0`      | Zoom in / out / reset                                    |
+| `gs`                | View source                                              |
 
-Navigating the current page:
+Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
+example `map J scrollDown count=5`.
 
-    ?       show the help dialog for a list of all available keys
-    h       scroll left
-    j       scroll down
-    k       scroll up
-    l       scroll right
-    gg      scroll to top of the page
-    G       scroll to bottom of the page
-    d       scroll down half a page
-    u       scroll up half a page
-    f       open a link in the current tab
-    F       open a link in a new tab
-    r       reload
-    gs      view source
-    i       enter insert mode -- all commands will be ignored until you hit Esc to exit
-    yy      copy the current url to the clipboard
-    yf      copy a link url to the clipboard
-    gf      cycle forward to the next frame
-    gF      focus the main/top frame
+### Tab switcher
 
-Navigating to new pages:
+`T` opens a grid of the current window's tabs. Move with `h` `j` `k` `l` or the arrow keys, press
+`Enter` to switch, `x` to close the selected tab, `/` to search, and `Esc` to dismiss.
 
-    o       Open URL, bookmark, or history entry
-    O       Open URL, bookmark, history entry in a new tab
-    b       Open bookmark
-    B       Open bookmark in a new tab
+`Alt+Q` works like Alt+Tab: hold Alt, tap Q to move through the tabs, and release Alt to switch. You
+can change this shortcut at `chrome://extensions/shortcuts`.
 
-Using find:
+### Search engines
 
-    /       enter find mode
-              -- type your search query and hit enter to search, or Esc to cancel
-    n       cycle forward to the next find match
-    N       cycle backward to the previous find match
+In the Vomnibar, type a keyword and a query: `g` Google, `ddg` DuckDuckGo, `w` Wikipedia, `yt`
+YouTube, `gh` GitHub, `r` Reddit. Edit them under "Custom search engines" in the options.
 
-For advanced usage, see [regular expressions](https://github.com/philc/vimium/wiki/Find-Mode) on the
-wiki.
+## Custom key mappings
 
-Navigating your history:
+Remap keys under "Custom key mappings" in the options, one statement per line:
 
-    H       go back in history
-    L       go forward in history
+- `map key command [options]`, e.g. `map <c-d> scrollPageDown` or `map r reload hard`
+- `unmap key`
+- `unmapAll`
 
-Manipulating tabs:
+Lines starting with `"` or `#` are comments. The options page links to a list of every command.
 
-    J, gT   go one tab left
-    K, gt   go one tab right
-    g0      go to the first tab. Use ng0 to go to n-th tab
-    g$      go to the last tab
-    ^       visit the previously-visited tab
-    t       create tab
-    yt      duplicate current tab
-    x       close current tab
-    X       restore closed tab (i.e. unwind the 'x' command)
-    T       search through your open tabs
-    W       move current tab to new window
-    <a-p>   pin/unpin current tab
+## Development
 
-Using marks:
+The build and test tasks need [Deno](https://deno.com):
 
-    ma, mA  set local mark "a" (global mark "A")
-    `a, `A  jump to local mark "a" (global mark "A")
-    ``      jump back to the position before the previous jump
-              -- that is, before the previous gg, G, n, N, / or `a
+```sh
+./make.js check       # formatting and lint
+./make.js test-unit   # unit tests
+./make.js test-dom    # DOM tests in headless Chrome (Puppeteer)
+./make.js package     # store zips in dist/
+```
 
-Additional advanced browsing commands:
-
-    ]], [[  Follow the link labeled 'next' or '>' ('previous' or '<')
-              - helpful for browsing paginated sites
-    <a-f>   open multiple links in a new tab
-    gi      focus the first (or n-th) text input box on the page. Use <tab> to cycle through options.
-    gu      go up one level in the URL hierarchy
-    gU      go up to root of the URL hierarchy
-    ge      edit the current URL
-    gE      edit the current URL and open in a new tab
-    zH      scroll all the way left
-    zL      scroll all the way right
-    v       enter visual mode; use p/P to paste-and-go, use y to yank
-    V       enter visual line mode
-    R       Hard reload the page (skip the cache)
-
-Vimium supports command repetition so, for example, hitting `5t` will open 5 tabs in rapid
-succession. `<Esc>` (or `<c-[>`) will clear any partial commands in the queue and will also exit
-insert and find modes.
-
-There are additional commands which aren't included in this README; refer to the help dialog (type
-`?`) for a full list.
-
-## Custom Key Mappings
-
-You may remap or unmap any of the default key bindings in the "Custom key mappings" on the options
-page.
-
-Enter one of the following key mapping statements per line:
-
-- `map key command`: Maps a key to a Vimium command. Overrides Chrome's default behavior for that
-  key, if any.
-- `unmap key`: Unmaps a key and restores Chrome's default behavior (if any).
-- `unmapAll`: Unmaps all bindings. This is useful if you want to completely wipe Vimium's defaults
-  and start from scratch with your own setup.
-
-Examples:
-
-- `map <c-d> scrollPageDown` maps ctrl+d to scrolling the page down. Chrome's default behavior of
-  showing a bookmark dialog is suppressed.
-- `map r reload hard` maps the r key to reloading the page, and also includes the "hard" option to
-  hard-reload the page.
-- `unmap <c-d>` removes any mapping for ctrl+d and restores Chrome's default behavior.
-- `unmap r` removes any mapping for the r key.
-
-See the [docs](https://vimium.github.io/commands/) for every Vimium command and its options.
-
-You can add comments to key mappings by starting a line with `"` or `#`.
-
-The following special keys are available for mapping:
-
-- `<c-*>`, `<a-*>`, `<s-*>`, `<m-*>` for ctrl, alt, shift, and meta (command on Mac) respectively
-  with any key. Replace `*` with the key of choice.
-- `<left>`, `<right>`, `<up>`, `<down>` for the arrow keys.
-- `<f1>` through `<f12>` for the function keys.
-- `<space>` for the space key.
-- `<tab>`, `<enter>`, `<delete>`, `<backspace>`, `<insert>`, `<home>` and `<end>` for the
-  corresponding non-printable keys.
-
-Shifts are automatically detected so, for example, `<c-&>` corresponds to ctrl+shift+7 on an English
-keyboard.
-
-## How to allow Vimium to work on new tab pages
-
-- Vimium will work on new tab pages which are opened with Vimium's `createTab` command (mapped to
-  `t` by default).
-- To have Vimium work on <em>all</em> new tab pages opened by the browser (e.g. via `cmd-t` or
-  `ctrl-t` shortcuts), a companion
-  [Vimium New Tab Page extension](https://github.com/philc/vimium-new-tab/) is required.
-- Once that is installed, all new tabs will open a blank Vimium new tab page.
-
-## More documentation
-
-- [FAQ](https://github.com/philc/vimium/wiki/FAQ)
-- [Command listing](https://vimium.github.io/commands/)
-- [Vimium's GitHub wiki](https://github.com/philc/vimium/wiki): documentation for the more advanced
-  features.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## Release Notes
-
-See [CHANGELOG](CHANGELOG.md) for the major changes in each release.
+`test-dom` uses Puppeteer's Chrome. Set `PUPPETEER_EXECUTABLE_PATH` to use a browser that's already
+installed.
 
 ## License
 
-Copyright (c) Phil Crosby, Ilya Sukhar. See [MIT-LICENSE.txt](MIT-LICENSE.txt) for details.
+MIT, like Vimium. See [MIT-LICENSE.txt](MIT-LICENSE.txt) and [CREDITS](CREDITS).

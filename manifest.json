@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Vimium",
+  "name": "Brovim",
   "version": "2.4.2",
-  "description": "The Hacker's Browser. Vimium provides keyboard shortcuts for navigation and control in the spirit of Vim.",
+  "description": "Keyboard-driven browsing in the spirit of Vim: link hints, a Vomnibar and a visual tab switcher. Based on Vimium.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",

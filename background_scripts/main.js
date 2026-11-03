@@ -105,16 +105,18 @@ if (!globalThis.isUnitTests) {
   });
 
   chrome.tabs.onRemoved?.addListener((tabId) => {
-    tabScreenshots.delete(tabId);
+    chrome.storage.session.remove(screenshotKey(tabId));
   });
 
+  // The Alt+Q browser shortcut from manifest.json. Holding Alt and pressing Q again cycles; releasing
+  // Alt switches tabs.
   chrome.commands?.onCommand?.addListener((command) => {
     if (command === "open_tab_switcher") {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs && tabs.length > 0) {
           chrome.tabs.sendMessage(tabs[0].id, {
             handler: "runInTopFrame",
-            registryEntry: { command: "TabSwitcher.activate" },
+            registryEntry: { command: "TabSwitcher.activate", options: { altCycle: true } },
           }).catch(() => {});
         }
       });
@@ -122,19 +124,38 @@ if (!globalThis.isUnitTests) {
   });
 }
 
-const tabScreenshots = new Map();
+// Tab switcher thumbnails live in chrome.storage.session, so they survive the service worker being
+// suspended (an in-memory cache is wiped after ~30s of idling).
+const screenshotKey = (tabId) => `tabScreenshot-${tabId}`;
 
 async function captureActiveTab(tabId) {
   try {
-    if (chrome.tabs.captureVisibleTab) {
-      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 40 });
-      if (dataUrl) {
-        tabScreenshots.set(tabId, dataUrl);
-      }
-    }
-  } catch (_) {
-    // Cannot capture restricted pages (e.g. chrome://, devtools, webstore)
+    const tab = await chrome.tabs.get(tabId);
+    // The user may have switched tabs during the capture delay; don't file another tab's pixels
+    // under this one.
+    if (!tab.active) return;
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg" });
+    await chrome.storage.session.set({ [screenshotKey(tabId)]: await shrinkImage(dataUrl) });
+  } catch {
+    // Restricted pages (chrome://, the web store) can't be captured.
   }
+}
+
+// Downscales a screenshot to thumbnail size, so that hundreds fit in storage.session's 10MB quota
+// and the switcher doesn't have to decode full-resolution screenshots.
+async function shrinkImage(dataUrl, width = 480) {
+  const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const scale = Math.min(1, width / bitmap.width);
+  const canvas = new OffscreenCanvas(
+    Math.round(bitmap.width * scale),
+    Math.round(bitmap.height * scale),
+  );
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.7 });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return "data:image/jpeg;base64," + btoa(binary);
 }
 
 function muteTab(tab) {
@@ -538,12 +559,6 @@ const sendRequestHandlers = {
   runBackgroundCommand(request, sender) {
     return BackgroundCommands[request.registryEntry.command](request, sender);
   },
-  // Executes a command as if it was run in normal mode by a content script.
-  // Used by the Vomnibar's command completer, which can be used to execute any command in Vimium.
-  // The "request" must contain a "count" and a valid "command: RegistryEntry" parameter.
-  runNormalModeCommand(request, sender) {
-    chrome.tabs.sendMessage(sender.tab.id, request);
-  },
   // getCurrentTabUrl is used by the content scripts to get their full URL, because window.location
   // cannot help with Chrome-specific URLs like "view-source:http:..".
   getCurrentTabUrl({ tab }) {
@@ -575,8 +590,9 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
-  async getOpenTabsWithScreenshots() {
-    const tabs = await chrome.tabs.query({ currentWindow: true });
+  async getOpenTabsWithScreenshots({ tab }) {
+    const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+    const screenshots = await chrome.storage.session.get(tabs.map((t) => screenshotKey(t.id)));
     return tabs.map((t) => ({
       id: t.id,
       index: t.index,
@@ -585,12 +601,11 @@ const sendRequestHandlers = {
       favIconUrl: t.favIconUrl || "",
       active: t.active,
       pinned: t.pinned,
-      screenshot: tabScreenshots.get(t.id) || null,
+      screenshot: screenshots[screenshotKey(t.id)] || null,
     }));
   },
   async closeSpecificTab({ id }) {
     await chrome.tabs.remove(id);
-    tabScreenshots.delete(id);
   },
   // Send a message to all frames in the current tab. If request.frameId is provided, then send
   // messages to only the frame with that ID.
@@ -767,15 +782,15 @@ async function showUpgradeMessageIfNecessary(onInstalledDetails) {
   // NOTE(philc): These notifications use the system notification UI. So, if you don't have
   // notifications enabled from your browser (e.g. in Notification Settings in OSX), then
   // chrome.notification.create will succeed, but you won't see it.
-  const notificationId = "VimiumUpgradeNotification";
+  const notificationId = "BrovimUpgradeNotification";
   await chrome.notifications.create(
     notificationId,
     {
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/icon128.png"),
-      title: "Vimium Upgrade",
+      title: "Brovim Upgrade",
       message:
-        `Vimium has been upgraded to version ${currentVersion}. Click here for more information.`,
+        `Brovim has been upgraded to version ${currentVersion}. Click here for more information.`,
       isClickable: true,
     },
   );
@@ -787,7 +802,7 @@ async function showUpgradeMessageIfNecessary(onInstalledDetails) {
       TabOperations.openUrlInNewTab({
         tab,
         tabId: tab.id,
-        url: "https://github.com/philc/vimium/blob/master/CHANGELOG.md",
+        url: "https://github.com/MR-5OBOT/brovim",
       });
     });
   }

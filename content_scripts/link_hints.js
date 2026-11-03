@@ -485,27 +485,15 @@ class LinkHintsMode {
 
     // NOTE(smblott) The modifier behaviour here applies only to alphabet hints.
     if (
-      ["Control", "Shift"].includes(event.key) && !Settings.get("filterLinkHints") &&
-      [OPEN_IN_CURRENT_TAB, OPEN_WITH_QUEUE, OPEN_IN_NEW_BG_TAB, OPEN_IN_NEW_FG_TAB].includes(
-        this.mode,
-      )
+      event.key === "Shift" && !Settings.get("filterLinkHints") &&
+      [OPEN_IN_CURRENT_TAB, OPEN_WITH_QUEUE, OPEN_IN_NEW_BG_TAB].includes(this.mode)
     ) {
       // Toggle whether to open the link in a new or current tab.
       const previousMode = this.mode;
       const key = event.key;
-
-      switch (key) {
-        case "Shift":
-          this.setOpenLinkMode(
-            this.mode === OPEN_IN_CURRENT_TAB ? OPEN_IN_NEW_BG_TAB : OPEN_IN_CURRENT_TAB,
-          );
-          break;
-        case "Control":
-          this.setOpenLinkMode(
-            this.mode === OPEN_IN_NEW_FG_TAB ? OPEN_IN_NEW_BG_TAB : OPEN_IN_NEW_FG_TAB,
-          );
-          break;
-      }
+      this.setOpenLinkMode(
+        this.mode === OPEN_IN_CURRENT_TAB ? OPEN_IN_NEW_BG_TAB : OPEN_IN_CURRENT_TAB,
+      );
 
       this.hintMode.push({
         keyup: (event) => {

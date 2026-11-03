@@ -4,6 +4,9 @@ let allTabs = [];
 let filteredTabs = [];
 let selectedIndex = 0;
 let isAltCycling = false;
+// Resolves once the tab list for the current activation has loaded. A quick Alt+Q tap can release
+// Alt before that, so commits wait on it.
+let tabsLoaded = Promise.resolve();
 
 const filterInput = document.getElementById("tab-filter-input");
 const tabGrid = document.getElementById("tab-grid");
@@ -176,10 +179,15 @@ async function switchToTab(tabId) {
 async function closeTab(tabId) {
   await chrome.runtime.sendMessage({ handler: "closeSpecificTab", id: tabId });
   allTabs = allTabs.filter((t) => t.id !== tabId);
-  filterTabs();
+  filteredTabs = filteredTabs.filter((t) => t.id !== tabId);
   if (filteredTabs.length === 0) {
     hide();
+    return;
   }
+  // Keep the selection where it was, so pressing x repeatedly doesn't jump back to (and close) the
+  // current tab.
+  selectedIndex = Math.min(selectedIndex, filteredTabs.length - 1);
+  render();
 }
 
 function hide() {
@@ -187,19 +195,19 @@ function hide() {
   UIComponentMessenger.postMessage({ name: "hide" });
 }
 
-// Compute column count dynamically based on grid width
+// The browser has already laid out the grid's columns; count them.
 function getGridColumnCount() {
-  const firstCard = tabGrid.querySelector(".tab-card");
-  if (!firstCard) return 1;
-  const cardWidth = firstCard.offsetWidth + 16;
-  const gridWidth = tabGrid.clientWidth - 40;
-  return Math.max(1, Math.floor(gridWidth / cardWidth));
+  return getComputedStyle(tabGrid).gridTemplateColumns.split(" ").length;
 }
 
+const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
+
+// Keys: h/j/k/l or arrows move, x closes, Enter switches, / searches, Esc dismisses. While typing
+// in the search box, letters are text, so only arrows (or Alt+h/j/k/l) move and Ctrl+x closes.
 function handleKeydown(event) {
   const key = event.key;
+  const isTyping = document.activeElement === filterInput;
 
-  // Escape to dismiss
   if (key === "Escape") {
     event.preventDefault();
     hide();
@@ -214,15 +222,19 @@ function handleKeydown(event) {
     return;
   }
 
-  // Enter to switch
   if (key === "Enter") {
     event.preventDefault();
-    commitSelection();
+    tabsLoaded.then(commitSelection);
     return;
   }
 
-  // Close tab with Ctrl+x or Alt+x or if search input is unfocused
-  if ((key === "x" && event.ctrlKey) || (key === "x" && document.activeElement !== filterInput)) {
+  if (key === "/" && !isTyping) {
+    event.preventDefault();
+    filterInput.focus();
+    return;
+  }
+
+  if (key === "x" && (event.ctrlKey || !isTyping)) {
     event.preventDefault();
     if (filteredTabs[selectedIndex]) {
       closeTab(filteredTabs[selectedIndex].id);
@@ -230,40 +242,22 @@ function handleKeydown(event) {
     return;
   }
 
+  const direction = (!isTyping || event.altKey) ? (vimDirections[key] ?? key) : key;
   const cols = getGridColumnCount();
-
-  // Navigation
-  if (key === "ArrowRight" || (key === "l" && event.altKey)) {
-    event.preventDefault();
-    if (selectedIndex < filteredTabs.length - 1) {
-      selectedIndex++;
-      updateSelectedCard();
-    }
-  } else if (key === "ArrowLeft" || (key === "h" && event.altKey)) {
-    event.preventDefault();
-    if (selectedIndex > 0) {
-      selectedIndex--;
-      updateSelectedCard();
-    }
-  } else if (key === "ArrowDown" || (key === "j" && event.altKey)) {
-    event.preventDefault();
-    if (selectedIndex + cols < filteredTabs.length) {
-      selectedIndex += cols;
-      updateSelectedCard();
-    }
-  } else if (key === "ArrowUp" || (key === "k" && event.altKey)) {
-    event.preventDefault();
-    if (selectedIndex - cols >= 0) {
-      selectedIndex -= cols;
-      updateSelectedCard();
-    }
+  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[direction];
+  if (step == null) return;
+  event.preventDefault();
+  const next = selectedIndex + step;
+  if (next >= 0 && next < filteredTabs.length) {
+    selectedIndex = next;
+    updateSelectedCard();
   }
 }
 
 function handleKeyup(event) {
   if (event.key === "Alt" && isAltCycling) {
     event.preventDefault();
-    commitSelection();
+    tabsLoaded.then(commitSelection);
   }
 }
 
@@ -273,21 +267,17 @@ function init() {
     switch (event.data.name) {
       case "activate":
         isAltCycling = event.data.isAltCycle ?? false;
-        if (filterInput) {
-          filterInput.value = "";
-        }
-        fetchTabs().then(() => {
-          if (!isAltCycling) {
-            filterInput?.focus();
-          }
-        });
+        filterInput.value = "";
+        // Start outside the search box so h/j/k/l and x work; "/" moves into it.
+        filterInput.blur();
+        tabsLoaded = fetchTabs();
         break;
       case "cycleNext":
         isAltCycling = true;
         cycleNext(event.data.backwards ?? false);
         break;
       case "commitSelection":
-        commitSelection();
+        tabsLoaded.then(commitSelection);
         break;
       case "hide":
         hide();

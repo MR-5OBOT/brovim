@@ -22,16 +22,11 @@ class NormalMode extends KeyHandlerMode {
         this.setKeyMapping(changes.normalModeKeyStateMapping.newValue);
       }
     });
-
-    // Listen and handle "command" events coming from the background and originally sent from the
-    // Vomnibar page.
-    Utils.addChromeRuntimeOnMessageListener(["runNormalModeCommand"], (request, _sender) => {
-      this.commandHandler(request);
-    });
   }
 
-  commandHandler({ command: registryEntry, count }) {
-    count = count ?? 1;
+  commandHandler({ command: registryEntry }) {
+    // Count prefixes are gone, but a mapping can still repeat a command: "map J scrollDown count=5".
+    const count = registryEntry.options.count ?? 1;
 
     if (registryEntry.topFrame) {
       // We never return to a UI-component frame (e.g. the help dialog), it might have lost the
@@ -256,11 +251,8 @@ const NormalModeCommands = {
   "Vomnibar.activateBookmarksInNewTab": Vomnibar.activateBookmarksInNewTab.bind(Vomnibar),
   "Vomnibar.activateEditUrl": Vomnibar.activateEditUrl.bind(Vomnibar),
 
-  "TabSwitcher.activate": (sourceFrameId) => {
-    if (typeof TabSwitcher !== "undefined" && TabSwitcher) {
-      TabSwitcher.activate(sourceFrameId);
-    }
-  },
+  "TabSwitcher.activate": (sourceFrameId, registryEntry) =>
+    TabSwitcher.activate(sourceFrameId, registryEntry.options),
 };
 
 // The types in <input type="..."> that we consider for focusInput command. Right now this is

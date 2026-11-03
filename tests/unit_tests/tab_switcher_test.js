@@ -23,7 +23,7 @@ context("TabSwitcher", () => {
         { id: 1, index: 0, title: "Test Tab", url: "https://example.com", active: true },
       ]));
     const handler = sendRequestHandlers["getOpenTabsWithScreenshots"];
-    const tabs = await handler();
+    const tabs = await handler({ tab: { windowId: 1 } });
     assert.equal(1, tabs.length);
     assert.equal("Test Tab", tabs[0].title);
     assert.equal(null, tabs[0].screenshot);

@@ -20,21 +20,11 @@ body {
   backdrop-filter: blur(20px);
   border: 1px solid #382c54;
   border-radius: 16px;
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 32px rgba(104, 3, 155, 0.35);
+  /* Keep the shadow inside the 16px inset, or the iframe edge clips it into a visible box. */
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6), 0 0 10px rgba(104, 3, 155, 0.35);
   overflow: hidden;
   color: #e9e4f5;
-  animation: tabSwitcherPopIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes tabSwitcherPopIn {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
+  color-scheme: dark;
 }
 
 #tab-switcher-header {

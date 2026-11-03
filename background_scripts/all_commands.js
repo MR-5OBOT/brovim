@@ -194,7 +194,7 @@ const allCommands = [
     options: {
       query: "The text to prefill the Vomnibar with.",
       keyword: 'The keyword of a search engine defined in the "Custom search engines" ' +
-        "section of the Vimium Options page. The Vomnibar will be scoped to use that search engine.",
+        "section of the Brovim Options page. The Vomnibar will be scoped to use that search engine.",
     },
     group: "vomnibar",
     topFrame: true,
@@ -208,7 +208,7 @@ const allCommands = [
     options: {
       query: "The text to prefill the Vomnibar with.",
       keyword: 'The keyword of a search engine defined in the "Custom search engines" ' +
-        "section of the Vimium Options page. The Vomnibar will be scoped to use that search engine.",
+        "section of the Brovim Options page. The Vomnibar will be scoped to use that search engine.",
     },
     topFrame: true,
     noRepeat: true,

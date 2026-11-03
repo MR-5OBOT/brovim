@@ -38,7 +38,7 @@ function initWindowIsFocused() {
   );
 }
 
-// True if this window should be focusable by various Vim commands (e.g. "nextFrame").
+// True if this window should be focusable (e.g. when returning focus from a UI component).
 function isWindowFocusable() {
   // Avoid focusing tiny frames. See #1317.
   return !DomUtils.windowIsTooSmall() && (document.body?.tagName.toLowerCase() != "frameset");
@@ -114,7 +114,7 @@ class GrabBackFocus extends Mode {
     if (!this.logged && (element !== document.body)) {
       this.logged = true;
       if (!globalThis.vimiumDomTestsAreRunning) {
-        console.log("An auto-focusing action on this page was blocked by Vimium.");
+        console.log("An auto-focusing action on this page was blocked by Brovim.");
       }
     }
     element.blur();
@@ -206,7 +206,7 @@ function installListener(element, event, callback) {
     event,
     forTrusted(function () {
       if (extensionHasBeenUnloaded()) {
-        console.log("Vimium extension has been unloaded. Unloading content script.");
+        console.log("Brovim extension has been unloaded. Unloading content script.");
         onUnload();
         return;
       }
@@ -251,9 +251,6 @@ globalThis.addEventListener("focus", onFocus, true);
 globalThis.addEventListener("hashchange", checkEnabledAfterURLChange, true);
 
 async function initializeOnDomReady() {
-  // Tell the background page we're in the domReady state.
-  await chrome.runtime.sendMessage({ handler: "domReady" });
-
   const isVimiumNewTabPage = document.location.href == Settings.vimiumNewTabPageUrl;
   if (!isVimiumNewTabPage) return;
 
@@ -351,12 +348,6 @@ globalThis.lastFocusedInput = (function () {
 })();
 
 const messageHandlers = {
-  getFocusStatus(_request, _sender) {
-    return {
-      focused: windowIsFocused(),
-      focusable: isWindowFocusable(),
-    };
-  },
   focusFrame(request) {
     focusThisFrame(request);
   },

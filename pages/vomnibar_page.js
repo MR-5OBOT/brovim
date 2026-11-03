@@ -33,7 +33,6 @@ export async function activate(options) {
     newTab: false,
     selectFirst: false,
     keyword: null,
-    prefixCount: 1,
   };
 
   options = Object.assign(defaults, options);
@@ -46,7 +45,6 @@ export async function activate(options) {
   ui.setInitialSelectionValue(options.selectFirst ? 0 : -1);
   ui.setForceNewTab(options.newTab);
   ui.setQuery(options.query);
-  ui.setPrefixCount(options.prefixCount);
   ui.setActiveUserSearchEngine(userSearchEngines.keywordToEngine[options.keyword]);
   // Use await here for vomnibar_test.js, so that this page doesn't get unloaded while a test is
   // running.
@@ -87,10 +85,6 @@ class VomnibarUI {
     const placeholder = (name == "omni") ? "" : capitalize(name);
     this.input.setAttribute("placeholder", placeholder);
     this.reset();
-  }
-
-  setPrefixCount(prefixCount) {
-    this.prefixCount = prefixCount;
   }
 
   // True if the user has entered the keyword of one of their custom search engines.
