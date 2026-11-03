@@ -300,7 +300,7 @@ class VomnibarUI {
       const isPrimary = isPrimarySearchSuggestion(firstCompletion);
       if (isPrimary) {
         query = UrlUtils.createSearchUrl(query, firstCompletion.searchUrl);
-        await this.launchUrl(query);
+        this.hide(() => this.launchUrl(query, openInNewTab));
       } else {
         // If the query looks like a URL, try to open it directly. Otherwise, pass the query to
         // the user's default search engine.

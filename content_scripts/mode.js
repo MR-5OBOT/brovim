@@ -316,7 +316,7 @@ class CacheAllKeydownEvents extends SuppressAllKeyboardEvents {
       },
     };
     super(Object.assign(defaults, options));
-    this.keydownEvents = [];
+    this.keydownEvents = keydownEvents;
   }
 
   replayKeydownEvents() {

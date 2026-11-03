@@ -236,8 +236,9 @@ const HintCoordinator = {
       this.onExit = [];
     }
     this.linkHintsMode = new LinkHintsMode(hintDescriptors, availableModes[modeIndex]);
-    // Replay keydown events which we missed (but for filtered hints only).
-    if (Settings.get("filterLinkHints" && this.cacheAllKeydownEvents)) {
+    // Keep fast hint selections typed while the background collected links from the frames.
+    // This also applies to alphabet hints: dropping the second f leaves an F hint unselected.
+    if (this.cacheAllKeydownEvents) {
       this.cacheAllKeydownEvents.replayKeydownEvents();
     }
     this.cacheAllKeydownEvents = null;
@@ -382,6 +383,18 @@ class LinkHintsMode {
       const div = DomUtils.createElement("div");
       div.id = "vimium-hint-marker-container";
       div.className = "vimium-reset";
+      // The stylesheet was injected when this page loaded. Use the current colors each time hints
+      // open, so saving a theme doesn't require reloading already-open pages. Custom CSS can still
+      // override the properties which use these variables.
+      for (
+        const [property, setting] of [
+          ["--brovim-hint-color", "linkHintColor"],
+          ["--brovim-hint-text-color", "linkHintTextColor"],
+          ["--brovim-hint-match-color", "linkHintMatchColor"],
+        ]
+      ) {
+        div.style.setProperty(property, Settings.get(setting));
+      }
       this.containerEl = div;
       document.documentElement.appendChild(div);
     }

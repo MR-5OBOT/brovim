@@ -12,8 +12,8 @@
 // the key state (@keyState) consists of a (non-empty) list of such mappings.
 
 class KeyHandlerMode extends Mode {
-  setKeyMapping(keyMapping) {
-    this.keyMapping = keyMapping;
+  setKeyMapping(keyMapping = {}) {
+    this.keyMapping = keyMapping || {};
     this.reset();
   }
   setPassKeys(passKeys) {
@@ -81,7 +81,7 @@ class KeyHandlerMode extends Mode {
   // This tests whether there is a mapping of keyChar in the current key state (and accounts for
   // pass keys).
   isMappedKey(keyChar) {
-    return ((this.keyState.filter((mapping) => keyChar in mapping))[0] != null) &&
+    return ((this.keyState.filter((mapping) => mapping && keyChar in mapping))[0] != null) &&
       !this.isPassKey(keyChar);
   }
 
@@ -92,7 +92,7 @@ class KeyHandlerMode extends Mode {
     // Find all *continuation* mappings for keyChar in the current key state (i.e. not the full key
     // mapping).
     const mappings = this.keyState.filter((mapping) =>
-      keyChar in mapping && (mapping !== this.keyMapping)
+      mapping && keyChar in mapping && (mapping !== this.keyMapping)
     );
     // If there are no continuation mappings, and keyChar is a pass
     // key, then it's a pass key.
@@ -107,7 +107,7 @@ class KeyHandlerMode extends Mode {
 
   handleKeyChar(keyChar) {
     // Advance the key state. The new key state is the current mappings of keyChar, plus @keyMapping.
-    const state = this.keyState.filter((mapping) => keyChar in mapping).map((mapping) =>
+    const state = this.keyState.filter((mapping) => mapping && keyChar in mapping).map((mapping) =>
       mapping[keyChar]
     );
     state.push(this.keyMapping);

@@ -77,6 +77,19 @@ const createGeneralHintTests = (isFilteredMode) => {
       assert.isTrue(mode.containerEl == null);
     });
 
+    should("replay buffered typing when hints finish loading", () => {
+      let replayed = false;
+      stub(HintCoordinator, "cacheAllKeydownEvents", {
+        modeIsActive: false,
+        replayKeydownEvents() {
+          replayed = true;
+        },
+      });
+      const mode = activateLinkHintsMode();
+      mode.deactivateMode();
+      assert.isTrue(replayed);
+    });
+
     should("position items correctly", () => {
       const assertStartPosition = (element1, element2) => {
         assert.equal(element1.getClientRects()[0].left, element2.getClientRects()[0].left);
@@ -199,6 +212,18 @@ const sendKeyboardEvents = (keys) => {
     sendKeyboardEvent(key);
   }
 };
+
+context("Buffered keyboard events", () => {
+  should("suppress keys during startup and replay them into the ready mode", () => {
+    initializeModeState();
+    const cache = new CacheAllKeydownEvents({ indicator: false });
+    sendKeyboardEvents("m");
+    cache.exit();
+    assert.equal(null, commandName);
+    cache.replayKeydownEvents();
+    assert.equal("m", commandName);
+  });
+});
 
 // TODO(philc): For some reason, this test corrupts the state linkhints state for other tests, in particular,
 // the alphabet hints tests. I haven't yet dug into why.
@@ -616,6 +641,12 @@ context("Key mapping", () => {
   should("set and call command handler", () => {
     sendKeyboardEvent("m");
     assert.isTrue(handlerCalled);
+  });
+
+  should("safely handle undefined key mapping without throwing", () => {
+    normalMode.setKeyMapping(undefined);
+    assert.isFalse(normalMode.isMappedKey("m"));
+    sendKeyboardEvent("m");
   });
 
   should("not call command handler for pass keys", () => {

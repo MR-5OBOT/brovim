@@ -416,12 +416,20 @@ async function initializePreDomReady() {
 
 // Check if Vimium should be enabled or not based on the top frame's URL.
 async function checkIfEnabledForUrl() {
-  const promises = [];
-  promises.push(chrome.runtime.sendMessage({ handler: "initializeFrame" }));
-  if (!Settings.isLoaded()) {
-    promises.push(Settings.onLoaded());
+  // A content script left in an open tab by an extension reload or update can no longer reach the
+  // background page. Shut it down instead of throwing "Extension context invalidated".
+  if (extensionHasBeenUnloaded()) return onUnload();
+  let response;
+  try {
+    const promises = [chrome.runtime.sendMessage({ handler: "initializeFrame" })];
+    if (!Settings.isLoaded()) promises.push(Settings.onLoaded());
+    [response] = await Promise.all(promises);
+  } catch (error) {
+    // An update can invalidate this context while the request is in flight, after the guard above.
+    if (extensionHasBeenUnloaded()) return onUnload();
+    throw error;
   }
-  const [response] = await Promise.all(promises);
+  if (extensionHasBeenUnloaded()) return onUnload();
 
   isEnabledForUrl = response.isEnabledForUrl;
 

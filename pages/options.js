@@ -10,6 +10,9 @@ const options = {
   hideUpdateNotifications: "boolean",
   ignoreKeyboardLayout: "boolean",
   keyMappings: "string",
+  linkHintColor: "string",
+  linkHintMatchColor: "string",
+  linkHintTextColor: "string",
   linkHintCharacters: "string",
   linkHintNumbers: "string",
   newTabCustomUrl: "string",
@@ -60,7 +63,7 @@ export async function init() {
   );
   document.querySelector("#upload-backup").addEventListener(
     "change",
-    () => onUploadBackupClicked(),
+    (event) => onUploadBackupClicked(event),
   );
 
   for (const el of document.querySelectorAll(".reset-link a")) {
@@ -328,7 +331,7 @@ function onDownloadBackupClicked() {
   document.querySelector("#download-backup").href = URL.createObjectURL(blob);
 }
 
-function onUploadBackupClicked() {
+function onUploadBackupClicked(event) {
   if (document.activeElement) {
     document.activeElement.blur();
   }
@@ -348,7 +351,12 @@ function onUploadBackupClicked() {
         return;
       }
 
-      await Settings.setSettings(backup);
+      // Backups omit default values. Restore those defaults too, rather than retaining unrelated
+      // customizations from the current settings. Migrate legacy backups before adding defaults.
+      await Settings.setSettings({
+        ...globalThis.structuredClone(Settings.defaultOptions),
+        ...Settings.migrateSettingsIfNecessary(backup),
+      });
       setFormFromSettings(Settings.getSettings());
       const saveButton = document.querySelector("#save");
       saveButton.disabled = true;

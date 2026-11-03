@@ -4,9 +4,9 @@
   width: calc(100% - 20px);
   bottom: 12px;
   left: 10px;
-  background-color: rgba(22, 18, 36, 0.94);
+  background-color: rgba(20, 20, 20, 0.94);
   backdrop-filter: blur(12px);
-  color: #f2eefa;
+  color: #ededed;
   text-align: left;
   border-radius: 8px;
   /* The HUD iframe leaves only ~4px above this box; a bigger shadow gets clipped into a box. */
@@ -21,7 +21,7 @@
 #search-area {
   display: block;
   padding: 4px 8px;
-  color: #f2eefa;
+  color: #ededed;
 }
 
 #hud {
@@ -35,7 +35,7 @@
   box-sizing: border-box;
   line-height: 24px;
   background: transparent;
-  color: #f2eefa;
+  color: #ededed;
 }
 
 span#hud-find-input,
@@ -54,7 +54,7 @@ span#hud-find-input:before {
 }
 
 span#hud-match-count {
-  color: #b0a1cb;
+  color: #a0a0a0;
   font-size: 12px;
   margin-left: 8px;
 }

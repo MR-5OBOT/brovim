@@ -42,9 +42,9 @@
 
 @media (prefers-color-scheme: dark) {
   .key {
-    background-color: #261f38;
-    border: solid 1px #48396b;
+    background-color: #262626;
+    border: solid 1px #3a3a3a;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-    color: #e9e2f5;
+    color: #e6e6e6;
   }
 }

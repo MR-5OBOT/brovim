@@ -16,19 +16,13 @@
  */
 
 :root {
-  --vimium-background-color: #161224;
-  --vimium-background-text-color: #e9e4f5;
-  --vimium-foreground-color: #211a36;
+  --vimium-background-color: #141414;
+  --vimium-background-text-color: #e6e6e6;
+  --vimium-foreground-color: #1f1f1f;
   --vimium-foreground-text-color: #ffffff;
   --vimium-link-color: #b784f7;
-  --vimium-accent-color: #68039B;
-  --vimium-accent-hover: #8819c9;
-  --vimium-accent-glow: rgba(104, 3, 155, 0.45);
-  --vimium-border-color: #382c54;
-  --vimium-input-bg: #1c152e;
-  --vimium-selected-bg: #401863;
+  --vimium-border-color: #2e2e2e;
   --vimium-match-color: #c97aff;
-  --vimium-url-color: #79b7ff;
 }
 
 .vimium-reset,
@@ -216,14 +210,11 @@ iframe.vomnibar-frame {
 
   display: block;
   position: fixed;
-  width: calc(75% + 20px);
-  max-width: 840px;
-  min-width: 460px;
-  height: calc(100% - 70px);
-  top: 70px;
-  left: 50%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
-  transform: translateX(-50%);
   border: none;
   font-family: sans-serif;
   z-index: 2147483647;
@@ -247,17 +238,12 @@ iframe.tab-switcher-frame {
 
   display: block;
   position: fixed;
-  width: 90%;
-  max-width: 1080px;
-  min-width: 480px;
-  height: 85vh;
-  max-height: 800px;
-  top: 50%;
-  left: 50%;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
-  transform: translate(-50%, -50%);
   border: none;
-  font-family: sans-serif;
   z-index: 2147483647;
 }
 

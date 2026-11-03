@@ -194,6 +194,7 @@ async function buildStorePackage() {
     "MIT-LICENSE.txt",
     "build_scripts",
     "dist",
+    "docs",
     "make.js",
     "deno.json",
     "deno.lock",
@@ -205,9 +206,17 @@ async function buildStorePackage() {
   ];
 
   const chromeManifest = await parseManifestFile();
-  const rsyncOptions = ["-r", ".", "dist/brovim"].concat(
-    ...excludeList.map((item) => ["--exclude", item]),
-  );
+  const excludedNames = excludeList.map((pattern) => path.globToRegExp(pattern));
+  const copyFiles = async (source, destination) => {
+    await fs.ensureDir(destination);
+    for await (const entry of Deno.readDir(source)) {
+      if (excludedNames.some((pattern) => pattern.test(entry.name))) continue;
+      const from = path.join(source, entry.name);
+      const to = path.join(destination, entry.name);
+      if (entry.isDirectory) await copyFiles(from, to);
+      else await Deno.copyFile(from, to);
+    }
+  };
   const version = chromeManifest["version"];
   const writeDistManifest = async (manifest) => {
     await Deno.writeTextFile("dist/brovim/manifest.json", JSON.stringify(manifest, null, 2));
@@ -226,7 +235,7 @@ async function buildStorePackage() {
     "dist/chrome-store",
     "dist/firefox",
   ]);
-  await shell("rsync", rsyncOptions);
+  await copyFiles(".", "dist/brovim");
 
   await checkFilesFromManifestArePresent(chromeManifest);
 
@@ -428,6 +437,11 @@ async function testDom() {
 
 desc("Run DOM tests");
 task("test-dom", [], testDom);
+
+desc("Test the installed extension in Chromium");
+task("test-browser", [], async () => {
+  await shell("deno", ["run", "-A", "tests/browser_tests/extension_test.js"]);
+});
 
 desc("Run unit and DOM tests");
 task("test", ["test-unit", "test-dom"]);

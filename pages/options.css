@@ -416,7 +416,7 @@ input#upload-backup {
      other OSes, so to be cross-platform, we have to set these styles ourselves. */
   button {
     background: none;
-    background-color: #2b2a32;
+    background-color: #2a2a2a;
     border-color: #8f8f9c;
     border-width: 1px;
     color: var(--vimium-foreground-text-color);
@@ -430,6 +430,6 @@ input#upload-backup {
   button[disabled]:active {
     color: #75747a;
     border-color: #75747a;
-    background-color: #222127;
+    background-color: #222222;
   }
 }

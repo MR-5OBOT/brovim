@@ -187,6 +187,7 @@ const checkVisibility = function (element) {
 const CoreScroller = {
   init() {
     this.time = 0;
+    this.scrollVersions = new WeakMap();
     this.lastEvent = this.keyDownKey = null;
     this.installCancelEventListener();
   },
@@ -239,6 +240,12 @@ const CoreScroller = {
   // Boundary between scrolls which are considered too slow, or too fast.
   calibrationBoundary: 150,
 
+  cancelScroll(element, direction) {
+    const versions = this.scrollVersions.get(element) || { x: 0, y: 0 };
+    versions[direction]++;
+    this.scrollVersions.set(element, versions);
+  },
+
   // Scroll element by a relative amount (a number) in some direction.
   scroll(element, direction, amount, continuous) {
     if (continuous == null) continuous = true;
@@ -275,8 +282,13 @@ const CoreScroller = {
     let calibration = 1.0;
     let previousTimestamp = null;
     const cancelEventListener = this.installCancelEventListener();
+    const scrollVersion = this.scrollVersions.get(element)?.[direction] ?? 0;
 
     const animate = (timestamp) => {
+      if ((this.scrollVersions.get(element)?.[direction] ?? 0) !== scrollVersion) {
+        handlerStack.remove(cancelEventListener);
+        return;
+      }
       if (previousTimestamp == null) {
         previousTimestamp = timestamp;
       }
@@ -403,6 +415,9 @@ const Scroller = {
     }
 
     const element = findScrollableElement(activatedElement, direction, pos, 1);
+    // Absolute jumps replace any animation already moving this element on the same axis. Without
+    // this, pressing gg while G is still animating can finish partway down the page.
+    CoreScroller.cancelScroll(element, direction);
     const amount = getDimension(element, direction, pos) -
       element[scrollProperties[direction].axisName];
     return CoreScroller.scroll(element, direction, amount);

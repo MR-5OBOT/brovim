@@ -96,6 +96,28 @@ b: http://b.com/?q=%s description
           >here</a>.
         </div>
 
+        <header>Theme</header>
+
+        <h2>Link hint colors</h2>
+        <div>
+          <div>
+            <label><input type="color" name="linkHintColor" /> Hint box</label>
+            <span class="example reset-link"><a href="#">Reset</a></span>
+          </div>
+          <div>
+            <label><input type="color" name="linkHintTextColor" /> Hint letters</label>
+            <span class="example reset-link"><a href="#">Reset</a></span>
+          </div>
+          <div>
+            <label><input type="color" name="linkHintMatchColor" /> Letters you've typed</label>
+            <span class="example reset-link"><a href="#">Reset</a></span>
+          </div>
+        </div>
+        <div class="example">
+          The colors of the hints shown after pressing <tt>f</tt>. The CSS under Advanced Options can
+          still override them.
+        </div>
+
         <header>Advanced Options</header>
 
         <h2>Scroll step size</h2>
@@ -214,7 +236,7 @@ b: http://b.com/?q=%s description
         <header>Backup and Restore</header>
 
         <h2>Backup</h2>
-        <a id="download-backup" download="vimium-options.json" href="#">Download backup</a>
+        <a id="download-backup" download="brovim-options.json" href="#">Download backup</a>
         <div class="example">Download a backup of your settings.</div>
 
         <h2>Restore</h2>

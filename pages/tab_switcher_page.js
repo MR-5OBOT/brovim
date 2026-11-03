@@ -1,301 +1,229 @@
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-let allTabs = [];
-let filteredTabs = [];
+// Shows awake tabs visited this session as previews, most recently used first, starting on the previous
+// tab. Keys: h/j/k/l or arrows move, Enter switches, x closes, Esc (or a click outside) dismisses.
+// Opened with the Alt+Q browser shortcut: hold Alt and tap Q to move; releasing Alt switches.
+
+const panel = document.getElementById("tab-switcher");
+const cardGap = 6; // The #tab-switcher grid gap in tab_switcher_page.css.
+const windowParam = new URL(location.href).searchParams.get("windowId");
+const standalone = globalThis.top === globalThis && windowParam !== null;
+const sourceWindowId = standalone ? Number(windowParam) : undefined;
+
+let tabs = [];
 let selectedIndex = 0;
+let columns = 1;
 let isAltCycling = false;
 // Resolves once the tab list for the current activation has loaded. A quick Alt+Q tap can release
-// Alt before that, so commits wait on it.
+// Alt before that, so commits and cycling wait on it.
 let tabsLoaded = Promise.resolve();
-
-const filterInput = document.getElementById("tab-filter-input");
-const tabGrid = document.getElementById("tab-grid");
-const tabCountBadge = document.getElementById("tab-count-badge");
 
 async function fetchTabs() {
   try {
-    const tabs = await chrome.runtime.sendMessage({ handler: "getOpenTabsWithScreenshots" });
-    allTabs = tabs || [];
-    filterTabs();
+    tabs = await chrome.runtime.sendMessage({
+      handler: "getOpenTabsWithScreenshots",
+      windowId: sourceWindowId,
+    }) || [];
   } catch (err) {
     console.error("Failed to load tabs:", err);
+    tabs = [];
   }
-}
-
-function filterTabs() {
-  const query = (filterInput?.value || "").toLowerCase().trim();
-  if (!query) {
-    filteredTabs = [...allTabs];
-  } else {
-    filteredTabs = allTabs.filter(
-      (t) =>
-        (t.title && t.title.toLowerCase().includes(query)) ||
-        (t.url && t.url.toLowerCase().includes(query)),
-    );
-  }
-
-  if (!query) {
-    const activeIdx = filteredTabs.findIndex((t) => t.active);
-    if (activeIdx >= 0) {
-      if (isAltCycling && filteredTabs.length > 1) {
-        selectedIndex = (activeIdx + 1) % filteredTabs.length;
-      } else {
-        selectedIndex = activeIdx;
-      }
-    } else {
-      selectedIndex = 0;
-    }
-  } else {
-    selectedIndex = 0;
-  }
-
+  selectedIndex = tabs.length > 1 ? 1 : 0; // The previously used tab.
   render();
+  panel.style.visibility = "visible";
 }
 
 function render() {
-  tabCountBadge.textContent = `${filteredTabs.length} tab${filteredTabs.length === 1 ? "" : "s"}`;
-  tabGrid.innerHTML = "";
-
-  if (filteredTabs.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "No tabs found matching your search.";
-    tabGrid.appendChild(empty);
-    return;
-  }
-
-  filteredTabs.forEach((tab, index) => {
-    const card = document.createElement("div");
-    card.className = "tab-card" +
-      (index === selectedIndex ? " selected" : "") +
-      (tab.active ? " active-tab" : "");
-    card.dataset.index = index;
-    card.dataset.tabId = tab.id;
-
-    // Header
-    const header = document.createElement("div");
-    header.className = "card-header";
-
-    if (tab.favIconUrl) {
-      const img = document.createElement("img");
-      img.className = "card-favicon";
-      img.src = tab.favIconUrl;
-      img.onerror = () => {
-        img.style.display = "none";
-      };
-      header.appendChild(img);
-    }
-
-    const title = document.createElement("span");
-    title.className = "card-title";
-    title.textContent = tab.title || "Untitled";
-    header.appendChild(title);
-
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "card-close-btn";
-    closeBtn.innerHTML = "&times;";
-    closeBtn.title = "Close tab (x)";
-    closeBtn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      closeTab(tab.id);
-    });
-    header.appendChild(closeBtn);
-
-    card.appendChild(header);
-
-    // Body (Thumbnail or placeholder)
-    const body = document.createElement("div");
-    body.className = "card-body";
-
-    if (tab.screenshot) {
-      const thumb = document.createElement("img");
-      thumb.className = "card-thumbnail";
-      thumb.src = tab.screenshot;
-      body.appendChild(thumb);
-    } else {
-      const placeholder = document.createElement("div");
-      placeholder.className = "card-placeholder";
-      placeholder.innerHTML = `
-        <div class="card-placeholder-icon">🌐</div>
-        <div>${tab.url ? new URL(tab.url).hostname : "No preview"}</div>
-      `;
-      body.appendChild(placeholder);
-    }
-
-    card.appendChild(body);
-
-    card.addEventListener("click", () => {
-      switchToTab(tab.id);
-    });
-
-    tabGrid.appendChild(card);
-  });
-
-  scrollSelectedIntoView();
+  // As many columns as fit on screen; more tabs wrap onto further rows.
+  const cardWidth = parseFloat(getComputedStyle(panel).getPropertyValue("--card-width"));
+  const maxColumns = Math.floor((globalThis.innerWidth - 80 + cardGap) / (cardWidth + cardGap));
+  columns = Math.max(1, Math.min(tabs.length, maxColumns));
+  panel.style.setProperty("--columns", columns);
+  panel.replaceChildren(...tabs.map(createCard));
+  updateSelection();
 }
 
-function updateSelectedCard() {
-  const cards = tabGrid.querySelectorAll(".tab-card");
-  cards.forEach((c, idx) => {
-    if (idx === selectedIndex) {
-      c.classList.add("selected");
+function createCard(tab) {
+  const card = document.createElement("div");
+  card.className = "tab-card";
+  card.addEventListener("click", () => switchToTab(tab.id));
+
+  const thumb = document.createElement("div");
+  thumb.className = "card-thumb";
+  if (tab.screenshot) {
+    thumb.append(createImage(tab.screenshot));
+  } else if (tab.favIconUrl) {
+    thumb.append(createImage(tab.favIconUrl, "big-favicon"));
+  } else {
+    thumb.textContent = hostname(tab.url);
+  }
+
+  const label = document.createElement("div");
+  label.className = "card-label";
+  if (tab.favIconUrl) label.append(createImage(tab.favIconUrl));
+  const title = document.createElement("span");
+  title.textContent = tab.title;
+  label.append(title);
+
+  card.append(thumb, label);
+  return card;
+}
+
+function createImage(src, className) {
+  const img = document.createElement("img");
+  img.src = src;
+  if (className) img.className = className;
+  img.onerror = () => img.remove();
+  return img;
+}
+
+function hostname(url) {
+  try {
+    return new URL(url).hostname || url;
+  } catch {
+    return url;
+  }
+}
+
+function updateSelection() {
+  Array.from(panel.children).forEach((card, i) => {
+    card.classList.toggle("selected", i === selectedIndex);
+  });
+  panel.children[selectedIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function move(step) {
+  const next = selectedIndex + step;
+  if (next >= 0 && next < tabs.length) {
+    selectedIndex = next;
+    updateSelection();
+  }
+}
+
+function cycle(backwards = false) {
+  if (tabs.length < 2) return;
+  selectedIndex = (selectedIndex + (backwards ? -1 : 1) + tabs.length) % tabs.length;
+  updateSelection();
+}
+
+function commit() {
+  tabsLoaded.then(() => {
+    if (tabs[selectedIndex]) {
+      switchToTab(tabs[selectedIndex].id);
     } else {
-      c.classList.remove("selected");
+      hide();
     }
   });
-  scrollSelectedIntoView();
-}
-
-function scrollSelectedIntoView() {
-  const selectedCard = tabGrid.querySelector(`.tab-card[data-index="${selectedIndex}"]`);
-  if (selectedCard) {
-    selectedCard.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }
-}
-
-function cycleNext(backwards = false) {
-  if (filteredTabs.length <= 1) return;
-  if (backwards) {
-    selectedIndex = (selectedIndex - 1 + filteredTabs.length) % filteredTabs.length;
-  } else {
-    selectedIndex = (selectedIndex + 1) % filteredTabs.length;
-  }
-  updateSelectedCard();
-}
-
-function commitSelection() {
-  if (filteredTabs[selectedIndex]) {
-    switchToTab(filteredTabs[selectedIndex].id);
-  } else {
-    hide();
-  }
 }
 
 async function switchToTab(tabId) {
-  hide();
+  // Closing a standalone window destroys this context, so finish switching before dismissing it.
+  if (!standalone) hide();
   await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tabId });
+  if (standalone) hide();
 }
 
 async function closeTab(tabId) {
   await chrome.runtime.sendMessage({ handler: "closeSpecificTab", id: tabId });
-  allTabs = allTabs.filter((t) => t.id !== tabId);
-  filteredTabs = filteredTabs.filter((t) => t.id !== tabId);
-  if (filteredTabs.length === 0) {
+  tabs = tabs.filter((t) => t.id !== tabId);
+  if (tabs.length === 0) {
     hide();
     return;
   }
   // Keep the selection where it was, so pressing x repeatedly doesn't jump back to (and close) the
   // current tab.
-  selectedIndex = Math.min(selectedIndex, filteredTabs.length - 1);
+  selectedIndex = Math.min(selectedIndex, tabs.length - 1);
   render();
 }
 
 function hide() {
   isAltCycling = false;
-  UIComponentMessenger.postMessage({ name: "hide" });
-}
-
-// The browser has already laid out the grid's columns; count them.
-function getGridColumnCount() {
-  return getComputedStyle(tabGrid).gridTemplateColumns.split(" ").length;
+  if (standalone) globalThis.close();
+  else UIComponentMessenger.postMessage({ name: "hide" });
 }
 
 const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
 
-// Keys: h/j/k/l or arrows move, x closes, Enter switches, / searches, Esc dismisses. While typing
-// in the search box, letters are text, so only arrows (or Alt+h/j/k/l) move and Ctrl+x closes.
 function handleKeydown(event) {
   const key = event.key;
-  const isTyping = document.activeElement === filterInput;
-
   if (key === "Escape") {
     event.preventDefault();
     hide();
     return;
   }
-
-  // Alt+Q cycling or Q when Alt is held
+  // Alt+Q cycling, or Q / Tab while Alt is still held.
   if ((key.toLowerCase() === "q" || key === "Tab") && (event.altKey || isAltCycling)) {
     event.preventDefault();
     isAltCycling = true;
-    cycleNext(event.shiftKey);
+    tabsLoaded.then(() => cycle(event.shiftKey));
     return;
   }
-
   if (key === "Enter") {
     event.preventDefault();
-    tabsLoaded.then(commitSelection);
+    commit();
     return;
   }
-
-  if (key === "/" && !isTyping) {
+  if (key === "x") {
     event.preventDefault();
-    filterInput.focus();
+    if (tabs[selectedIndex]) closeTab(tabs[selectedIndex].id);
     return;
   }
-
-  if (key === "x" && (event.ctrlKey || !isTyping)) {
-    event.preventDefault();
-    if (filteredTabs[selectedIndex]) {
-      closeTab(filteredTabs[selectedIndex].id);
-    }
-    return;
-  }
-
-  const direction = (!isTyping || event.altKey) ? (vimDirections[key] ?? key) : key;
-  const cols = getGridColumnCount();
-  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -cols, ArrowDown: cols }[direction];
+  const direction = vimDirections[key] ?? key;
+  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[direction];
   if (step == null) return;
   event.preventDefault();
-  const next = selectedIndex + step;
-  if (next >= 0 && next < filteredTabs.length) {
-    selectedIndex = next;
-    updateSelectedCard();
-  }
+  move(step);
 }
 
 function handleKeyup(event) {
   if (event.key === "Alt" && isAltCycling) {
     event.preventDefault();
-    tabsLoaded.then(commitSelection);
+    commit();
   }
 }
 
-function init() {
-  UIComponentMessenger.init();
-  UIComponentMessenger.registerHandler((event) => {
-    switch (event.data.name) {
-      case "activate":
-        isAltCycling = event.data.isAltCycle ?? false;
-        filterInput.value = "";
-        // Start outside the search box so h/j/k/l and x work; "/" moves into it.
-        filterInput.blur();
-        tabsLoaded = fetchTabs();
-        break;
-      case "cycleNext":
-        isAltCycling = true;
-        cycleNext(event.data.backwards ?? false);
-        break;
-      case "commitSelection":
-        tabsLoaded.then(commitSelection);
-        break;
-      case "hide":
-        hide();
-        break;
+if (standalone) {
+  document.body.classList.add("standalone");
+  isAltCycling = true;
+  panel.style.visibility = "hidden";
+  tabsLoaded = fetchTabs();
+  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+    if (message.handler === "cycleTabSwitcher" && message.windowId === sourceWindowId) {
+      tabsLoaded.then(() => {
+        cycle();
+        respond(true);
+      });
+      return true;
     }
   });
-
-  filterInput?.addEventListener("input", () => {
-    isAltCycling = false;
-    filterTabs();
-  });
-
-  globalThis.addEventListener("keydown", handleKeydown, true);
-  globalThis.addEventListener("keyup", handleKeyup, true);
-}
-
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
 } else {
-  init();
+  UIComponentMessenger.init();
 }
+UIComponentMessenger.registerHandler((event) => {
+  switch (event.data.name) {
+    case "activate":
+      isAltCycling = event.data.isAltCycle ?? false;
+      // Hide the previous list until the fresh one (in the new recency order) is rendered.
+      panel.style.visibility = "hidden";
+      tabsLoaded = fetchTabs();
+      break;
+    case "cycleNext":
+      isAltCycling = true;
+      tabsLoaded.then(() => cycle());
+      break;
+    case "commitSelection":
+      commit();
+      break;
+    case "hide":
+      hide();
+      break;
+  }
+});
+
+globalThis.addEventListener("keydown", handleKeydown, true);
+globalThis.addEventListener("keyup", handleKeyup, true);
+globalThis.addEventListener("resize", render);
+// A click outside the panel dismisses the switcher.
+document.body.addEventListener("click", (event) => {
+  if (event.target === document.body) hide();
+});

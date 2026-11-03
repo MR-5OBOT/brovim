@@ -10,6 +10,7 @@ import "../background_scripts/completion/search_engines.js";
 import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
+import { openTabSwitcher } from "./tab_switcher.js";
 
 import {
   BookmarkCompleter,
@@ -47,10 +48,8 @@ const completionSources = {
 
 const completers = {
   omni: new MultiCompleter([
-    completionSources.bookmarks,
     completionSources.history,
     completionSources.domains,
-    completionSources.tabs,
     completionSources.searchEngines,
   ]),
   bookmarks: new MultiCompleter([completionSources.bookmarks]),
@@ -110,16 +109,9 @@ if (!globalThis.isUnitTests) {
 
   // The Alt+Q browser shortcut from manifest.json. Holding Alt and pressing Q again cycles; releasing
   // Alt switches tabs.
-  chrome.commands?.onCommand?.addListener((command) => {
+  chrome.commands?.onCommand?.addListener((command, tab) => {
     if (command === "open_tab_switcher") {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs.length > 0) {
-          chrome.tabs.sendMessage(tabs[0].id, {
-            handler: "runInTopFrame",
-            registryEntry: { command: "TabSwitcher.activate", options: { altCycle: true } },
-          }).catch(() => {});
-        }
-      });
+      openTabSwitcher(tab).catch((error) => console.warn("Could not open tab switcher:", error));
     }
   });
 }
@@ -450,7 +442,7 @@ chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId }) => {
   const swallowError = () => {};
   await Settings.onLoaded();
   await chrome.scripting.insertCSS({
-    css: Settings.get("userDefinedLinkHintCss"),
+    css: Settings.userCss(),
     target: {
       tabId: tabId,
       frameIds: [frameId],
@@ -590,8 +582,18 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
-  async getOpenTabsWithScreenshots({ tab }) {
-    const tabs = await chrome.tabs.query({ windowId: tab.windowId });
+  // Show the active tab and awake tabs in the window, most recently used first. Discarded and
+  // frozen background tabs are excluded.
+  async getOpenTabsWithScreenshots({ tab, windowId }) {
+    const windowTabs = await chrome.tabs.query({ windowId: windowId ?? tab.windowId });
+    await bgUtils.tabRecency.init();
+    const rank = new Map(bgUtils.tabRecency.getTabsByRecency().map((id, index) => [id, index]));
+    const tabs = windowTabs.filter((t) => !t.discarded && !t.frozen);
+    tabs.sort((a, b) =>
+      Number(!!b.active) - Number(!!a.active) ||
+      (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
+      a.index - b.index
+    );
     const screenshots = await chrome.storage.session.get(tabs.map((t) => screenshotKey(t.id)));
     return tabs.map((t) => ({
       id: t.id,
@@ -622,6 +624,7 @@ const sendRequestHandlers = {
   },
 
   async initializeFrame(_request, sender) {
+    await initializeExtension();
     // Check whether the extension is enabled for the top frame's URL, rather than the URL of the
     // specific frame that sent this request.
     const enabledState = exclusions.isEnabledForUrl(sender.tab.url);
@@ -719,11 +722,16 @@ Utils.addChromeRuntimeOnMessageListener(
     // Firefox when the extension is first installed, domReady and initializeFrame messages come from
     // content scripts in about:blank URLs, which have a null sender.tab. I don't know what this
     // corresponds to. Since we expect a valid sender.tab, ignore those messages.
-    if (sender.tab == null) return;
+    const fromSwitcher = sender.url?.split("?")[0] ===
+        chrome.runtime.getURL("pages/tab_switcher_page.html") &&
+      ["getOpenTabsWithScreenshots", "selectSpecificTab", "closeSpecificTab"].includes(
+        request.handler,
+      );
+    if (sender.tab == null && !fromSwitcher) return;
     await Settings.onLoaded();
     request = Object.assign({ count: 1 }, request, {
       tab: sender.tab,
-      tabId: sender.tab.id,
+      tabId: sender.tab?.id,
     });
     const handler = sendRequestHandlers[request.handler];
     const result = handler ? await handler(request, sender) : null;
@@ -841,15 +849,21 @@ async function injectContentScriptsAndCSSIntoExistingTabs() {
 
     // Inject the user's link hint CSS.
     chrome.scripting.insertCSS({
-      css: Settings.get("userDefinedLinkHintCss"),
+      css: Settings.userCss(),
       target: target,
     }).catch(swallowError);
   }
 }
 
-async function initializeExtension() {
-  await Settings.onLoaded();
-  await Commands.init();
+let extensionInitializedPromise = null;
+function initializeExtension() {
+  if (!extensionInitializedPromise) {
+    extensionInitializedPromise = (async () => {
+      await Settings.onLoaded();
+      await Commands.init();
+    })();
+  }
+  return extensionInitializedPromise;
 }
 
 // The browser may have tabs already open. We inject the content scripts and Vimium's CSS

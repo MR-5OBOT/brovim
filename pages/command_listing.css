@@ -107,13 +107,3 @@ p.details {
 .hosted-version #github-link {
   display: block;
 }
-
-.hosted-version #github-link img#github {
-  width: 40px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .hosted-version #github-link img#github {
-    filter: invert(1);
-  }
-}

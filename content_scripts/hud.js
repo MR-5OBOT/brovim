@@ -27,6 +27,7 @@ const HUD = {
       unfocusIfFocused: this.unfocusIfFocused,
       pasteResponse: this.pasteResponse,
       showClipboardUnavailableMessage: this.showClipboardUnavailableMessage,
+      showClipboardError: this.showClipboardError,
     };
     const handler = handlers[data.name];
     if (handler) {
@@ -196,7 +197,9 @@ const HUD = {
     // Hide the HUD frame again.
     this.hudUI.setIframeVisible(false);
     this.unfocusIfFocused();
-    this.pasteListener(data);
+    const listener = this.pasteListener;
+    this.pasteListener = null;
+    listener?.(data);
   },
 
   unfocusIfFocused() {
@@ -211,10 +214,21 @@ const HUD = {
   // Navigator.clipboard is only available in secure contexts. Show a warning when clipboard actions
   // fail on non-HTTPS sites. See #4572.
   async showClipboardUnavailableMessage() {
+    this.pasteListener = null;
     await DomUtils.documentComplete();
     await this.init();
     // Since the message is long and surprising, show it for longer to allow more time to reading.
     this.show("Clipboard actions available only on HTTPS sites", 4000);
+  },
+
+  showClipboardError({ action }) {
+    if (action === "paste") this.pasteListener = null;
+    this.unfocusIfFocused();
+    this.show(
+      `Couldn't ${action}: clipboard access was blocked. Check your browser's site permissions.`,
+      5000,
+      "clipboard-error",
+    );
   },
 };
 

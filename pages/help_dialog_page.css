@@ -1,4 +1,4 @@
-/* The help dialog uses the dark purple palette from vimium.css in both light and dark OS themes. */
+/* The help dialog uses the dark palette from vimium.css in both light and dark OS themes. */
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -10,7 +10,7 @@ body {
   color-scheme: dark;
   border: 1px solid var(--vimium-border-color);
   border-radius: 12px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6), 0 0 24px var(--vimium-accent-glow);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
   width: 840px;
   max-width: calc(100% - 100px);
   max-height: calc(100% - 100px);
@@ -39,7 +39,7 @@ header {
 a#close {
   font-family: "courier new", monospace;
   font-weight: bold;
-  color: #8b7ca6;
+  color: #8a8a8a;
   text-decoration: none;
   font-size: 24px;
   position: relative;
@@ -108,15 +108,15 @@ div[data-group] {
 .help-description {
   font-size: 14px;
   /* Fainter than --vimium-background-text-color, so the dialog text doesn't get overwhelming. */
-  color: #c9c2dc;
+  color: #c8c8c8;
 }
 
 /* Key badges, matching the Vomnibar's dark style (key_mappings.css is light by default). */
 .key {
-  background-color: #261f38;
-  border: solid 1px #48396b;
+  background-color: #262626;
+  border: solid 1px #3a3a3a;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  color: #e9e2f5;
+  color: #e6e6e6;
 }
 
 div.divider {
@@ -139,7 +139,7 @@ footer {
   font-size: 10px;
   display: flex;
   justify-content: space-between;
-  color: #b0a1cb;
+  color: #a0a0a0;
 }
 
 .version-info {

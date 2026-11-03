@@ -191,13 +191,16 @@ export const handlers = {
       // the error "DOMException: Document is not focused." is thrown.
       globalThis.focus();
 
-      // Replace nbsp; characters with space. See #2217.
-      const value = message.data.replace(/\xa0/g, " ");
-      await navigator.clipboard.writeText(value);
-
-      if (focusedElement != null) focusedElement.focus();
-      globalThis.parent.focus();
-      UIComponentMessenger.postMessage({ name: "unfocusIfFocused" });
+      try {
+        // Replace nbsp; characters with space. See #2217.
+        await navigator.clipboard.writeText(message.data.replace(/\xa0/g, " "));
+      } catch {
+        UIComponentMessenger.postMessage({ name: "showClipboardError", action: "copy" });
+      } finally {
+        if (focusedElement != null) focusedElement.focus();
+        globalThis.parent.focus();
+        UIComponentMessenger.postMessage({ name: "unfocusIfFocused" });
+      }
     });
   },
 
@@ -209,12 +212,17 @@ export const handlers = {
       // the error "DOMException: Document is not focused." is thrown.
       globalThis.focus();
 
-      let value = await navigator.clipboard.readText();
-      // Replace nbsp; characters with space. See #2217.
-      value = value.replace(/\xa0/g, " ");
-
-      if (focusedElement != null) focusedElement.focus();
-      globalThis.parent.focus();
+      let value;
+      try {
+        value = (await navigator.clipboard.readText()).replace(/\xa0/g, " ");
+      } catch {
+        UIComponentMessenger.postMessage({ name: "showClipboardError", action: "paste" });
+        return;
+      } finally {
+        if (focusedElement != null) focusedElement.focus();
+        globalThis.parent.focus();
+        UIComponentMessenger.postMessage({ name: "unfocusIfFocused" });
+      }
       UIComponentMessenger.postMessage({ name: "pasteResponse", data: value });
     });
   },
