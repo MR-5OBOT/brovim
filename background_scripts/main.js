@@ -93,6 +93,35 @@ if (!globalThis.isUnitTests) {
       }
     });
   })();
+
+  chrome.tabs.onActivated?.addListener(({ tabId }) => {
+    Utils.setTimeout(350, () => captureActiveTab(tabId));
+  });
+
+  chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
+    if (changeInfo.status === "complete" && tab.active) {
+      Utils.setTimeout(350, () => captureActiveTab(tabId));
+    }
+  });
+
+  chrome.tabs.onRemoved?.addListener((tabId) => {
+    tabScreenshots.delete(tabId);
+  });
+}
+
+const tabScreenshots = new Map();
+
+async function captureActiveTab(tabId) {
+  try {
+    if (chrome.tabs.captureVisibleTab) {
+      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: "jpeg", quality: 40 });
+      if (dataUrl) {
+        tabScreenshots.set(tabId, dataUrl);
+      }
+    }
+  } catch (_) {
+    // Cannot capture restricted pages (e.g. chrome://, devtools, webstore)
+  }
 }
 
 function muteTab(tab) {
@@ -533,6 +562,23 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
+  async getOpenTabsWithScreenshots() {
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+    return tabs.map((t) => ({
+      id: t.id,
+      index: t.index,
+      title: t.title || "Untitled",
+      url: t.url || "",
+      favIconUrl: t.favIconUrl || "",
+      active: t.active,
+      pinned: t.pinned,
+      screenshot: tabScreenshots.get(t.id) || null,
+    }));
+  },
+  async closeSpecificTab({ id }) {
+    await chrome.tabs.remove(id);
+    tabScreenshots.delete(id);
+  },
   // Send a message to all frames in the current tab. If request.frameId is provided, then send
   // messages to only the frame with that ID.
   sendMessageToFrames(request, sender) {
@@ -813,6 +859,7 @@ Object.assign(globalThis, {
   // Exported for tests:
   HintCoordinator,
   BackgroundCommands,
+  sendRequestHandlers,
   majorVersionHasIncreased,
   nextZoomLevel,
 });

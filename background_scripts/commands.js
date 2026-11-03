@@ -429,7 +429,7 @@ const defaultKeyMappings = {
   // Vomnibar
   "o": "Vomnibar.activate",
   "O": "Vomnibar.activateInNewTab",
-  "T": "Vomnibar.activateTabSelection",
+  "T": "TabSwitcher.activate",
   "b": "Vomnibar.activateBookmarks",
   "B": "Vomnibar.activateBookmarksInNewTab",
   "ge": "Vomnibar.activateEditUrl",

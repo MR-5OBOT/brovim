@@ -57,6 +57,7 @@
         "content_scripts/ui_component.js",
         "content_scripts/link_hints.js",
         "content_scripts/vomnibar.js",
+        "content_scripts/tab_switcher.js",
         "content_scripts/scroller.js",
         "content_scripts/mode_insert.js",
         "content_scripts/mode_find.js",
@@ -105,6 +106,7 @@
     {
       "resources": [
         "pages/vomnibar_page.html",
+        "pages/tab_switcher_page.html",
         "content_scripts/vimium.css",
         "pages/hud_page.html",
         "pages/help_dialog_page.html",

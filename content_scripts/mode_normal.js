@@ -255,6 +255,12 @@ const NormalModeCommands = {
   "Vomnibar.activateBookmarks": Vomnibar.activateBookmarks.bind(Vomnibar),
   "Vomnibar.activateBookmarksInNewTab": Vomnibar.activateBookmarksInNewTab.bind(Vomnibar),
   "Vomnibar.activateEditUrl": Vomnibar.activateEditUrl.bind(Vomnibar),
+
+  "TabSwitcher.activate": (sourceFrameId) => {
+    if (typeof TabSwitcher !== "undefined" && TabSwitcher) {
+      TabSwitcher.activate(sourceFrameId);
+    }
+  },
 };
 
 // The types in <input type="..."> that we consider for focusInput command. Right now this is

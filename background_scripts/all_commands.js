@@ -245,6 +245,14 @@ const allCommands = [
   },
 
   {
+    name: "TabSwitcher.activate",
+    desc: "Open visual tab switcher with thumbnail previews",
+    group: "tabs",
+    topFrame: true,
+    noRepeat: true,
+  },
+
+  {
     name: "Vomnibar.activateEditUrl",
     desc: "Edit the current URL",
     group: "vomnibar",

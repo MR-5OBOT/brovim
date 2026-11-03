@@ -90,15 +90,20 @@ div > .vimiumHintMarker > .matchingCharacter {}
 
 ---
 
-## 5. Next Steps / Active Roadmap
+## 5. Built Enhancements & New Features
 
-1. **Vomnibar Visual Overhaul:** Modern floating search palette, refined typography, and smooth
-   animations.
-2. **Whole-UI Dark/Custom Theming:** Global dark theme engine shared across the Vomnibar, HUD
-   notices, and dialogs.
-3. **Visual Tab Switcher (TabGlance-style):** Thumbnail grid preview modal displaying open tabs with
-   titles, favicons, `h/j/k/l` navigation, and inline `x` tab closing.
-4. **Pre-configured Search Engines:** Curated default keywords (`yt`, `gh`, `w`, etc.).
+1. **Vomnibar Visual Overhaul:** Modern dark floating search palette with glass shadows, purple
+   focus states, refined typography, smooth transitions, and in-place URL editing (`ge`).
+2. **Whole-UI Dark/Custom Theming:** Global dark theme engine (`#161224`) with vibrant purple
+   accents (`#68039B` / `#8819c9`) shared across the Vomnibar, HUD notices, Help Dialog, and key
+   badges.
+3. **Visual Tab Switcher (TabGlance-style):** Thumbnail grid preview modal (`TabSwitcher.activate`,
+   mapped to `T`), displaying all open tabs with live cached screenshots
+   (`chrome.tabs.captureVisibleTab`), favicons, instant search filter, `h/j/k/l` navigation, and
+   inline `x` tab closing.
+4. **Curated Search Engine Defaults:** Pre-configured ready-to-use search keywords in
+   `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, `g` for
+   Google, and `ddg` for DuckDuckGo).
 
 ---
 

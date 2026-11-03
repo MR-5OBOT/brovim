@@ -8,53 +8,74 @@ ul {
 #vomnibar {
   display: block;
   position: fixed;
-  width: calc(100% - 20px); /* adjusted to keep border radius and box-shadow visible*/
+  width: calc(100% - 20px);
   top: 8px;
   left: 8px;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  color: var(--vimium-background-text-color);
-  background: #f1f1f1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #e9e4f5;
+  background: #161224;
   text-align: left;
-  border-radius: 4px;
-  box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.8);
-  border: 1px solid #aaa;
-  /* One less than hint markers and the help dialog (see ../content_scripts/vimium.css). */
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px #382c54, 0 0 24px rgba(104, 3, 155, 0.25);
+  border: 1px solid #382c54;
+  overflow: hidden;
   z-index: 2139999999;
 }
 
+#vomnibar-search-area {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  background: #1c152e;
+  border-bottom: 1px solid #382c54;
+}
+
 #vomnibar input {
-  font-size: 20px;
-  height: 34px;
+  font-family: inherit;
+  font-size: 18px;
+  height: 38px;
   margin-bottom: 0;
-  padding: 4px;
-  background-color: white;
-  border-radius: 3px;
-  border: 1px solid #e8e8e8;
-  box-shadow: #444 0px 0px 1px;
+  padding: 6px 12px;
+  background-color: #120e1d;
+  color: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #483a69;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
   width: 100%;
   outline: none;
   box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-#vomnibar-search-area {
-  display: block;
-  padding: 10px;
-  border-radius: 4px 4px 0 0;
-  border-bottom: 1px solid #c6c9ce;
+#vomnibar input:focus {
+  border-color: #8819c9;
+  box-shadow: 0 0 0 3px rgba(104, 3, 155, 0.35);
+}
+
+#vomnibar input::placeholder {
+  color: #7b6f93;
+}
+
+#vomnibar input::selection {
+  color: #ffffff;
+  background-color: #68039B;
 }
 
 #vomnibar ul {
-  border-radius: 0 0 4px 4px;
+  max-height: 440px;
+  overflow-y: auto;
 }
 
 #vomnibar li {
-  border-bottom: 1px solid #ddd;
-  line-height: 1.1em;
-  padding: 7px 10px;
-  font-size: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  line-height: 1.3em;
+  padding: 10px 16px;
+  font-size: 15px;
   position: relative;
   display: list-item;
   margin: auto;
+  cursor: pointer;
+  transition: background 0.1s ease;
 }
 
 #vomnibar li:last-of-type {
@@ -65,128 +86,94 @@ ul {
 #vomnibar li .bottom-half {
   display: block;
   overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#vomnibar li .top-half {
+  font-size: 15px;
+  font-weight: 500;
+  color: #eae5f7;
 }
 
 #vomnibar li .bottom-half {
-  font-size: 15px;
-  margin-top: 3px;
-  padding: 2px 0;
+  font-size: 13px;
+  margin-top: 4px;
+  padding: 1px 0;
+  color: #8bb7f0;
 }
 
 #vomnibar li .icon {
-  padding: 0 13px 0 6px;
-  vertical-align: bottom;
+  padding: 0 10px 0 2px;
+  vertical-align: middle;
+}
+
+#vomnibar li .icon img {
+  vertical-align: middle;
+  border-radius: 2px;
 }
 
 #vomnibar li .source {
-  color: #777;
-  margin-right: 4px;
+  display: inline-block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(104, 3, 155, 0.25);
+  color: #d1a1ff;
+  margin-right: 8px;
 }
+
 #vomnibar li .relevancy {
   position: absolute;
-  right: 0;
-  top: 0;
-  padding: 5px;
+  right: 12px;
+  top: 10px;
   font-family: monospace;
-  width: 100px;
+  font-size: 11px;
+  color: #6b5e86;
   overflow: hidden;
 }
 
 #vomnibar li .url {
   white-space: nowrap;
-  color: #224684;
+  color: #8bb7f0;
 }
 
 #vomnibar li .match {
-  font-weight: bold;
+  color: #d596ff;
+  font-weight: 700;
 }
 
 #vomnibar li em,
 #vomnibar li .title {
-  margin-left: 4px;
+  margin-left: 2px;
 }
+
 #vomnibar li em {
   font-style: italic;
+  color: #b3a6cd;
 }
+
 #vomnibar li em .match,
 #vomnibar li .title .match {
-  color: #333;
+  color: #d596ff;
 }
 
 #vomnibar li.selected {
-  background-color: #bbcee9;
+  background-color: #3b1b59;
+  border-left: 4px solid #8819c9;
+  padding-left: 12px;
 }
 
-#vomnibar input::selection {
-  /* This is the light grey color of the vomnibar border. */
-  /* background-color: #F1F1F1; */
+#vomnibar li.selected .top-half {
+  color: #ffffff;
+}
 
-  /* This is the light blue color of the vomnibar selected item. */
-  /* background-color: #BBCEE9; */
-
-  /* This is a considerably lighter blue than Vimium blue, which seems softer
-   * on the eye for this purpose. */
-  background-color: #e6eefb;
+#vomnibar li.selected .url {
+  color: #badeff;
 }
 
 .no-insert-text {
   visibility: hidden;
-}
-
-/* Dark Vomnibar */
-
-@media (prefers-color-scheme: dark) {
-  #vomnibar {
-    background-color: var(--vimium-background-color);
-    color: var(--vimium-background-text-color);
-    border-radius: 6px;
-    border: 1px solid var(--vimium-foreground-color);
-  }
-
-  #vomnibar-search-area {
-    border-bottom: 1px solid var(--vimium-foreground-color);
-  }
-
-  #vomnibar input {
-    background-color: var(--vimium-foreground-color);
-    color: var(--vimium-foreground-text-color);
-    border: none;
-  }
-
-  /* Ensure selected text is visible in dark mode. */
-  #vomnibar input::selection {
-    color: var(--vimium-foreground-color);
-    background-color: var(--vimium-foreground-text-color);
-  }
-
-  #vomnibar li {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  #vomnibar li.selected {
-    background-color: #37383a;
-  }
-
-  #vomnibar li .url {
-    white-space: nowrap;
-    color: #5ca1f7;
-  }
-
-  #vomnibar li em,
-  #vomnibar li .title {
-    color: white;
-  }
-
-  #vomnibar li .source {
-    color: #9aa0a6;
-  }
-
-  #vomnibar li .match {
-    color: white;
-  }
-
-  #vomnibar li em .match,
-  #vomnibar li .title .match {
-    color: white;
-  }
 }

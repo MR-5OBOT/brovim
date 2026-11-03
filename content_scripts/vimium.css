@@ -16,11 +16,19 @@
  */
 
 :root {
-  --vimium-background-color: white;
-  --vimium-background-text-color: black;
-  --vimium-foreground-color: white;
-  --vimium-foreground-text-color: black;
-  --vimium-link-color: blue;
+  --vimium-background-color: #161224;
+  --vimium-background-text-color: #e9e4f5;
+  --vimium-foreground-color: #211a36;
+  --vimium-foreground-text-color: #ffffff;
+  --vimium-link-color: #b784f7;
+  --vimium-accent-color: #68039B;
+  --vimium-accent-hover: #8819c9;
+  --vimium-accent-glow: rgba(104, 3, 155, 0.45);
+  --vimium-border-color: #382c54;
+  --vimium-input-bg: #1c152e;
+  --vimium-selected-bg: #401863;
+  --vimium-match-color: #c97aff;
+  --vimium-url-color: #79b7ff;
 }
 
 .vimium-reset,
@@ -208,13 +216,35 @@ iframe.vomnibar-frame {
 
   display: block;
   position: fixed;
-  width: calc(80% + 20px); /* same adjustment as in pages/vomnibar_page.js */
-  min-width: 400px;
+  width: calc(75% + 20px);
+  max-width: 840px;
+  min-width: 460px;
   height: calc(100% - 70px);
   top: 70px;
   left: 50%;
-  /* TODO(philc): Why are we doing this negative margin, rather than just using right: 20% ? */
-  margin: 0 0 0 -40%;
+  margin: 0;
+  transform: translateX(-50%);
+  border: none;
+  font-family: sans-serif;
+  z-index: 2147483647;
+}
+
+iframe.tab-switcher-frame {
+  background-color: transparent;
+  padding: 0px;
+  overflow: hidden;
+
+  display: block;
+  position: fixed;
+  width: 90%;
+  max-width: 1080px;
+  min-width: 480px;
+  height: 85vh;
+  max-height: 800px;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
   border: none;
   font-family: sans-serif;
   z-index: 2147483647;

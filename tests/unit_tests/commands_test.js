@@ -12,6 +12,7 @@ import "../../content_scripts/mode.js";
 import "../../content_scripts/mode_key_handler.js";
 import "../../content_scripts/link_hints.js";
 import "../../content_scripts/vomnibar.js";
+import "../../content_scripts/tab_switcher.js";
 // Include mode_normal to check that all commands have been implemented.
 import "../../content_scripts/mode_normal.js";
 

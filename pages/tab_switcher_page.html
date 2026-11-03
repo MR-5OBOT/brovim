@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Tab Switcher</title>
+    <meta name="color-scheme" content="dark">
+    <meta charset="UTF-8">
+    <script type="module" src="tab_switcher_page.js"></script>
+    <link rel="stylesheet" type="text/css" href="../content_scripts/vimium.css" />
+    <link rel="stylesheet" type="text/css" href="tab_switcher_page.css" />
+  </head>
+  <body>
+    <div id="tab-switcher">
+      <div id="tab-switcher-header">
+        <div class="search-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="tab-filter-input" placeholder="Search open tabs (h/j/k/l to navigate, x to close, Enter to select)..." autocomplete="off" spellcheck="false" />
+        </div>
+        <div id="tab-count-badge">0 tabs</div>
+      </div>
+      <div id="tab-grid" tabindex="0"></div>
+    </div>
+  </body>
+</html>
