@@ -2,8 +2,8 @@
 
 **Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
 **Base:** Based on `philc/vimium` (full history kept; no longer a GitHub fork)\
-**Date:** November 3, 2026\
-**Status:** Verified locally, including the packaged Chrome extension. Changes remain uncommitted.
+**Date:** November 4, 2026\
+**Status:** Final audit fixes verified locally; latest fixes remain uncommitted. See section 10.
 
 ---
 
@@ -93,10 +93,11 @@ explicit custom CSS is preserved, including any colors it overrides.
    key badges.
 3. **Visual Tab Switcher (Tab Switcher Previews-style):** A compact dark strip of tab previews
    (`TabSwitcher.activate`, opened via `Alt+Q`) centered over the page, with no header or search
-   box. Shows all awake tabs in the current window (discarded/sleeping tabs are excluded). Tabs are
-   ordered most recently used first, and the previous tab starts selected. Releasing Alt
-   auto-switches immediately. Cached screenshots (`chrome.tabs.captureVisibleTab`, stored as small
-   thumbnails in `chrome.storage.session`), favicons, `h/j/k/l` navigation, and `x` to close.
+   box. Shows every open tab in the current window, TabGlance-style, including unvisited, discarded
+   and frozen tabs, with no numeric cap. Tabs are ordered most recently used first, and the previous
+   tab starts selected. Releasing Alt auto-switches immediately. Cached screenshots
+   (`chrome.tabs.captureVisibleTab`, stored as small thumbnails in `chrome.storage.session`),
+   favicons, `h/j/k/l` navigation, and `x` to close.
 4. **Curated Search Engine Defaults:** Pre-configured ready-to-use search keywords in
    `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, `g` for
    Google, and `ddg` for DuckDuckGo).
@@ -143,8 +144,8 @@ An audit of this report and `TODOS.md` against the code found these problems, al
    (`simulateHover`/`simulateUnhover`), pagination (options CSS), and commented-out visual mode
    tests.
 5. **Tab switcher keys didn't match the spec.** `T` opened in Alt+Tab mode (a `?? true` default), so
-   `h/j/k/l` did nothing and pressing then releasing Alt switched tabs. `T` now opens a normal grid
-   (h/j/k/l, x, Enter, Esc), and only `Alt+Q` uses hold-and-release.
+   `h/j/k/l` did nothing and pressing then releasing Alt switched tabs. The grid supports h/j/k/l,
+   x, Enter and Esc; the final default binding is `Alt+Q`, with `T` later unmapped (item 19).
 6. **Tab switcher Up/Down moved the wrong number of columns.** The column count was off by one; it
    is now read from the grid's computed columns.
 7. **A quick Alt+Q tap did nothing.** Releasing Alt before the tab list loaded closed the switcher.
@@ -174,7 +175,8 @@ An audit of this report and `TODOS.md` against the code found these problems, al
     events to a local closure array while `this.keydownEvents` remained an empty instance field, and
     replay had an improper condition check. Events arriving while hints are being collected across
     frames are now properly buffered and replayed, so rapid keypresses (such as typing `f` again to
-    follow an `F` hint marker) are never lost.
+    follow an `F` hint marker) are retained. `Esc` cancels hints rather than treating `f` as a
+    toggle.
 17. **Key handler crash on uninitialized session state.** If session storage was queried before
     `Commands.init()` completed, `NormalMode` could pass `undefined` to `setKeyMapping`, resulting
     in `keyState: [undefined]` and crashing with
@@ -189,10 +191,10 @@ An audit of this report and `TODOS.md` against the code found these problems, al
     were tightened to 4px for a sharper aesthetic.
 19. **Dropped `T` key to open tab switcher.** `T` has been unmapped from `defaultKeyMappings` in
     `commands.js`.
-20. **Tab switcher initial launch & auto-switch.** `getOpenTabsWithScreenshots` now includes all
-    awake tabs in the window (ordered by recency, followed by unvisited tabs in tab index order) so
-    that the next tab is always available on first launch. Releasing `Alt` auto-switches to the
-    selected tab.
+20. **Tab switcher membership & auto-switch.** Following the user's final confirmation, the list
+    includes every open tab in the window, ordered by recency (TabGlance-style); unvisited tabs
+    follow by lastAccessed. No numeric cap. Releasing `Alt` switches to the selected tab; Enter also
+    confirms a selection.
 21. **Vomnibar `omni` excludes active tabs; limited to history and web search.**
     `completionSources.tabs` was removed from the `omni` completer. Typing in `o`/`O` now focuses
     strictly on URLs, browsing history, domain completions, and web search queries (typing words
@@ -240,9 +242,9 @@ Previously maintained in `TODOS.md`; this report is now the canonical project re
       thumbnails, and cache them in `chrome.storage.session` (survives the service worker being
       suspended).
 - [x] **Preview Strip UI:** A compact dark panel centered over the page (no header or search box),
-      showing the active tab and awake tabs visited this session in the current window, most
-      recently used first. Unvisited, discarded and frozen tabs are excluded, with no fixed limit.
-      Rows wrap to fit the screen (including when resized); a click outside closes it.
+      showing every open tab in the current window, most recently used first, including unvisited,
+      discarded and frozen tabs, with no fixed limit. Rows wrap to fit the screen (including when
+      resized); a click outside closes it.
 - [x] **Card Components:** Display thumbnail screenshot, website favicon, and clean truncated page
       title.
 - [x] **Fallback Cards:** Clean placeholder with domain and favicon when a visited tab has no cached
@@ -328,8 +330,8 @@ runner).
 - Must pass `./make.js test-unit` with 0 failures.
 - Must pass `./make.js check` (linter and code formatting) cleanly.
 - Do not break core kept features: scrolling, core link hints (`f`, `F`, `<a-f>`), literal find
-  (`/`, `n`, `N`), Vomnibar (`o`, `O`, `b`, `B`, `ge`) and visual tab switcher (`T`), tab switching
-  (`J`, `K`), reload, copy URL (`yy`).
+  (`/`, `n`, `N`), Vomnibar (`o`, `O`, `b`, `B`, `ge`) and visual tab switcher (`Alt+Q`), tab
+  switching (`J`, `K`), reload, copy URL (`yy`).
 
 ### Review Focus
 
@@ -432,19 +434,25 @@ runner).
 - Run: `./make.js check`
 - Ensure all tests pass cleanly with zero lint errors.
 
-## 10. Final Browser Audit (November 3, 2026)
+## 10. Final Browser Audit (November 4, 2026)
 
 The retained Vimium code and history (pre-streamlining commit `5aa29614`) were used as the reference
 for core keyboard behavior. The 19 intentional feature removals remain in place.
 
 ### Fixes and requested changes
 
+- **Default exclusions:** Gmail and WhatsApp Web disable Brovim by default. WhatsApp Web uses the
+  pattern `https?://web.whatsapp.com/*` with no pass keys.
 - **Saved hint colors:** open pages now use the latest box, text and typed-letter colors on the next
-  `f`; Reset and CSS overrides are verified in the browser.
+  `f`; Reset and CSS overrides are verified in the browser. Each hint container appends the current
+  theme and custom stylesheet after the base styles. A regression check deliberately inserts the
+  base stylesheet last, reproducing the navigation race that previously overrode saved colors.
 - **Smooth scrolling:** absolute jumps (`gg`, `G`, `zH`, `zL`) cancel conflicting animations on the
   same element and axis. Previously, a rapid `G` then `gg` could finish partway down the page.
-- **Filtered-hint startup:** corrected both the setting check and the buffered-event array so typing
-  during hint collection is replayed instead of dropped. Three DOM regression cases cover this.
+- **Hint startup and cancellation:** alphabet and filtered hints replay typing buffered during
+  collection, including a fast second `f` selecting an `F` label. `Esc` cancels pending collection
+  across frames, preventing late replies from reopening hints. Unit and installed-browser checks
+  delay collection to exercise both selections and cancellation.
 - **Backup restore:** settings omitted from a backup now revert to defaults rather than retaining
   current customizations. Legacy backups migrate before defaults are applied. The import handler
   receives its event explicitly, and downloads use `brovim-options.json`.
@@ -453,23 +461,45 @@ for core keyboard behavior. The 19 intentional feature removals remain in place.
   denial is respected; users must allow clipboard access in their site permissions to use `p`/`P`.
 - **Invalidated extension contexts:** URL/focus checks handle invalidation both before and during
   their background request. Existing tabs shut down old handlers after the extension is replaced.
-- **Recent-tab switcher:** per the final user instruction, show the active tab plus every awake tab
-  visited in this browser session, in the current window. There is no numeric cap. Discarded, frozen
-  and unvisited background tabs are excluded; the active tab always comes first. Resizing the window
-  recalculates the preview grid.
+- **Recent-tab switcher:** matches TabGlance: every open tab in the current window (including
+  discarded, frozen and unvisited ones), the active tab first, then most recently used, with links
+  opened in the background right after the current tab. Two-tab windows swap directly. There is no
+  numeric cap. Resizing the window recalculates the preview grid.
+- **Fast browser-wide switching:** quick Alt+Q taps activate the previous eligible tab without
+  creating a preview frame. Holding Alt on ordinary websites opens the in-page grid; thumbnails load
+  separately so navigation does not wait for them. Protected pages switch directly. The separate
+  switcher window has been removed. Local quick-swap samples were 11–13 ms; this measures the
+  extension request through tab activation, not the monitor's displayed frame.
+- **Unresponsive pages:** a missing ready reply is bounded to 350 ms before direct switching.
+  Missing content scripts get a bounded recovery attempt. Cancelled requests cannot open a late
+  grid. Browser checks cover a paused page, excluded sites and focused inputs.
+- **Extension updates:** existing website tabs receive fresh content scripts automatically. A local
+  mirror preserves visited-tab history across extension reloads; browser startup clears the mirror
+  so filtering remains scoped to the current session.
+- **Actual Helium shortcut:** Alt+Q is assigned to Brovim in the running browser profile. The
+  previous TabGlance assignment was removed through the browser shortcut settings. Applied this
+  update to the live browser while preserving nine visit records. Native Alt+Q switched without
+  creating a window, and the destination website had the new content scripts without a refresh.
+- **Settings redesign:** grouped sections, sidebar navigation, responsive cards, clearer new-tab
+  choices, actual shortcut assignment, a shortcut-management button, live hint-color previews, and
+  explicit unsaved/saved feedback. Desktop and narrow mobile layouts are verified.
+- **Help cleanup:** removed the visible attribution/version footer banner and Wiki link.
 - **Packaging:** replaced the missing `rsync` dependency with Deno file copying, preserving build
   exclusions and excluding documentation directories. All three ZIPs build successfully.
 
 ### Verification
 
-| Check                                                                        | Result                                            |
-| ---------------------------------------------------------------------------- | ------------------------------------------------- |
-| Formatting and lint (`./make.js check`)                                      | Pass                                              |
-| Unit tests (`./make.js test-unit`)                                           | 175/175 pass                                      |
-| DOM tests (`./make.js test-dom`)                                             | 86/86 pass                                        |
-| Installed-extension browser checks                                           | 32/32 pass against the extracted Chrome Store ZIP |
-| Chrome Store, Chrome Canary, Firefox builds                                  | Pass                                              |
-| Archive CRC, manifest paths, HTML assets, source freshness, build exclusions | Pass for all three ZIPs                           |
+| Check                                                                        | Result                                                    |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Formatting and lint (`./make.js check`)                                      | Pass                                                      |
+| Unit tests (`./make.js test-unit`)                                           | 178/178 pass                                              |
+| DOM tests (`./make.js test-dom`)                                             | 87/87 pass                                                |
+| Installed-extension browser checks                                           | 43/43 pass from source and the extracted Chrome Store ZIP |
+| Chrome Store, Chrome Canary, Firefox builds                                  | Pass                                                      |
+| Archive CRC, manifest paths, HTML assets, source freshness, build exclusions | Pass for all three ZIPs                                   |
+
+The first packaged run hit a timeout opening the Vomnibar after navigation; the complete rerun
+passed all 43 checks without code changes. This timing-sensitive test remains worth monitoring.
 
 The browser suite is `./make.js test-browser`. Set `PUPPETEER_EXECUTABLE_PATH` to an installed
 Chromium browser. Set `BROVIM_EXTENSION_PATH` to an extracted package directory to test the ZIP's
@@ -481,19 +511,22 @@ find and n/N; alphabet, queue and filtered hints; Shift/Ctrl; embedded-frame lin
 paste and denial; URL/bookmark/search navigation; tab creation, closing, restoration, reordering,
 pin/mute/zoom; view source; help; popup exclusions; settings backup/restore; custom mapping
 validation; recent-tab filtering and selection; thumbnails; quick Alt release; light/dark appearance
-and resize.
+and resize. Actual X11 keyboard input in an isolated Helium profile also exercised Alt+Q and Alt
+release on a web page, `chrome://extensions/`, `chrome://newtab/` and `about:blank`, using the built
+Chrome Store package. An additional strict `style-src 'none'` fixture confirmed that hint styling
+still works with the navigation load-order fix. Three public YouTube tabs were also tested with
+actual keyboard input: Alt+Q switched between tabs, `f` displayed link hints, and no page errors
+occurred.
 
 ### Practical limits and using the changes
 
-Firefox's package and manifest are validated, but Firefox runtime behavior was not tested. The Alt+Q
-handler and Alt-release behavior are tested; delivery of the OS/browser shortcut still needs a
-manual check. Extension-internal pages such as `chrome://extensions` remain browser-restricted.
-Incognito mode and every possible website were not exercised. These checks are evidence of the
-covered flows, not a guarantee of zero bugs on every site/browser.
+Firefox's package and manifest are validated, but Firefox runtime behavior was not tested. Browser
+pages such as `chrome://extensions` forbid page scripts, so Alt+Q switches directly without a grid.
+Incognito mode and every possible website were not exercised. These checks cover the tested flows;
+they are not a guarantee of zero bugs on every site/browser.
 
-Reload Brovim from the browser's Extensions page and refresh already-open web pages to load the new
-scripts. Existing entries in the browser's extension error list are historical; clear them after
-reloading to distinguish new errors.
+Extension reloads now restore controls on existing website tabs automatically. Historical entries in
+the browser's extension error list are not evidence of a fresh error.
 
 ### Consolidated reports
 

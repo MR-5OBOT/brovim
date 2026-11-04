@@ -7,7 +7,7 @@ import "../../background_scripts/main.js";
 import * as bgUtils from "../../background_scripts/bg_utils.js";
 
 context("TabSwitcher", () => {
-  should("initialize and open tab switcher UI", () => {
+  should("initialize and open tab switcher UI", async () => {
     let shown = false;
     TabSwitcher.tabSwitcherUI = {
       show: () => {
@@ -15,7 +15,7 @@ context("TabSwitcher", () => {
         return Promise.resolve();
       },
     };
-    TabSwitcher.open(0);
+    await TabSwitcher.open(0);
     assert.isTrue(shown);
   });
 
@@ -31,35 +31,72 @@ context("TabSwitcher", () => {
     assert.equal(null, tabs[0].screenshot);
   });
 
-  should("list visited tabs most recently used first and include unvisited tabs", async () => {
-    stub(chrome.tabs, "query", () =>
-      Promise.resolve([
-        { id: 11, index: 0, title: "a" },
-        { id: 12, index: 1, title: "b" },
-        { id: 13, index: 2, title: "c" },
-        { id: 14, index: 3, title: "d" },
-      ]));
-    await bgUtils.tabRecency.init();
-    bgUtils.tabRecency.register(11);
-    bgUtils.tabRecency.register(13);
-    bgUtils.tabRecency.register(12);
-    const tabs = await sendRequestHandlers["getOpenTabsWithScreenshots"]({ tab: { windowId: 1 } });
-    assert.equal([12, 13, 11, 14], tabs.map((t) => t.id));
+  should("preserve rapid cycling while the preview frame is still starting", async () => {
+    const messages = [];
+    let finishLoading;
+    TabSwitcher.uiLoad = new Promise((resolve) => finishLoading = resolve);
+    TabSwitcher.tabSwitcherUI = {
+      showing: false,
+      show(message) {
+        messages.push(message.name);
+        this.showing = true;
+        return Promise.resolve();
+      },
+      postMessage(message) {
+        messages.push(message.name);
+        return Promise.resolve();
+      },
+    };
+    try {
+      const opens = [TabSwitcher.activate(0), TabSwitcher.activate(0), TabSwitcher.activate(0)];
+      assert.equal([], messages);
+      finishLoading();
+      await Promise.all(opens);
+      assert.equal(["activate", "cycleNext", "cycleNext"], messages);
+      assert.isFalse(TabSwitcher.isOpening);
+    } finally {
+      TabSwitcher.tabSwitcherUI = null;
+      TabSwitcher.uiLoad = TabSwitcher.opening = null;
+    }
   });
 
   should(
-    "keep the active tab first and exclude sleeping tabs without limiting the list",
+    "list visited tabs most recently used first, then unvisited tabs by lastAccessed",
+    async () => {
+      stub(chrome.tabs, "query", () =>
+        Promise.resolve([
+          { id: 11, index: 0, title: "a" },
+          { id: 12, index: 1, title: "b" },
+          { id: 13, index: 2, title: "c" },
+          { id: 14, index: 3, title: "d", lastAccessed: 100 },
+          { id: 15, index: 4, title: "e", lastAccessed: 200 },
+          { id: 16, index: 5, title: "hidden by a Firefox tab-group extension", hidden: true },
+        ]));
+      await bgUtils.tabRecency.init();
+      bgUtils.tabRecency.register(11);
+      bgUtils.tabRecency.register(13);
+      bgUtils.tabRecency.register(12);
+      const tabs = await sendRequestHandlers["getOpenTabsWithScreenshots"]({
+        tab: { windowId: 1 },
+      });
+      assert.equal([12, 13, 11, 15, 14], tabs.map((t) => t.id));
+    },
+  );
+
+  should(
+    "keep the active tab first and include sleeping tabs without limiting the list",
     async () => {
       const windowTabs = Array.from({ length: 15 }, (_, i) => ({ id: 100 + i, index: i }));
       windowTabs[0].active = true;
       windowTabs[1].discarded = true;
       windowTabs[2].frozen = true;
+      const expected = [100, ...windowTabs.slice(1).reverse().map((t) => t.id)];
       stub(chrome.tabs, "query", () => Promise.resolve(windowTabs));
       await bgUtils.tabRecency.init();
       // Deliberately omit the active tab from recency; it must still appear first.
       for (const tab of windowTabs.slice(1)) bgUtils.tabRecency.register(tab.id);
       const tabs = await sendRequestHandlers.getOpenTabsWithScreenshots({ tab: { windowId: 1 } });
-      assert.equal([100, ...windowTabs.slice(3).reverse().map((t) => t.id)], tabs.map((t) => t.id));
+      assert.equal(expected, tabs.map((t) => t.id));
     },
   );
 });

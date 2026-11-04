@@ -5,6 +5,28 @@ import "../../background_scripts/main.js";
 import { RegistryEntry } from "../../background_scripts/commands.js";
 
 context("HintCoordinator", () => {
+  should("cancel hint collection across frames without displaying late hints", async () => {
+    let resolveDescriptors, collectionStarted;
+    const descriptors = new Promise((resolve) => resolveDescriptors = resolve);
+    const started = new Promise((resolve) => collectionStarted = resolve);
+    const activated = [];
+    stub(chrome.webNavigation, "getAllFrames", () => [{ frameId: 0 }, { frameId: 1 }]);
+    stub(chrome.tabs, "sendMessage", (_tabId, message) => {
+      if (message.messageType === "getHintDescriptors") {
+        collectionStarted();
+        return descriptors;
+      }
+      if (message.messageType === "activateMode") activated.push(message);
+      return Promise.resolve();
+    });
+    const collecting = HintCoordinator.prepareToActivateLinkHintsMode(0, 0, { modeIndex: 0 });
+    await started;
+    HintCoordinator.broadcastLinkHintsMessage({ messageType: "exit" }, { tab: { id: 0 } });
+    resolveDescriptors([]);
+    await collecting;
+    assert.equal([], activated);
+  });
+
   should("prepareToActivateLinkHintsMode", async () => {
     let receivedMessages = [];
     const frameIdToHintDescriptors = {

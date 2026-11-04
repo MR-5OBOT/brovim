@@ -167,6 +167,11 @@ const HintCoordinator = {
       indicator: "Collecting hints...",
       exitOnEscape: true,
     });
+    cacheAllKeydownEvents.onExit((event) => {
+      if (event && KeyboardUtils.isEscape(event)) {
+        this.sendMessage("exit", { isSuccess: false });
+      }
+    });
     // FIXME(smblott) Global link hints is currently insufficiently reliable. If the mode above is
     // left in place, then Vimium blocks. As a temporary measure, we install a timer to remove it.
     // TODO(philc): I believe link hints is sufficiently reliable after the manifest V3 port
@@ -397,6 +402,9 @@ class LinkHintsMode {
       }
       this.containerEl = div;
       document.documentElement.appendChild(div);
+      // Navigation can inject our base stylesheet after the background's custom stylesheet. Add
+      // the current theme and user CSS after it, so equal-specificity defaults cannot win the race.
+      DomUtils.injectUserCss(div);
     }
 
     // Append these markers as top level children instead of as child nodes to the link itself,

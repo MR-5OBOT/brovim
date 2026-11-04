@@ -124,8 +124,6 @@ const HelpDialogPage = {
   },
 
   async show() {
-    document.getElementById("vimium-version").textContent = Utils.getCurrentVersion();
-
     const commandToOptionsToKeys =
       (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys;
     const rowsByGroup = this.getRowsForDialog(commandToOptionsToKeys);

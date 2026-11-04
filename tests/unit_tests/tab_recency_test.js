@@ -4,7 +4,47 @@ import { TabRecency } from "../../background_scripts/tab_recency.js";
 context("TabRecency", () => {
   let tabRecency;
 
-  setup(() => tabRecency = new TabRecency());
+  setup(async () => {
+    await chrome.storage.session.remove("tabRecency");
+    await chrome.storage.local.remove("brovimSessionTabRecency");
+    tabRecency = new TabRecency();
+  });
+
+  should("keep session visits across an extension reload and prune closed tabs", async () => {
+    stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }, { id: 2 }, { id: 3 }]));
+    await tabRecency.init();
+    tabRecency.register(1);
+    tabRecency.register(2);
+    tabRecency.register(99);
+    await tabRecency.saveToStorage();
+    await chrome.storage.session.remove("tabRecency");
+    const reloaded = new TabRecency();
+    await reloaded.init();
+    assert.equal([2, 1], reloaded.getTabsByRecency());
+  });
+
+  should("clear visits when the browser starts a new session", async () => {
+    stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }]));
+    await tabRecency.init();
+    tabRecency.register(1);
+    await tabRecency.resetForBrowserStartup();
+    assert.equal([], tabRecency.getTabsByRecency());
+    assert.equal(
+      {},
+      (await chrome.storage.local.get("brovimSessionTabRecency")).brovimSessionTabRecency,
+    );
+  });
+
+  should("rank tabs opened in the background right after the current tab", async () => {
+    stub(chrome.tabs, "query", () => Promise.resolve([]));
+    await tabRecency.init();
+    tabRecency.register(1);
+    tabRecency.register(2);
+    tabRecency.registerBackground(3);
+    tabRecency.registerBackground(4);
+    assert.equal([2, 4, 3, 1], tabRecency.getTabsByRecency());
+    assert.equal(0, tabRecency.recencyScore(2));
+  });
 
   context("order", () => {
     setup(async () => {

@@ -36,8 +36,11 @@ export async function init() {
 
   const onUpdated = () => {
     maintainNewTabUrlView();
+    maintainLinkHintsView();
+    updateHintPreview();
     saveButton.disabled = false;
     saveButton.textContent = "Save changes";
+    document.querySelector("#save-status").textContent = "Unsaved changes";
   };
 
   for (const el of document.querySelectorAll("input, textarea")) {
@@ -61,6 +64,10 @@ export async function init() {
     () => onDownloadBackupClicked(),
     true,
   );
+  // Keyboard activation dispatches a click without a mousedown.
+  document.querySelector("#download-backup").addEventListener("click", (event) => {
+    if (event.detail === 0) onDownloadBackupClicked();
+  });
   document.querySelector("#upload-backup").addEventListener(
     "change",
     (event) => onUploadBackupClicked(event),
@@ -96,6 +103,71 @@ export async function init() {
 
   const settings = Settings.getSettings();
   setFormFromSettings(settings);
+  initSettingsNavigation();
+  await initBrowserShortcut();
+}
+
+function initSettingsNavigation() {
+  const view = document.defaultView;
+  const links = [...document.querySelectorAll(".settings-nav a")];
+  const sections = [...document.querySelectorAll(".settings-section")];
+  const setActive = (id) => {
+    for (const link of links) {
+      if (link.hash === `#${id}`) link.setAttribute("aria-current", "location");
+      else link.removeAttribute("aria-current");
+    }
+  };
+  setActive(view.location.hash.slice(1) || "general");
+  for (const link of links) link.addEventListener("click", () => setActive(link.hash.slice(1)));
+  let scheduled = false;
+  view.addEventListener("scroll", () => {
+    if (scheduled) return;
+    scheduled = true;
+    view.requestAnimationFrame(() => {
+      scheduled = false;
+      const offset = view.innerWidth <= 760 ? 150 : 80;
+      const active = sections.filter((section) => section.getBoundingClientRect().top <= offset).at(
+        -1,
+      );
+      setActive((active || sections[0]).id);
+    });
+  }, { passive: true });
+}
+
+async function initBrowserShortcut() {
+  document.querySelector("#manage-shortcuts").addEventListener("click", async () => {
+    await Utils.populateBrowserInfo();
+    await chrome.tabs.create({
+      url: Utils.isFirefox() ? "about:addons" : "chrome://extensions/shortcuts",
+    });
+  });
+  if (!chrome.commands?.getAll) return;
+  try {
+    const commands = await chrome.commands.getAll();
+    const shortcut = commands.find((command) => command.name === "open_tab_switcher")?.shortcut;
+    document.querySelector("#tab-switcher-shortcut").textContent = shortcut || "Not assigned";
+    if (!shortcut) {
+      document.querySelector("#tab-switcher-description").textContent =
+        "Assign a browser shortcut to open the switcher from any tab.";
+    }
+  } catch {
+    // The preferences form remains usable if the browser can't report its shortcuts.
+  }
+}
+
+function updateHintPreview() {
+  const preview = document.querySelector("#hint-preview");
+  for (
+    const [setting, property] of [
+      ["linkHintColor", "--preview-hint-bg"],
+      ["linkHintTextColor", "--preview-hint-text"],
+      ["linkHintMatchColor", "--preview-hint-typed"],
+    ]
+  ) {
+    const value = getOptionEl(setting).value;
+    preview.style.setProperty(property, value);
+    document.querySelector(`[data-color-value="${setting}"]`).textContent = value.toUpperCase();
+  }
 }
 
 export function getOptionEl(optionName) {
@@ -104,9 +176,9 @@ export function getOptionEl(optionName) {
 
 // Invoked when the user clicks the "reset" button next to an option's text field.
 function resetInputValue(event) {
-  const parentDiv = event.target.parentNode.parentNode;
-  console.assert(parentDiv?.tagName == "DIV", "Expected parent to be a div", event.target);
-  const input = parentDiv.querySelector("input") || parentDiv.querySelector("textarea");
+  const option = event.target.dataset.reset;
+  const container = event.target.closest(".settings-card, .setting-row, .color-control");
+  const input = option ? getOptionEl(option) : container.querySelector("input, textarea");
   const optionName = input.name;
   const defaultValue = Settings.defaultOptions[optionName];
   input.value = defaultValue;
@@ -142,6 +214,7 @@ function setFormFromSettings(settings) {
   document.querySelector("#upload-backup").value = "";
   maintainLinkHintsView();
   maintainNewTabUrlView();
+  updateHintPreview();
 }
 
 function getSettingsFromForm() {
@@ -267,8 +340,8 @@ function removeDuplicateChars(str) {
 export async function saveOptions() {
   const hasErrors = showValidationErrors();
   if (hasErrors) {
-    // TODO(philc): If no fields with validation errors are in view, scroll one of them into view
-    // so it's clear what the issue is.
+    document.querySelector("#save-status").textContent = "Review the highlighted settings";
+    document.querySelector(".validation-error")?.scrollIntoView?.({ block: "center" });
     return;
   }
 
@@ -276,6 +349,7 @@ export async function saveOptions() {
   const el = document.querySelector("#save");
   el.disabled = true;
   el.textContent = "Saved";
+  document.querySelector("#save-status").textContent = "All changes saved";
 }
 
 function showElement(el, visible) {
@@ -361,6 +435,7 @@ function onUploadBackupClicked(event) {
       const saveButton = document.querySelector("#save");
       saveButton.disabled = true;
       saveButton.textContent = "Saved";
+      document.querySelector("#save-status").textContent = "Backup restored";
       alert("Settings have been restored from the backup.");
     };
   }

@@ -11,6 +11,8 @@ import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
 import { openTabSwitcher } from "./tab_switcher.js";
+import { ensureContentScripts } from "./content_script_bootstrap.js";
+import { getRecentTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
 
 import {
   BookmarkCompleter,
@@ -461,8 +463,11 @@ async function getFrameIdsForTab(tabId) {
 }
 
 const HintCoordinator = {
+  pendingActivations: new Map(),
+
   // Forward the message in "request" to all frames the in sender's tab.
   broadcastLinkHintsMessage(request, sender) {
+    if (request.messageType === "exit") this.pendingActivations.delete(sender.tab.id);
     chrome.tabs.sendMessage(
       sender.tab.id,
       Object.assign(request, { handler: "linkHintsMessage" }),
@@ -473,9 +478,25 @@ const HintCoordinator = {
   async prepareToActivateLinkHintsMode(
     tabId,
     originatingFrameId,
+    request,
+  ) {
+    const activation = Symbol();
+    this.pendingActivations.set(tabId, activation);
+    try {
+      await this.collectAndActivateHints(tabId, originatingFrameId, request, activation);
+    } finally {
+      if (this.pendingActivations.get(tabId) === activation) this.pendingActivations.delete(tabId);
+    }
+  },
+
+  async collectAndActivateHints(
+    tabId,
+    originatingFrameId,
     { modeIndex, requestedByHelpDialog, isExtensionPage },
+    activation,
   ) {
     const frameIds = await getFrameIdsForTab(tabId);
+    if (this.pendingActivations.get(tabId) !== activation) return;
     // If link hints was triggered on a Vimium extension page (like the vimium help dialog or
     // options page), we cannot directly retrieve the frameIds for those pages using the
     // getFrameIdsForTab. However, as a workaround, if those pages were the pages activating hints,
@@ -509,6 +530,8 @@ const HintCoordinator = {
 
     const responses = (await Promise.all(promises))
       .filter((r) => r.descriptors != null);
+    // Escape (or a newer hint request) can arrive while another frame is still collecting links.
+    if (this.pendingActivations.get(tabId) !== activation) return;
 
     const frameIdToDescriptors = {};
     for (const { frameId, descriptors } of responses) {
@@ -582,19 +605,15 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
-  // Show the active tab and awake tabs in the window, most recently used first. Discarded and
-  // frozen background tabs are excluded.
-  async getOpenTabsWithScreenshots({ tab, windowId }) {
-    const windowTabs = await chrome.tabs.query({ windowId: windowId ?? tab.windowId });
-    await bgUtils.tabRecency.init();
-    const rank = new Map(bgUtils.tabRecency.getTabsByRecency().map((id, index) => [id, index]));
-    const tabs = windowTabs.filter((t) => !t.discarded && !t.frozen);
-    tabs.sort((a, b) =>
-      Number(!!b.active) - Number(!!a.active) ||
-      (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
-      a.index - b.index
-    );
-    const screenshots = await chrome.storage.session.get(tabs.map((t) => screenshotKey(t.id)));
+  async quickSwitchTab({ tab }) {
+    return { switched: (await switchToPreviousRecentTab(tab)) != null };
+  },
+  // Every open tab in the window, the active tab first, then most recently used first.
+  async getOpenTabsWithScreenshots({ tab, windowId, includeScreenshots = true }) {
+    const tabs = await getRecentTabs(windowId ?? tab.windowId);
+    const screenshots = includeScreenshots
+      ? await chrome.storage.session.get(tabs.map((t) => screenshotKey(t.id)))
+      : {};
     return tabs.map((t) => ({
       id: t.id,
       index: t.index,
@@ -605,6 +624,10 @@ const sendRequestHandlers = {
       pinned: t.pinned,
       screenshot: screenshots[screenshotKey(t.id)] || null,
     }));
+  },
+  async getTabScreenshots({ ids }) {
+    const stored = await chrome.storage.session.get(ids.map(screenshotKey));
+    return Object.fromEntries(ids.map((id) => [id, stored[screenshotKey(id)] || null]));
   },
   async closeSpecificTab({ id }) {
     await chrome.tabs.remove(id);
@@ -817,42 +840,8 @@ async function showUpgradeMessageIfNecessary(onInstalledDetails) {
 }
 
 async function injectContentScriptsAndCSSIntoExistingTabs() {
-  const manifest = chrome.runtime.getManifest();
-  const contentScriptConfig = manifest.content_scripts[0];
-  const contentScripts = contentScriptConfig.js;
-  const cssFiles = contentScriptConfig.css;
-
-  // The scripting.executeScript and scripting.insertCSS APIs can fail if we don't have permissions
-  // to run scripts in a given tab. Examples are: chrome:// URLs, file:// pages (if the user hasn't
-  // granted Vimium access to file URLs), and probably incognito tabs (unconfirmed). Calling these
-  // APIs on such tabs results in an error getting logged on the background page. To avoid this
-  // noise, we swallow the failures. We could instead try to determine if the tab is scriptable by
-  // checking its URL scheme before calling these APIs, but that approach has some nuance to it.
-  // This is simpler.
-  const swallowError = (_) => {};
-
   const tabs = await chrome.tabs.query({ status: "complete" });
-  for (const tab of tabs) {
-    const target = { tabId: tab.id, allFrames: true };
-
-    // Inject all of our content javascripts.
-    chrome.scripting.executeScript({
-      files: contentScripts,
-      target: target,
-    }).catch(swallowError);
-
-    // Inject our extension's CSS.
-    chrome.scripting.insertCSS({
-      files: cssFiles,
-      target: target,
-    }).catch(swallowError);
-
-    // Inject the user's link hint CSS.
-    chrome.scripting.insertCSS({
-      css: Settings.userCss(),
-      target: target,
-    }).catch(swallowError);
-  }
+  await Promise.allSettled(tabs.map((tab) => ensureContentScripts(tab.id)));
 }
 
 let extensionInitializedPromise = null;
@@ -881,8 +870,8 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     // I believe this is because Firefox does this already. See https://stackoverflow.com/a/37132144
     // for commentary.
     !bgUtils.isFirefox() &&
-    (["chrome_update", "shared_module_update"].includes(details.reason));
-  if (shouldInjectContentScripts) injectContentScriptsAndCSSIntoExistingTabs();
+    (["install", "update", "chrome_update", "shared_module_update"].includes(details.reason));
+  if (shouldInjectContentScripts) await injectContentScriptsAndCSSIntoExistingTabs();
 
   await showUpgradeMessageIfNecessary(details);
 });
@@ -896,6 +885,7 @@ chrome.runtime.onStartup.addListener(async () => {
 Object.assign(globalThis, {
   TabOperations,
   // Exported for tests:
+  openTabSwitcher,
   HintCoordinator,
   BackgroundCommands,
   sendRequestHandlers,

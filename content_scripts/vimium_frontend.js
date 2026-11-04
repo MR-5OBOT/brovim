@@ -358,6 +358,38 @@ const messageHandlers = {
   },
   setScrollPosition,
   checkEnabledAfterURLChange,
+  async openTabSwitcher({ requestId }) {
+    if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
+      return { opened: false };
+    }
+    try {
+      const result = await Utils.promiseWithTimeout(
+        TabSwitcher.activateFromBrowserShortcut(requestId),
+        800,
+      );
+      if (!result.opened || TabSwitcher.currentRequestId !== requestId) return { opened: false };
+      if (result.quickSwitch) return { opened: true };
+      const ui = TabSwitcher.tabSwitcherUI;
+      const rect = ui.iframeElement.getBoundingClientRect();
+      const host = ui.shadowDOM.host;
+      const outsideFullscreen = document.fullscreenElement &&
+        !document.fullscreenElement.contains(host);
+      if (
+        !ui.iframeElement.isConnected || outsideFullscreen ||
+        (ui.showing && (rect.width === 0 || rect.height === 0))
+      ) {
+        TabSwitcher.abort(requestId);
+        return { opened: false };
+      }
+      return { opened: true };
+    } catch {
+      TabSwitcher.abort(requestId);
+      return { opened: false };
+    }
+  },
+  cancelTabSwitcher({ requestId }) {
+    TabSwitcher.cancel(requestId);
+  },
   runInTopFrame({ sourceFrameId, registryEntry }) {
     // TODO(philc): it seems to me that we should be able to get rid of this runInTopFrame
     // command, and instead use chrome.tabs.sendMessage with a frameId 0 from the background page.
@@ -391,7 +423,8 @@ async function handleMessage(request, sender) {
   // Some request are handled elsewhere in the code base; ignore them here.
   const shouldHandleMessage = request.handler !== "userIsInteractingWithThePage" &&
     (isEnabledForUrl ||
-      ["checkEnabledAfterURLChange", "runInTopFrame"].includes(request.handler));
+      ["checkEnabledAfterURLChange", "runInTopFrame", "openTabSwitcher", "cancelTabSwitcher"]
+        .includes(request.handler));
   if (shouldHandleMessage) {
     const result = await messageHandlers[request.handler](request, sender);
     return result;
@@ -493,6 +526,7 @@ if (!testEnv) {
 }
 
 Object.assign(globalThis, {
+  brovimContentScriptsLoaded: true,
   HelpDialog,
   handlerStack,
   windowIsFocused,

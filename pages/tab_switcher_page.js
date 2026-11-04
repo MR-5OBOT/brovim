@@ -1,14 +1,11 @@
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-// Shows awake tabs visited this session as previews, most recently used first, starting on the previous
+// Shows every open tab in the window as previews, most recently used first, starting on the previous
 // tab. Keys: h/j/k/l or arrows move, Enter switches, x closes, Esc (or a click outside) dismisses.
 // Opened with the Alt+Q browser shortcut: hold Alt and tap Q to move; releasing Alt switches.
 
 const panel = document.getElementById("tab-switcher");
 const cardGap = 6; // The #tab-switcher grid gap in tab_switcher_page.css.
-const windowParam = new URL(location.href).searchParams.get("windowId");
-const standalone = globalThis.top === globalThis && windowParam !== null;
-const sourceWindowId = standalone ? Number(windowParam) : undefined;
 
 let tabs = [];
 let selectedIndex = 0;
@@ -17,13 +14,25 @@ let isAltCycling = false;
 // Resolves once the tab list for the current activation has loaded. A quick Alt+Q tap can release
 // Alt before that, so commits and cycling wait on it.
 let tabsLoaded = Promise.resolve();
+let activation = 0;
+let selectedCard = null;
+let visible = false;
+const reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
 
 async function fetchTabs() {
+  const currentActivation = ++activation;
   try {
-    tabs = await chrome.runtime.sendMessage({
+    const currentTabs = await chrome.runtime.sendMessage({
       handler: "getOpenTabsWithScreenshots",
-      windowId: sourceWindowId,
+      includeScreenshots: false,
     }) || [];
+    if (currentActivation !== activation) return;
+    // Keep decoded previews while refreshing the list and its recency order.
+    const previousTabs = new Map(tabs.map((tab) => [tab.id, tab]));
+    tabs = currentTabs.map((tab) => ({
+      ...tab,
+      screenshot: previousTabs.get(tab.id)?.screenshot,
+    }));
   } catch (err) {
     console.error("Failed to load tabs:", err);
     tabs = [];
@@ -31,16 +40,42 @@ async function fetchTabs() {
   selectedIndex = tabs.length > 1 ? 1 : 0; // The previously used tab.
   render();
   panel.style.visibility = "visible";
+  loadScreenshots(currentActivation).catch(() => {});
 }
 
-function render() {
+async function loadScreenshots(currentActivation) {
+  const screenshots = await chrome.runtime.sendMessage({
+    handler: "getTabScreenshots",
+    ids: tabs.map((tab) => tab.id),
+  });
+  if (currentActivation !== activation) return;
+  tabs.forEach((tab, index) => {
+    const screenshot = screenshots?.[tab.id];
+    if (!screenshot || tab.screenshot === screenshot) return;
+    tab.screenshot = screenshot;
+    const card = panel.children[index];
+    const img = createImage(screenshot);
+    // Decode before replacing the visible preview, avoiding a blank frame during image loading.
+    img.decode().then(() => {
+      if (currentActivation === activation && card?.parentElement === panel) {
+        card.querySelector(".card-thumb").replaceChildren(img);
+      }
+    }).catch(() => {});
+  });
+}
+
+function updateColumns() {
   // As many columns as fit on screen; more tabs wrap onto further rows.
   const cardWidth = parseFloat(getComputedStyle(panel).getPropertyValue("--card-width"));
   const maxColumns = Math.floor((globalThis.innerWidth - 80 + cardGap) / (cardWidth + cardGap));
   columns = Math.max(1, Math.min(tabs.length, maxColumns));
   panel.style.setProperty("--columns", columns);
+}
+
+function render() {
+  updateColumns();
   panel.replaceChildren(...tabs.map(createCard));
-  updateSelection();
+  updateSelection(false);
 }
 
 function createCard(tab) {
@@ -71,6 +106,7 @@ function createCard(tab) {
 
 function createImage(src, className) {
   const img = document.createElement("img");
+  img.loading = "lazy";
   img.src = src;
   if (className) img.className = className;
   img.onerror = () => img.remove();
@@ -85,11 +121,25 @@ function hostname(url) {
   }
 }
 
-function updateSelection() {
-  Array.from(panel.children).forEach((card, i) => {
-    card.classList.toggle("selected", i === selectedIndex);
+function updateSelection(animate = true) {
+  const nextCard = panel.children[selectedIndex];
+  if (selectedCard !== nextCard) {
+    selectedCard?.classList.remove("selected");
+    nextCard?.classList.add("selected");
+    selectedCard = nextCard;
+  }
+  nextCard?.scrollIntoView({
+    block: "nearest",
+    inline: "nearest",
+    behavior: animate && !reducedMotion.matches ? "smooth" : "instant",
   });
-  panel.children[selectedIndex]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function whenTabsLoaded(action) {
+  const currentActivation = activation;
+  tabsLoaded.then(() => {
+    if (visible && currentActivation === activation) action();
+  });
 }
 
 function move(step) {
@@ -107,7 +157,7 @@ function cycle(backwards = false) {
 }
 
 function commit() {
-  tabsLoaded.then(() => {
+  whenTabsLoaded(() => {
     if (tabs[selectedIndex]) {
       switchToTab(tabs[selectedIndex].id);
     } else {
@@ -117,10 +167,8 @@ function commit() {
 }
 
 async function switchToTab(tabId) {
-  // Closing a standalone window destroys this context, so finish switching before dismissing it.
-  if (!standalone) hide();
+  hide();
   await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tabId });
-  if (standalone) hide();
 }
 
 async function closeTab(tabId) {
@@ -137,9 +185,10 @@ async function closeTab(tabId) {
 }
 
 function hide() {
+  activation++;
+  visible = false;
   isAltCycling = false;
-  if (standalone) globalThis.close();
-  else UIComponentMessenger.postMessage({ name: "hide" });
+  UIComponentMessenger.postMessage({ name: "hide" });
 }
 
 const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
@@ -155,7 +204,7 @@ function handleKeydown(event) {
   if ((key.toLowerCase() === "q" || key === "Tab") && (event.altKey || isAltCycling)) {
     event.preventDefault();
     isAltCycling = true;
-    tabsLoaded.then(() => cycle(event.shiftKey));
+    whenTabsLoaded(() => cycle(event.shiftKey));
     return;
   }
   if (key === "Enter") {
@@ -165,14 +214,16 @@ function handleKeydown(event) {
   }
   if (key === "x") {
     event.preventDefault();
-    if (tabs[selectedIndex]) closeTab(tabs[selectedIndex].id);
+    whenTabsLoaded(() => {
+      if (tabs[selectedIndex]) closeTab(tabs[selectedIndex].id);
+    });
     return;
   }
   const direction = vimDirections[key] ?? key;
   const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[direction];
   if (step == null) return;
   event.preventDefault();
-  move(step);
+  whenTabsLoaded(() => move(step));
 }
 
 function handleKeyup(event) {
@@ -182,34 +233,20 @@ function handleKeyup(event) {
   }
 }
 
-if (standalone) {
-  document.body.classList.add("standalone");
-  isAltCycling = true;
-  panel.style.visibility = "hidden";
-  tabsLoaded = fetchTabs();
-  chrome.runtime.onMessage.addListener((message, _sender, respond) => {
-    if (message.handler === "cycleTabSwitcher" && message.windowId === sourceWindowId) {
-      tabsLoaded.then(() => {
-        cycle();
-        respond(true);
-      });
-      return true;
-    }
-  });
-} else {
-  UIComponentMessenger.init();
-}
+UIComponentMessenger.init();
 UIComponentMessenger.registerHandler((event) => {
   switch (event.data.name) {
     case "activate":
+      visible = true;
       isAltCycling = event.data.isAltCycle ?? false;
       // Hide the previous list until the fresh one (in the new recency order) is rendered.
       panel.style.visibility = "hidden";
       tabsLoaded = fetchTabs();
+      if (event.data.commitOnOpen) commit();
       break;
     case "cycleNext":
       isAltCycling = true;
-      tabsLoaded.then(() => cycle());
+      whenTabsLoaded(() => cycle());
       break;
     case "commitSelection":
       commit();
@@ -217,12 +254,20 @@ UIComponentMessenger.registerHandler((event) => {
     case "hide":
       hide();
       break;
+    case "hidden":
+      visible = false;
+      isAltCycling = false;
+      activation++;
+      break;
   }
 });
 
 globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
-globalThis.addEventListener("resize", render);
+globalThis.addEventListener("resize", () => {
+  updateColumns();
+  if (visible) updateSelection(false);
+});
 // A click outside the panel dismisses the switcher.
 document.body.addEventListener("click", (event) => {
   if (event.target === document.body) hide();

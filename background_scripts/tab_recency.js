@@ -2,8 +2,8 @@
 // The order of tabs as tracked by TabRecency is used to provide a recency-based ordering in the
 // tabs vomnibar.
 //
-// The values are persisted to chrome.storage.session so that they're not lost when the extension's
-// background page is unloaded.
+// Session storage handles worker suspension; a local mirror survives extension reloads. The
+// mirror is reset on browser startup, so visits remain scoped to this browser session.
 //
 // Callers must await TabRecency.init before calling recencyScore or getTabsByRecency.
 //
@@ -31,6 +31,12 @@ class TabRecency {
     chrome.tabs.onActivated.addListener((activeInfo) => {
       this.queueAction("register", activeInfo.tabId);
     });
+    // Links opened in the background. Foreground tabs are registered by onActivated; restored
+    // session tabs have no opener and keep their lastAccessed order.
+    chrome.tabs.onCreated.addListener((tab) => {
+      if (!tab.active && tab.openerTabId != null) this.queueAction("registerBackground", tab.id);
+    });
+    chrome.runtime.onStartup.addListener(() => this.resetForBrowserStartup());
     chrome.tabs.onRemoved.addListener((tabId) => {
       this.queueAction("deregister", tabId);
     });
@@ -60,19 +66,23 @@ class TabRecency {
   // Loads the index from session storage.
   async loadFromStorage() {
     const tabsPromise = chrome.tabs.query({});
-    const storagePromise = chrome.storage.session.get("tabRecency");
-    const [tabs, storage] = await Promise.all([tabsPromise, storagePromise]);
-    if (storage.tabRecency == null) return;
+    const [tabs, storage, backup] = await Promise.all([
+      tabsPromise,
+      chrome.storage.session.get("tabRecency"),
+      chrome.storage.local.get("brovimSessionTabRecency"),
+    ]);
+    const storedRecency = storage.tabRecency ?? backup.brovimSessionTabRecency;
+    if (storedRecency == null) return;
 
     let maxCounter = 0;
-    for (const counter of Object.values(storage.tabRecency)) {
+    for (const counter of Object.values(storedRecency)) {
       if (maxCounter < counter) maxCounter = counter;
     }
     if (this.counter < maxCounter) {
       this.counter = maxCounter;
     }
 
-    this.tabIdToCounter = Object.assign({}, storage.tabRecency);
+    this.tabIdToCounter = Object.assign({}, storedRecency);
 
     // Remove any tab IDs which aren't currently loaded.
     const tabIds = new Set(tabs.map((t) => t.id));
@@ -84,7 +94,18 @@ class TabRecency {
   }
 
   async saveToStorage() {
-    await chrome.storage.session.set({ tabRecency: this.tabIdToCounter });
+    const recency = structuredClone(this.tabIdToCounter);
+    await Promise.all([
+      chrome.storage.session.set({ tabRecency: recency }),
+      chrome.storage.local.set({ brovimSessionTabRecency: recency }),
+    ]);
+  }
+
+  async resetForBrowserStartup() {
+    await this.init();
+    this.counter = 1;
+    this.tabIdToCounter = {};
+    await this.saveToStorage();
   }
 
   // - action: "register" or "unregister".
@@ -100,6 +121,8 @@ class TabRecency {
   handleAction(action, tabId) {
     if (action == "register") {
       this.register(tabId);
+    } else if (action == "registerBackground") {
+      this.registerBackground(tabId);
     } else if (action == "deregister") {
       this.deregister(tabId);
     } else {
@@ -111,6 +134,15 @@ class TabRecency {
     this.counter++;
     this.tabIdToCounter[tabId] = this.counter;
     this.saveToStorage();
+  }
+
+  // Like TabGlance: a tab opened in the background ranks right after the current tab, which stays
+  // the most recent.
+  registerBackground(tabId) {
+    const current = Object.keys(this.tabIdToCounter)
+      .find((id) => this.tabIdToCounter[id] == this.counter);
+    this.register(tabId);
+    if (current != null) this.register(parseInt(current));
   }
 
   deregister(tabId) {

@@ -135,17 +135,6 @@ div.divider {
   display: contents;
 }
 
-footer {
-  font-size: 10px;
-  display: flex;
-  justify-content: space-between;
-  color: #a0a0a0;
-}
-
-.version-info {
-  text-align: right;
-}
-
 #toggle-advanced {
   text-align: right;
   font-size: 10px;

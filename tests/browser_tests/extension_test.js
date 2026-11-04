@@ -156,6 +156,10 @@ try {
       id,
     );
   };
+  const openBrowserSwitcher = async (targetPage = page) => {
+    const id = typeof targetPage === "number" ? targetPage : await tabId(targetPage);
+    await worker.evaluate(async (id) => openTabSwitcher(await chrome.tabs.get(id)), id);
+  };
 
   await fresh();
   await check("save hint colors and use them in an already open tab", async () => {
@@ -185,17 +189,29 @@ try {
     await key(["Escape"]);
   });
 
-  await check("custom CSS overrides the hint color pickers", async () => {
-    await setOption("userDefinedLinkHintCss", "div > .vimiumHintMarker { background: #123456; }");
-    await save();
-    await fresh();
-    await key(["f"]);
-    await page.waitForSelector(".vimiumHintMarker");
-    assert((await hints())[0].box === "rgb(18, 52, 86)", JSON.stringify(await hints()));
-    await key(["Escape"]);
-    await setOption("userDefinedLinkHintCss", "");
-    await save();
-  });
+  await check(
+    "custom CSS overrides hint colors even when the base stylesheet arrives last",
+    async () => {
+      await setOption("userDefinedLinkHintCss", "div > .vimiumHintMarker { background: #123456; }");
+      await save();
+      await fresh();
+      // Reproduce the navigation race deterministically: inject the base CSS after the user CSS.
+      await worker.evaluate(
+        (id) =>
+          chrome.scripting.insertCSS({
+            target: { tabId: id },
+            files: ["content_scripts/vimium.css"],
+          }),
+        await tabId(),
+      );
+      await key(["f"]);
+      await page.waitForSelector(".vimiumHintMarker");
+      assert((await hints())[0].box === "rgb(18, 52, 86)", JSON.stringify((await hints())[0]));
+      await key(["Escape"]);
+      await setOption("userDefinedLinkHintCss", "");
+      await save();
+    },
+  );
 
   await check("each hint color Reset restores and saves its default", async () => {
     await options.bringToFront();
@@ -239,6 +255,76 @@ try {
     await page.waitForFunction(() => scrollY > 300);
     await key(["Shift+Space"]);
     await page.waitForFunction(() => scrollY < 100);
+  });
+
+  await check("settings navigation, live color preview and save status work together", async () => {
+    await options.setViewport({ width: 1440, height: 1000 });
+    await options.bringToFront();
+    await options.click('.settings-nav a[href="#appearance"]');
+    await options.waitForSelector('.settings-nav a[href="#appearance"][aria-current="location"]');
+    await setOption("linkHintColor", "#146e32");
+    const preview = await options.$eval(
+      ".preview-badge",
+      (el) => getComputedStyle(el).backgroundColor,
+    );
+    assert(preview === "rgb(20, 110, 50)", `Live preview did not update: ${preview}`);
+    assert(
+      await options.$eval("#save-status", (el) => el.textContent) === "Unsaved changes",
+      "Unsaved state was not announced",
+    );
+    assert(
+      await worker.evaluate(() => Settings.get("linkHintColor")) === "#68039b",
+      "Preview saved a setting before Save was pressed",
+    );
+    await options.click('[data-reset="linkHintColor"]');
+    assert(
+      await options.$eval(".preview-badge", (el) => getComputedStyle(el).backgroundColor) ===
+        "rgb(104, 3, 155)",
+      "Reset did not update the preview",
+    );
+    await save();
+    assert(
+      await options.$eval("#save-status", (el) => el.textContent) === "All changes saved",
+      "Saved state was not announced",
+    );
+    await options.bringToFront();
+    await options.click('.settings-nav a[href="#keyboard"]');
+    assert(
+      await options.$eval("#tab-switcher-shortcut", (el) => el.textContent) === "Alt+Q",
+      "Browser shortcut assignment was not shown",
+    );
+    await options.click("#manage-shortcuts");
+    const target = await browser.waitForTarget((target) =>
+      target.url() === "chrome://extensions/shortcuts"
+    );
+    await (await target.page()).close();
+    await page.bringToFront();
+  });
+
+  await check("settings stay within the viewport at desktop, tablet and phone widths", async () => {
+    try {
+      for (const width of [1440, 900, 390]) {
+        await options.setViewport({ width, height: 900 });
+        await options.bringToFront();
+        await options.click('.settings-nav a[href="#backup"]');
+        await pause(100);
+        const size = await options.evaluate(() => ({
+          width: innerWidth,
+          page: document.documentElement.scrollWidth,
+          footerBottom: document.querySelector("footer").getBoundingClientRect().bottom,
+          height: innerHeight,
+          cardBottom:
+            document.querySelector("#backup .settings-card").getBoundingClientRect().bottom,
+          footerTop: document.querySelector("footer").getBoundingClientRect().top,
+        }));
+        assert(size.page <= size.width, `Settings overflow at ${width}px: ${JSON.stringify(size)}`);
+        assert(size.footerBottom <= size.height + 1, "Save action escaped the viewport");
+        assert(size.cardBottom <= size.footerTop, "The save bar covers the last settings");
+      }
+    } finally {
+      await options.setViewport({ width: 1280, height: 900 });
+      await page.bringToFront();
+    }
   });
 
   await check("insert mode, gi, and digits pass through to the page", async () => {
@@ -300,6 +386,48 @@ try {
     assert((await hints()).length === 0, "Fast ff left hints visible");
   });
 
+  await check("Escape cancels hints even before collection finishes", async () => {
+    await fresh();
+    await worker.evaluate(() => {
+      globalThis.hintCollectionComplete = false;
+      globalThis.originalPrepareHints = HintCoordinator.prepareToActivateLinkHintsMode;
+      HintCoordinator.prepareToActivateLinkHintsMode = async function (...args) {
+        try {
+          return await globalThis.originalPrepareHints.apply(this, args);
+        } finally {
+          globalThis.hintCollectionComplete = true;
+        }
+      };
+    });
+    try {
+      await workerSession.send("Debugger.enable");
+      await workerSession.send("Debugger.pause");
+      try {
+        await key(["f", "Escape"]);
+      } finally {
+        await workerSession.send("Debugger.resume");
+        await workerSession.send("Debugger.disable");
+      }
+      await worker.evaluate(async () => {
+        const deadline = Date.now() + 3000;
+        while (!globalThis.hintCollectionComplete && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        if (!globalThis.hintCollectionComplete) throw new Error("Hint collection did not finish");
+      });
+      assert((await hints()).length === 0, "Cancelled hints appeared after collection finished");
+      assert(page.url() === `${origin}/`, "Escape activated a link");
+      await key(["j"]);
+      assert(await page.evaluate(() => scrollY) > 0, "Escape left the keyboard blocked");
+    } finally {
+      await worker.evaluate(() => {
+        HintCoordinator.prepareToActivateLinkHintsMode = globalThis.originalPrepareHints;
+        delete globalThis.originalPrepareHints;
+        delete globalThis.hintCollectionComplete;
+      });
+    }
+  });
+
   await check("o/O/b/B/ge open and dismiss the Vomnibar", async () => {
     await fresh();
     for (const binding of [["o"], ["O"], ["b"], ["B"], ["g", "e"]]) {
@@ -322,6 +450,14 @@ try {
     assert(
       (await help.evaluate(() => document.body.textContent)).includes("Brovim"),
       "Missing help title",
+    );
+    assert(await help.$("footer") === null, "Removed help banner is still present");
+    assert(
+      !(await help.$$eval(
+        "a",
+        (links) => links.some((link) => link.textContent.trim() === "Wiki"),
+      )),
+      "Removed Wiki link is still present",
     );
     await key(["Escape"]);
     await noUi("vimium-help-dialog-frame");
@@ -645,6 +781,98 @@ try {
     await page.bringToFront();
   });
 
+  await check(
+    "holding Alt keeps one grid through rapid cycles and commits the final selection",
+    async () => {
+      await fresh();
+      const peers = [];
+      try {
+        for (let i = 0; i < 5; i++) {
+          const peer = await browser.newPage();
+          peers.push(peer);
+          await peer.goto(`${origin}/rapid-cycle-${i}?title=Cycle%20${i}`);
+        }
+        await page.bringToFront();
+        await page.keyboard.down("Alt");
+        await openBrowserSwitcher();
+        const frame = await ui("tab-switcher-frame");
+        await frame.waitForSelector(".selected");
+        const count = await frame.$$eval(".tab-card", (cards) => cards.length);
+        await frame.evaluate(() => {
+          globalThis.originalCards = [...document.querySelectorAll(".tab-card")];
+          globalThis.selectionChanges = 0;
+          globalThis.cardRebuilds = 0;
+          globalThis.cycleObserver = new MutationObserver((records) => {
+            for (const record of records) {
+              if (record.type === "attributes") globalThis.selectionChanges++;
+              if (record.target.id === "tab-switcher") globalThis.cardRebuilds++;
+            }
+          });
+          globalThis.cycleObserver.observe(document.querySelector("#tab-switcher"), {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["class"],
+          });
+        });
+        const id = await tabId();
+        await worker.evaluate(async (id) => {
+          const tab = await chrome.tabs.get(id);
+          await Promise.all(Array.from({ length: 19 }, () => openTabSwitcher(tab)));
+        }, id);
+        await frame.waitForFunction(
+          (expected) =>
+            [...document.querySelectorAll(".tab-card")].findIndex((card) =>
+              card.classList.contains("selected")
+            ) === expected,
+          {},
+          20 % count,
+        );
+        const state = await frame.evaluate(() => ({
+          sameCards: [...document.querySelectorAll(".tab-card")].every((card, i) =>
+            card === globalThis.originalCards[i]
+          ),
+          changes: globalThis.selectionChanges,
+          rebuilds: globalThis.cardRebuilds,
+          selected: document.querySelector(".selected .card-label span").textContent,
+        }));
+        assert(state.sameCards && state.rebuilds === 0, "Cycling rebuilt the preview grid");
+        assert(state.changes === 38, `Expected two changed cards per move, got ${state.changes}`);
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, id),
+          "Switched before Alt was released",
+        );
+        // Resizing must preserve decoded previews too.
+        await page.setViewport({ width: 900, height: 700 });
+        await frame.waitForFunction(() => innerWidth === 900);
+        assert(
+          await frame.evaluate(() =>
+            [...document.querySelectorAll(".tab-card")].every((card, i) =>
+              card === globalThis.originalCards[i]
+            )
+          ),
+          "Resize recreated previews",
+        );
+        await page.screenshot({ path: "/tmp/brovim-smooth-cycle.png" });
+        await page.keyboard.up("Alt");
+        await noUi("tab-switcher-frame");
+        await pause(100);
+        const active = await worker.evaluate(async () =>
+          (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+        );
+        assert(
+          active.title === state.selected,
+          "Alt release did not commit the final highlighted tab",
+        );
+      } finally {
+        await page.keyboard.up("Alt");
+        await page.setViewport({ width: 1280, height: 900 });
+        for (const peer of peers) if (!peer.isClosed()) await peer.close();
+        await page.bringToFront();
+      }
+    },
+  );
+
   await check("tab previews are downscaled and persisted in session storage", async () => {
     await fresh();
     await pause(750);
@@ -663,71 +891,249 @@ try {
   });
 
   await check(
-    "browser shortcut opens a switcher on restricted pages and uses their window",
+    "a browser shortcut still switches after Alt was released before command delivery",
+    async () => {
+      await fresh();
+      const other = await browser.newPage();
+      try {
+        await other.goto(`${origin}/early-alt-release`);
+        await page.bringToFront();
+        // The OS delivered both key events before the service worker sent its activation message.
+        await key(["Alt"]);
+        await worker.evaluate(
+          (id) =>
+            chrome.tabs.sendMessage(id, {
+              handler: "runInTopFrame",
+              sourceFrameId: 0,
+              registryEntry: {
+                command: "TabSwitcher.activate",
+                options: { altCycle: true, browserShortcut: true },
+              },
+            }),
+          await tabId(),
+        );
+        await pause(300);
+        const active = await worker.evaluate(async () =>
+          (await chrome.tabs.query({ active: true, currentWindow: true }))[0]
+        );
+        assert(
+          active.url === `${origin}/early-alt-release`,
+          `Early release selected ${active.url}`,
+        );
+        await noUi("tab-switcher-frame");
+      } finally {
+        await other.close();
+        await page.bringToFront();
+      }
+    },
+  );
+
+  await check(
+    "browser shortcuts switch directly on protected pages without opening windows",
     async () => {
       for (const url of ["chrome://extensions/", "chrome://newtab/", "about:blank"]) {
-        // A separate source window catches accidental queries of the popup's or last-focused window.
         const source = await worker.evaluate(async (url) => {
           const window = await chrome.windows.create({ url, focused: true });
           return { windowId: window.id, tabId: window.tabs[0].id };
         }, url);
-        let popup;
         try {
           const previous = await worker.evaluate(async ({ windowId, tabId, origin }) => {
-            const tab = await chrome.tabs.create({
+            const peer = await chrome.tabs.create({
               windowId,
-              url: `${origin}/previous?title=Previous%20in%20source%20window`,
+              url: `${origin}/protected-peer`,
               active: true,
             });
             await chrome.tabs.update(tabId, { active: true });
-            return tab.id;
+            return peer.id;
           }, { ...source, origin });
-          await options.evaluate(async (id) => {
-            const { openTabSwitcher } = await import("../background_scripts/tab_switcher.js");
-            await openTabSwitcher(await chrome.tabs.get(id));
-          }, source.tabId);
-          const target = await browser.waitForTarget((target) =>
-            target.url() ===
-              `${extensionUrl}/pages/tab_switcher_page.html?windowId=${source.windowId}`
+          const windowsBefore = await worker.evaluate(async () =>
+            (await chrome.windows.getAll()).length
           );
-          popup = await target.page();
-          popup.setDefaultTimeout(5000);
-          await popup.waitForSelector(".tab-card.selected");
-          const titles = await popup.$$eval(
-            ".card-label span",
-            (els) => els.map((el) => el.textContent),
-          );
-          assert(titles.length === 2, `${url}: wrong window or missing visited tab: ${titles}`);
-          assert(
-            await popup.$eval(".selected .card-label span", (el) => el.textContent) ===
-              "Previous in source window",
-            `${url}: previous tab was not selected`,
-          );
-          // Invoke the same handler used by chrome.commands while the popup has focus.
-          await options.evaluate(async (url) => {
-            const { openTabSwitcher } = await import("../background_scripts/tab_switcher.js");
-            const tabs = await chrome.tabs.query({});
-            await openTabSwitcher(tabs.find((tab) => tab.url === url));
-          }, popup.url());
-          await popup.waitForFunction(() =>
-            document.querySelector(".tab-card").classList.contains("selected")
-          );
-          await key(["ArrowRight", "Enter"], popup);
-          await pause(150);
+          await openBrowserSwitcher(source.tabId);
           const active = await worker.evaluate(
             async (windowId) => (await chrome.tabs.query({ windowId, active: true }))[0].id,
             source.windowId,
           );
-          assert(active === previous, `${url}: Enter selected the wrong tab`);
-          assert(popup.isClosed(), `${url}: popup stayed open after switching`);
+          assert(active === previous, `${url}: did not switch to the previous visited tab`);
+          assert(
+            await worker.evaluate(async () => (await chrome.windows.getAll()).length) ===
+              windowsBefore,
+            `${url}: opened an unwanted switcher window`,
+          );
         } finally {
-          if (popup && !popup.isClosed()) await popup.close();
           await worker.evaluate((id) => chrome.windows.remove(id), source.windowId);
         }
       }
       await page.bringToFront();
     },
   );
+
+  await check(
+    "browser shortcut works on an excluded site while a text input is focused",
+    async () => {
+      await fresh();
+      const other = await browser.newPage();
+      const savedRules = await worker.evaluate(() => Settings.get("exclusionRules"));
+      try {
+        await worker.evaluate((origin) =>
+          Settings.set("exclusionRules", [
+            ...Settings.get("exclusionRules"),
+            { pattern: `${origin}/*`, passKeys: "" },
+          ]), origin);
+        await other.goto(`${origin}/excluded-peer`);
+        const peerId = await tabId(other);
+        await fresh();
+        await key(["f"]);
+        assert((await hints()).length === 0, "The fixture was not excluded");
+        await page.focus("#first");
+        await page.keyboard.down("Alt");
+        await openBrowserSwitcher();
+        const switcher = await ui("tab-switcher-frame");
+        await switcher.waitForSelector(".tab-card.selected");
+        const pageId = await tabId();
+        await page.keyboard.up("Alt");
+        await noUi("tab-switcher-frame");
+        // The switcher hides before it activates the selected tab, so wait for the switch to land.
+        const activeId = await worker.evaluate(async (pageId) => {
+          for (let i = 0; i < 50; i++) {
+            const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+            if (active.id !== pageId) return active.id;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          return pageId;
+        }, pageId);
+        assert(
+          activeId === peerId,
+          `Excluded-site shortcut switched to ${activeId}, not the previous tab ${peerId}`,
+        );
+      } finally {
+        await page.keyboard.up("Alt");
+        await worker.evaluate((rules) => Settings.set("exclusionRules", rules), savedRules);
+        await other.close();
+        await page.bringToFront();
+      }
+    },
+  );
+
+  await check("an unresponsive page switches directly and cannot block later tabs", async () => {
+    await fresh();
+    const other = await browser.newPage();
+    await other.goto(`${origin}/responsive-peer`);
+    const peerId = await tabId(other);
+    await page.bringToFront();
+    const id = await tabId();
+    const session = await page.createCDPSession();
+    let paused = false;
+    try {
+      const windowsBefore = await worker.evaluate(async () =>
+        (await chrome.windows.getAll()).length
+      );
+      await session.send("Debugger.enable");
+      await session.send("Debugger.pause");
+      paused = true;
+      await Promise.race([
+        openBrowserSwitcher(id),
+        pause(2000).then(() => {
+          throw new Error("An unresponsive page blocked the shortcut");
+        }),
+      ]);
+      const activeId = await worker.evaluate(async () =>
+        (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+      );
+      assert(activeId === peerId, "Unresponsive tab did not fall back to a direct swap");
+      assert(
+        await worker.evaluate(async () => (await chrome.windows.getAll()).length) === windowsBefore,
+        "Unresponsive tab opened a switcher window",
+      );
+      await session.send("Debugger.resume");
+      paused = false;
+      await session.send("Debugger.disable");
+      await pause(200);
+      await noUi("tab-switcher-frame");
+      await other.keyboard.down("Alt");
+      await openBrowserSwitcher(peerId);
+      await other.waitForSelector(
+        ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
+      );
+      await key(["Escape"], other);
+      await other.keyboard.up("Alt");
+    } finally {
+      if (paused) await session.send("Debugger.resume");
+      await session.detach();
+      if (!other.isClosed()) {
+        await other.keyboard.up("Alt");
+        await other.close();
+      }
+      await page.bringToFront();
+    }
+  });
+
+  await check("quick taps switch without creating or loading a preview frame", async () => {
+    await fresh();
+    const other = await browser.newPage();
+    try {
+      await other.goto(`${origin}/quick-peer`);
+      const peerId = await tabId(other);
+      await page.bringToFront();
+      await key(["Alt"]);
+      const started = performance.now();
+      await openBrowserSwitcher();
+      const elapsed = performance.now() - started;
+      const active = await worker.evaluate(async () =>
+        (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+      );
+      assert(active === peerId, "Quick tap did not switch to the previous tab");
+      assert(
+        await page.$(":root >>> iframe.tab-switcher-frame") === null,
+        "Quick tap unnecessarily created a preview frame",
+      );
+      console.log(`Quick-swap request: ${Math.round(elapsed)} ms`);
+    } finally {
+      await other.close();
+      await page.bringToFront();
+    }
+  });
+
+  await check("preview navigation does not wait for thumbnails to load", async () => {
+    await fresh();
+    await worker.evaluate(() => {
+      globalThis.originalGetScreenshots = sendRequestHandlers.getTabScreenshots;
+      globalThis.thumbnailRequestPending = false;
+      sendRequestHandlers.getTabScreenshots = () =>
+        new Promise((resolve) => {
+          globalThis.thumbnailRequestPending = true;
+          globalThis.finishThumbnailRequest = resolve;
+        });
+    });
+    try {
+      await openSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector(".tab-card.selected");
+      assert(
+        await worker.evaluate(() => globalThis.thumbnailRequestPending),
+        "Expected the thumbnail request to remain pending",
+      );
+      const before = await switcher.$$eval(
+        ".tab-card",
+        (cards) => cards.findIndex((c) => c.classList.contains("selected")),
+      );
+      await key(["h"]);
+      const after = await switcher.$$eval(
+        ".tab-card",
+        (cards) => cards.findIndex((c) => c.classList.contains("selected")),
+      );
+      assert(after === before - 1, "Slow thumbnails blocked keyboard navigation");
+      await key(["Escape"]);
+    } finally {
+      await worker.evaluate(() => {
+        globalThis.finishThumbnailRequest?.({});
+        sendRequestHandlers.getTabScreenshots = globalThis.originalGetScreenshots;
+        delete globalThis.originalGetScreenshots;
+        delete globalThis.finishThumbnailRequest;
+        delete globalThis.thumbnailRequestPending;
+      });
+    }
+  });
 
   await check("popup opens and saves an exclusion for the active page", async () => {
     await fresh();
@@ -938,7 +1344,7 @@ try {
   );
 
   await check(
-    "switcher includes awake tabs and excludes discarded sleeping tabs",
+    "switcher includes every open tab, like TabGlance, with the active tab first",
     async () => {
       await fresh();
       const unvisited = await worker.evaluate(
@@ -963,8 +1369,8 @@ try {
         );
         assert(titles[0] === "Brovim browser fixture", JSON.stringify(titles));
         assert(titles.includes("Awake"), "Visited awake tab was omitted");
-        assert(titles.includes("Unvisited"), "Awake tab was omitted");
-        assert(!titles.includes("Sleeping"), "Discarded sleeping tab was included");
+        assert(titles.includes("Unvisited"), "Unvisited tab was omitted");
+        assert(titles.includes("Sleeping"), "Discarded sleeping tab was omitted");
         await page.setViewport({ width: 640, height: 700 });
         await switcher.waitForFunction(() => {
           const rect = document.querySelector("#tab-switcher").getBoundingClientRect();
@@ -984,8 +1390,86 @@ try {
     },
   );
 
+  await check("a link opened in the background is listed right after the current tab", async () => {
+    await fresh();
+    const older = await browser.newPage();
+    await older.goto(`${origin}/older?title=Older`);
+    const olderId = await tabId(older);
+    await page.bringToFront();
+    await pause(200);
+    const pageId = await tabId();
+    const url = `${origin}/target?link=0`;
+    try {
+      await page.click('a[href="/target?link=0"]', { button: "middle" });
+      await browser.waitForTarget((target) => target.url() === url);
+      await pause(200);
+      const [openedId, ids] = await worker.evaluate(
+        async (pageId, url) => {
+          const opened = (await chrome.tabs.query({})).find((t) =>
+            t.url === url || t.pendingUrl === url
+          );
+          const tab = await chrome.tabs.get(pageId);
+          const list = await sendRequestHandlers.getOpenTabsWithScreenshots({
+            tab,
+            includeScreenshots: false,
+          });
+          return [opened?.id, list.map((t) => t.id)];
+        },
+        pageId,
+        url,
+      );
+      assert(!(await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, openedId)));
+      assert(
+        ids[0] === pageId && ids[1] === openedId && ids[2] === olderId,
+        `Unexpected order ${JSON.stringify(ids)} for ${pageId}, ${openedId}, ${olderId}`,
+      );
+    } finally {
+      await worker.evaluate(async (url) => {
+        const tabs = await chrome.tabs.query({});
+        const ids = tabs.filter((t) => t.url === url || t.pendingUrl === url).map((t) => t.id);
+        if (ids.length) await chrome.tabs.remove(ids);
+      }, url);
+      await older.close();
+      await page.bringToFront();
+    }
+  });
+
+  await check("with exactly two tabs the shortcut swaps directly without a grid", async () => {
+    const urls = [`${origin}/pair-a?title=Pair%20A`, `${origin}/pair-b?title=Pair%20B`];
+    const pair = await worker.evaluate(
+      async (urls) =>
+        (await chrome.windows.create({ url: urls, focused: true })).tabs.map((t) => t.id),
+      urls,
+    );
+    let pairPage;
+    try {
+      pairPage = await (await browser.waitForTarget((target) => target.url() === urls[0])).page();
+      await pairPage.waitForFunction(() => document.readyState === "complete");
+      await pause(200);
+      await pairPage.keyboard.down("Alt");
+      await openBrowserSwitcher(pair[0]);
+      const active = await worker.evaluate(
+        async (id) =>
+          (await chrome.tabs.query({
+            active: true,
+            windowId: (await chrome.tabs.get(id)).windowId,
+          }))[0].id,
+        pair[0],
+      );
+      assert(active === pair[1], "Two-tab shortcut did not swap to the other tab");
+      assert(
+        await pairPage.$(":root >>> iframe.tab-switcher-frame") === null,
+        "Two-tab shortcut showed the preview grid",
+      );
+    } finally {
+      await pairPage?.keyboard.up("Alt");
+      await worker.evaluate((ids) => chrome.tabs.remove(ids), pair);
+      await page.bringToFront();
+    }
+  });
+
   await check(
-    "extension replacement leaves invalidated tabs quiet and refreshed tabs work",
+    "extension replacement restores existing website tabs without a refresh",
     async () => {
       await fresh();
       await key(["f"]);
@@ -1003,8 +1487,7 @@ try {
       await browser.waitForTarget((target) =>
         target.type() === "service_worker" && target.url().endsWith("/background_scripts/main.js")
       );
-      await page.reload();
-      await pause(200);
+      await pause(500);
       await key(["f"]);
       await page.waitForSelector(".vimiumHintMarker");
       await key(["Escape"]);

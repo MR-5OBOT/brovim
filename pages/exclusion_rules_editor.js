@@ -43,7 +43,7 @@ const ExclusionRulesEditor = {
       e.target.closest("tr").remove();
       this.dispatchEvent("input");
     });
-    rulesTable.appendChild(rowEl);
+    (rulesTable.tBodies[0] || rulesTable).appendChild(rowEl);
   },
 
   // Returns an array of rules, which can be stored in Settings.

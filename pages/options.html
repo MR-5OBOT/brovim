@@ -1,277 +1,176 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title>Brovim Options</title>
+    <title>Brovim Settings</title>
     <meta charset="UTF-8">
-    <meta name="color-scheme" content="light dark">
-    <link rel="stylesheet" type="text/css" href="options.css">
-    <link rel="stylesheet" type="text/css" href="../content_scripts/vimium.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <link rel="stylesheet" href="options.css">
+    <link rel="stylesheet" href="../content_scripts/vimium.css">
+    <link rel="stylesheet" href="options_page.css">
     <script src="options.js" type="module"></script>
   </head>
+  <body class="vimium-body options-page">
+    <a class="skip-link" href="#settings-main">Skip to settings</a>
+    <div id="wrapper" class="settings-shell">
+      <aside class="settings-sidebar" aria-label="Settings navigation">
+        <a class="settings-brand" href="#general">
+          <img src="../icons/icon48.png" width="36" height="36" alt="">
+          <span><strong>Brovim</strong><small>Browser settings</small></span>
+        </a>
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#general" aria-current="location"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg><span>General</span></a>
+          <a href="#keyboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="3"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01M8 17h8"/></svg><span>Keyboard</span></a>
+          <a href="#sites"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>Excluded sites</span></a>
+          <a href="#link-hints"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-7 1-3 7-4-17Z"/><path d="m13 14 5 6"/></svg><span>Link hints</span></a>
+          <a href="#appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-4c-1-1 0-3 2-3h2a3 3 0 0 0 3-3 9 9 0 0 0-9-8Z"/><path d="M7 10h.01M10 6.5h.01M15 7h.01M6.5 14h.01"/></svg><span>Appearance</span></a>
+          <a href="#search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><span>Search engines</span></a>
+          <a href="#advanced"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6M16 6l6 6-6 6M14 3l-4 18"/></svg><span>Advanced</span></a>
+          <a href="#backup"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v5h16v-5M12 3v12m-5-5 5 5 5-5"/></svg><span>Backup & restore</span></a>
+        </nav>
+        <a class="command-reference" href="command_listing.html" target="_blank" rel="noopener">Command reference <span aria-hidden="true">↗</span></a>
+      </aside>
 
-  <body class="vimium-body">
-    <div id="wrapper">
-      <header>Brovim Options</header>
-      <input type="hidden" name="settingsVersion" />
+      <main id="settings-main" class="settings-main" tabindex="-1">
+        <header class="page-heading">
+          <span class="eyebrow">PREFERENCES</span>
+          <h1>Settings</h1>
+          <p>Make Brovim work the way you browse.</p>
+        </header>
+        <input type="hidden" name="settingsVersion">
 
-      <div id="settings-grid-container">
-        <h2>Excluded URLs and keys</h2>
-        <div>
-          <div id="exclusion-scroll-box">
-            <table id="exclusion-rules">
-              <tr>
-                <td><span class="exclusion-header-text">Patterns</span></td>
-                <td><span class="exclusion-header-text">Keys to exclude</span></td>
-              </tr>
-            </table>
+        <section id="general" class="settings-section" aria-labelledby="general-title">
+          <header class="section-heading"><h2 id="general-title">General</h2><p>Choose how new tabs, scrolling and page focus behave.</p></header>
+          <div class="settings-card">
+            <fieldset id="new-tab-url-container" class="new-tab-choices" aria-describedby="new-tab-help">
+              <legend>New tabs</legend>
+              <p class="field-description">Choose the page opened by Brovim’s <kbd>t</kbd> shortcut.</p>
+              <label class="choice-row" for="vimiumNewTabPage">
+                <input id="vimiumNewTabPage" type="radio" name="newTabDestination" value="vimiumNewTabPage">
+                <span><strong>Blank page with Brovim</strong><small>A minimal page that supports Brovim’s page shortcuts.</small></span>
+              </label>
+              <div id="openVomnibarContainer" class="choice-suboption">
+                <input id="openVomnibarOnNewTabPage" type="checkbox" name="openVomnibarOnNewTabPage">
+                <label for="openVomnibarOnNewTabPage">Open the Vomnibar when the page loads</label>
+              </div>
+              <label class="choice-row" for="browserNewTabPage">
+                <input id="browserNewTabPage" type="radio" name="newTabDestination" value="browserNewTabPage">
+                <span><strong>Browser’s default new-tab page</strong><small>Use your browser’s usual start page.</small></span>
+              </label>
+              <label class="choice-row" for="customUrl">
+                <input id="customUrl" type="radio" name="newTabDestination" value="customUrl">
+                <span><strong>Custom URL</strong><small>Open a page of your choice.</small></span>
+              </label>
+              <label class="sr-only" for="new-tab-custom-url">Custom new-tab URL</label>
+              <input id="new-tab-custom-url" type="text" name="newTabCustomUrl" placeholder="https://example.com" spellcheck="false" style="display: none">
+            </fieldset>
+            <div id="new-tab-help" class="settings-note">
+              <strong>What about Ctrl+T and the + button?</strong>
+              <p>They keep your browser’s new-tab page. This setting only changes Brovim’s <kbd>t</kbd> command. Page shortcuts are restricted on built-in browser pages; <kbd>Alt+Q</kbd> still works there.</p>
+              <a href="https://github.com/philc/vimium#how-to-allow-vimium-to-work-on-new-tab-pages" target="_blank" rel="noopener">About shortcuts on new-tab pages <span aria-hidden="true">↗</span></a>
+            </div>
           </div>
-          <button id="exclusion-add-button">Add rule</button>
-        </div>
-        <div class="example">
-          Disable Brovim on URLs.<br>
-          "Patterns" are URL regular expressions. <code>*</code> will match zero or more characters.
-          <br>
-          "Keys": Brovim will exclude these keys and pass them through to the page.
-        </div>
+          <div class="settings-card row-card">
+            <div class="setting-row">
+              <label class="field-copy" for="scroll-step"><strong>Scroll step</strong><span>Distance moved by <kbd>j</kbd>, <kbd>k</kbd>, <kbd>h</kbd> and <kbd>l</kbd>.</span></label>
+              <div class="number-control"><input id="scroll-step" name="scrollStepSize" type="number"><span>px</span></div>
+            </div>
+            <label class="setting-row" for="smooth-scroll"><span class="field-copy"><strong>Smooth scrolling</strong><span>Animate keyboard scrolling between positions.</span></span><input id="smooth-scroll" name="smoothScroll" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="grab-focus"><span class="field-copy"><strong>Keep focus on the page</strong><span>Prevent sites from automatically focusing a text field on load.</span></span><input id="grab-focus" name="grabBackFocus" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="hide-updates"><span class="field-copy"><strong>Hide update notifications</strong><span>Turn off notices when Brovim has been updated.</span></span><input id="hide-updates" name="hideUpdateNotifications" type="checkbox" class="switch" role="switch"></label>
+          </div>
+        </section>
 
-        <h2>Custom key mappings</h2>
-        <textarea name="keyMappings" type="text" spellcheck="false"></textarea>
-        <div class="example">
-          Example syntax:<br>
-          <pre
-            id="exampleKeyMapping"
-          >
-map j scrollDown
+        <section id="keyboard" class="settings-section" aria-labelledby="keyboard-title">
+          <header class="section-heading"><h2 id="keyboard-title">Keyboard</h2><p>Manage the tab-switcher shortcut and your own key mappings.</p></header>
+          <div class="settings-card row-card">
+            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Visual tab switcher</strong><span id="tab-switcher-description">Switch between all open tabs, most recently used first.</span></div><div class="shortcut-controls"><kbd id="tab-switcher-shortcut">Alt+Q</kbd><button id="manage-shortcuts" class="secondary-button" type="button">Manage shortcut <span aria-hidden="true">↗</span></button></div></div>
+            <label class="setting-row" for="keyboard-layout"><span class="field-copy"><strong>Use the US keyboard layout</strong><span>Interpret command keys as QWERTY, regardless of your keyboard layout.</span></span><input id="keyboard-layout" name="ignoreKeyboardLayout" type="checkbox" class="switch" role="switch"></label>
+          </div>
+          <div class="settings-card editor-card">
+            <div class="field-heading"><label for="key-mappings">Custom key mappings</label><a href="command_listing.html" target="_blank" rel="noopener">View commands <span aria-hidden="true">↗</span></a></div>
+            <p class="field-description">Add one mapping per line. Leave this unchanged to use Brovim’s defaults.</p>
+            <textarea id="key-mappings" name="keyMappings" spellcheck="false" aria-describedby="key-mapping-help"></textarea>
+            <details id="key-mapping-help" class="field-help"><summary>Mapping syntax and examples</summary><pre id="exampleKeyMapping">map j scrollDown
 map z2 setZoom level=2
 unmap j
 unmapAll
-" this is a comment
-# this is also a comment</pre>
-          <a href="/pages/command_listing.html" target="_blank">See all available commands</a>.
-        </div>
-
-        <h2>Custom search engines</h2>
-        <textarea name="searchEngines" spellcheck="false"></textarea>
-        <div class="example">
-          Add search-engine shortcuts to the Vomnibar. Format:<br>
-          <pre>
-a: http://a.com/?q=%s
-b: http://b.com/?q=%s description
-" this is a comment
-# this is also a comment</pre>
-          %s is replaced with the search terms. <br>
-          For search completion, see <a href="doc_search_completion.html" target="_blank">here</a>.
-        </div>
-
-        <h2>New tab URL</h2>
-        <div id="new-tab-url-container">
-          <input
-            id="vimiumNewTabPage"
-            type="radio"
-            name="newTabDestination"
-            value="vimiumNewTabPage"
-          />
-          <label for="vimiumNewTabPage">Brovim blank new tab page</label>
-          <div id="openVomnibarContainer">
-            <input id="openVomnibarOnNewTabPage" type="checkbox" name="openVomnibarOnNewTabPage">
-            <label for="openVomnibarOnNewTabPage">Open the Vomnibar when the page loads</label>
+# Lines beginning with # or " are comments.</pre></details>
           </div>
-          <input
-            id="browserNewTabPage"
-            type="radio"
-            name="newTabDestination"
-            value="browserNewTabPage"
-          />
-          <label for="browserNewTabPage">Browser's default new tab page</label>
-          <input id="customUrl" type="radio" name="newTabDestination" value="customUrl" />
-          <label for="customUrl">Custom URL</label>
-          <input type="text" name="newTabCustomUrl" style="display: none" />
-        </div>
-        <div class="example">
-          The page to open when using Brovim's "create new tab" command. To have Brovim commands
-          work on <em>all</em> new tab pages opened by the browser, a separate new tab extension is
-          required. See the full details <a
-            href="https://github.com/philc/vimium/blob/master/README.md#how-to-allow-vimium-to-work-on-new-tab-pages"
-            target="_blank"
-          >here</a>.
-        </div>
+        </section>
 
-        <header>Theme</header>
-
-        <h2>Link hint colors</h2>
-        <div>
-          <div>
-            <label><input type="color" name="linkHintColor" /> Hint box</label>
-            <span class="example reset-link"><a href="#">Reset</a></span>
+        <section id="sites" class="settings-section" aria-labelledby="sites-title">
+          <header class="section-heading"><h2 id="sites-title">Excluded sites</h2><p>Let a website handle some or all keyboard shortcuts itself.</p></header>
+          <div class="settings-card">
+            <div id="exclusion-scroll-box"><table id="exclusion-rules"><thead><tr><th scope="col">URL pattern</th><th scope="col">Keys to pass through</th><th scope="col"><span class="sr-only">Remove rule</span></th></tr></thead><tbody></tbody></table></div>
+            <div class="exclusion-actions"><p class="field-description">Blank keys disable all Brovim page bindings for that site.</p><button id="exclusion-add-button" class="secondary-button" type="button"><span aria-hidden="true">+</span> Add rule</button></div>
+            <details class="field-help"><summary>How exclusion rules work</summary><p>Patterns are URL regular expressions. <code>*</code> matches any number of characters. For example, <code>https?://web.whatsapp.com/*</code> matches WhatsApp Web.</p><p>Leave keys blank to disable all page bindings, or enter keys such as <code>j k</code> to pass only those keys to the site. The browser shortcut <kbd>Alt+Q</kbd> stays available.</p></details>
           </div>
-          <div>
-            <label><input type="color" name="linkHintTextColor" /> Hint letters</label>
-            <span class="example reset-link"><a href="#">Reset</a></span>
+        </section>
+
+        <section id="link-hints" class="settings-section" aria-labelledby="hints-title">
+          <header class="section-heading"><h2 id="hints-title">Link hints</h2><p>Press <kbd>f</kbd>, then type a link’s label to follow it. <kbd>Esc</kbd> cancels.</p></header>
+          <div class="settings-card row-card">
+            <label class="setting-row" for="filter-hints"><span class="field-copy"><strong>Filter by link text</strong><span>Select links by typing their text as well as their hint label.</span></span><input id="filter-hints" name="filterLinkHints" type="checkbox" class="switch" role="switch"></label>
+            <div id="link-hint-characters-container" class="setting-row">
+              <label class="field-copy" for="hint-characters"><strong>Hint characters</strong><span>Letters used to label links on the page.</span></label>
+              <div class="compact-field"><input id="hint-characters" name="linkHintCharacters" type="text" spellcheck="false"><span class="reset-link"><a href="#" aria-label="Reset hint characters" data-reset="linkHintCharacters">Reset</a></span></div>
+            </div>
+            <div id="link-hint-numbers-container" class="setting-row">
+              <label class="field-copy" for="hint-numbers"><strong>Hint numbers</strong><span>Characters used for labels when filtering by link text.</span></label>
+              <div class="compact-field"><input id="hint-numbers" name="linkHintNumbers" type="text" spellcheck="false"><span class="reset-link"><a href="#" aria-label="Reset hint numbers" data-reset="linkHintNumbers">Reset</a></span></div>
+            </div>
+            <label id="wait-for-enter" class="setting-row" for="confirm-hint"><span class="field-copy"><strong>Confirm filtered hints with Enter</strong><span>Wait for <kbd>Enter</kbd> before following a filtered link.</span></span><input id="confirm-hint" name="waitForEnterForFilteredHints" type="checkbox" class="switch" role="switch"></label>
           </div>
-          <div>
-            <label><input type="color" name="linkHintMatchColor" /> Letters you've typed</label>
-            <span class="example reset-link"><a href="#">Reset</a></span>
+        </section>
+
+        <section id="appearance" class="settings-section" aria-labelledby="appearance-title">
+          <header class="section-heading"><h2 id="appearance-title">Appearance</h2><p>Customize link-hint colors and the insert-mode indicator.</p></header>
+          <div class="settings-card">
+            <div class="field-heading"><h3>Link hint colors</h3><span class="subtle">Live preview</span></div>
+            <div class="hint-preview" id="hint-preview" aria-hidden="true"><span class="preview-caption">A LINK ON THE PAGE</span><span class="preview-link"><span class="preview-badge"><span class="preview-typed">S</span>F</span>Example link <span aria-hidden="true">↗</span></span><span class="preview-description">The first letter has already been typed.</span></div>
+            <div class="color-settings">
+              <div class="color-setting"><label for="hint-box-color">Hint background</label><div class="color-control"><input id="hint-box-color" type="color" name="linkHintColor"><code data-color-value="linkHintColor">#68039b</code><span class="reset-link"><a href="#" aria-label="Reset hint background color" data-reset="linkHintColor">Reset</a></span></div></div>
+              <div class="color-setting"><label for="hint-text-color">Hint letters</label><div class="color-control"><input id="hint-text-color" type="color" name="linkHintTextColor"><code data-color-value="linkHintTextColor">#ffffff</code><span class="reset-link"><a href="#" aria-label="Reset hint letter color" data-reset="linkHintTextColor">Reset</a></span></div></div>
+              <div class="color-setting"><label for="hint-match-color">Typed letters</label><div class="color-control"><input id="hint-match-color" type="color" name="linkHintMatchColor"><code data-color-value="linkHintMatchColor">#d4ac3a</code><span class="reset-link"><a href="#" aria-label="Reset typed letter color" data-reset="linkHintMatchColor">Reset</a></span></div></div>
+            </div>
+            <p class="field-description color-note">Custom CSS in <a href="#advanced">Advanced</a> can override these colors.</p>
           </div>
-        </div>
-        <div class="example">
-          The colors of the hints shown after pressing <tt>f</tt>. The CSS under Advanced Options can
-          still override them.
-        </div>
+          <div class="settings-card row-card"><label class="setting-row" for="hide-hud"><span class="field-copy"><strong>Hide the insert-mode indicator</strong><span>Hide the HUD notice while typing in insert mode.</span></span><input id="hide-hud" name="hideHud" type="checkbox" class="switch" role="switch"></label></div>
+        </section>
 
-        <header>Advanced Options</header>
-
-        <h2>Scroll step size</h2>
-        <span>
-          <input name="scrollStepSize" type="number" />px
-        </span>
-        <div class="example">
-          The size for basic movements (usually j/k/h/l).
-        </div>
-
-        <div id="link-hint-characters-container">
-          <h2>Characters used for link hints</h2>
-          <div class="link-hint-characters-field">
-            <input name="linkHintCharacters" type="text" />
-            <div class="example reset-link"><a href="#">Reset</a></div>
+        <section id="search" class="settings-section" aria-labelledby="search-title">
+          <header class="section-heading"><h2 id="search-title">Search engines</h2><p>Use a keyword in the Vomnibar to search a specific website.</p></header>
+          <div class="settings-card editor-card">
+            <label class="field-label" for="search-engines">Search shortcuts</label>
+            <p class="field-description">For example, type <code>yt keyboard shortcuts</code> to search YouTube.</p>
+            <textarea id="search-engines" name="searchEngines" spellcheck="false" aria-describedby="search-engine-help"></textarea>
+            <details id="search-engine-help" class="field-help"><summary>Search shortcut format</summary><p>Use <code>keyword: URL description</code>. Brovim replaces <code>%s</code> with your search terms.</p><pre>g: https://www.google.com/search?q=%s Google
+# Add one search engine per line.</pre><a href="doc_search_completion.html" target="_blank" rel="noopener">Search completion help <span aria-hidden="true">↗</span></a></details>
           </div>
-          <div class="example">
-            The characters placed next to each link after typing "f" to enter link-hint mode.
+        </section>
+
+        <section id="advanced" class="settings-section" aria-labelledby="advanced-title">
+          <header class="section-heading"><h2 id="advanced-title">Advanced</h2><p>Fine-tune the appearance of Brovim’s interface with CSS.</p></header>
+          <div class="settings-card editor-card">
+            <div class="field-heading"><label for="custom-css">Custom CSS</label><span class="reset-link"><a href="#" aria-label="Reset custom CSS" data-reset="userDefinedLinkHintCss">Reset to default</a></span></div>
+            <p class="field-description">Styles apply to link hints, the Vomnibar, help, the toolbar popup and the HUD. They take precedence over the default styles.</p>
+            <textarea id="custom-css" name="userDefinedLinkHintCss" class="code" spellcheck="false"></textarea>
           </div>
-        </div>
+        </section>
 
-        <div id="link-hint-numbers-container">
-          <h2>Numbers used for link hints</h2>
-          <div class="link-hint-characters-field">
-            <input name="linkHintNumbers" type="text" />
-            <div class="example reset-link"><a href="#">Reset</a></div>
+        <section id="backup" class="settings-section" aria-labelledby="backup-title">
+          <header class="section-heading"><h2 id="backup-title">Backup & restore</h2><p>Keep a copy of your settings or move them to another browser.</p></header>
+          <div class="settings-card row-card">
+            <div class="setting-row"><div class="field-copy"><strong>Export settings</strong><span>Download your current configuration as a JSON file.</span></div><a id="download-backup" class="secondary-button" download="brovim-options.json" href="#">Download backup</a></div>
+            <div class="setting-row backup-restore"><label class="field-copy" for="upload-backup"><strong>Restore settings</strong><span>Choose a Brovim backup. This replaces your current settings.</span></label><input id="upload-backup" type="file" accept=".json"></div>
           </div>
-          <div class="example">
-            The characters placed next to each link after typing "f" to enter link-hint mode.
-          </div>
-        </div>
-
-        <div class="spacer"></div>
-
-        <label class="boolean-label">
-          <input name="smoothScroll" type="checkbox" />
-          Use smooth scrolling</label>
-        <div class="example"></div>
-
-        <h2></h2>
-        <label class="boolean-label">
-          <input name="filterLinkHints" type="checkbox" />
-          Use the link's name and characters for link-hint filtering
-        </label>
-        <div class="example">
-          In link-hint mode, this option lets you select a link by typing its text.
-        </div>
-
-        <div id="wait-for-enter">
-          <h2></h2>
-          <label class="boolean-label">
-            <input name="waitForEnterForFilteredHints" type="checkbox" />
-            Require <tt>Enter</tt> when filtering hints
-          </label>
-          <div class="example">
-            You activate the link with <tt>Enter</tt>, <em>always</em>; so you never accidentally
-            type Brovim commands.
-          </div>
-        </div>
-
-        <h2></h2>
-        <label class="boolean-label">
-          <input name="grabBackFocus" type="checkbox" />
-          Don't let pages steal the focus on load
-        </label>
-        <div class="example">
-          Prevent pages from focusing an input on load (e.g. Google, Bing, etc.).
-        </div>
-
-        <h2></h2>
-        <label class="boolean-label">
-          <input name="hideHud" type="checkbox" />
-          Hide the Heads Up Display (HUD) in insert mode
-        </label>
-        <div class="example">
-          When enabled, the HUD will not be displayed in insert mode.
-        </div>
-
-        <h2></h2>
-        <label class="boolean-label">
-          <input name="hideUpdateNotifications" type="checkbox" />
-          Hide update notifications
-        </label>
-        <div class="example">
-          When enabled, "Brovim has been updated" notifications will not be shown.
-        </div>
-
-        <h2></h2>
-        <label class="boolean-label">
-          <input name="ignoreKeyboardLayout" type="checkbox" />
-          Ignore keyboard layout
-        </label>
-        <div class="example">
-          This forces the use of <code>en-US</code> QWERTY layout and can be helpful for non-Latin
-          keyboards.
-        </div>
-
-        <h2>CSS for Brovim UI</h2>
-        <div>
-          <textarea
-            name="userDefinedLinkHintCss"
-            class="code"
-            type="text"
-            spellcheck="false"
-          ></textarea>
-          <div class="example reset-link"><a href="#">Reset</a></div>
-        </div>
-        <div class="example">
-          These styles are applied to link hints, the Vomnibar, the help dialog, the exclusions
-          pop-up and the HUD.<br>
-          By default, this CSS is used to style the characters next to each link hint.<br>
-          <br>
-          These styles are used in addition to and take precedence over Brovim's default styles.
-        </div>
-
-        <header>Backup and Restore</header>
-
-        <h2>Backup</h2>
-        <a id="download-backup" download="brovim-options.json" href="#">Download backup</a>
-        <div class="example">Download a backup of your settings.</div>
-
-        <h2>Restore</h2>
-        <input id="upload-backup" type="file" accept=".json" />
-        <div class="example">
-          Choose a backup file to restore.
-        </div>
-      </div>
-
-      <footer>
-        <div id="footer-content">
-          <div id="footer-help-text">
-            Type <strong>?</strong> to show the help dialog.
-            <br>
-            Type <strong id="shortcut-to-save-all"></strong> to save all options.
-          </div>
-          <div id="footer-save-options">
-            <button id="save" disabled="disabled">No changes</button>
-          </div>
-        </div>
-      </footer>
+        </section>
+      </main>
     </div>
 
-    <template id="exclusion-rule-template">
-      <tr class="rule">
-        <td>
-          <input type="text" name="pattern" spellcheck="false" placeholder="URL pattern" />
-        </td>
-        <td>
-          <input type="text" name="passKeys" spellcheck="false" placeholder="All" />
-        </td>
-        <td>
-          <input type="button" class="remove" value="&#x2716;" />
-        </td>
-      </tr>
-    </template>
+    <footer class="settings-footer"><div id="footer-content"><div id="footer-help-text"><span id="save-status" role="status" aria-live="polite">No unsaved changes</span><span class="footer-shortcuts"><kbd id="shortcut-to-save-all"></kbd> to save <span aria-hidden="true">·</span> <kbd>?</kbd> for help</span></div><div id="footer-save-options"><button id="save" type="button" disabled>Save changes</button></div></div></footer>
+
+    <template id="exclusion-rule-template"><tr class="rule"><td><input type="text" name="pattern" spellcheck="false" placeholder="https?://example.com/*" aria-label="URL pattern"></td><td><input type="text" name="passKeys" spellcheck="false" placeholder="All keys" aria-label="Keys to pass through"></td><td><input type="button" class="remove" value="×" aria-label="Remove exclusion rule" title="Remove rule"></td></tr></template>
   </body>
 </html>

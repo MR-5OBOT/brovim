@@ -50,17 +50,30 @@ Type `?` on any page to see the bindings that are currently active.
 Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
 example `map J scrollDown count=5`.
 
+Gmail and WhatsApp Web are disabled by default. Change excluded sites in Options or the toolbar
+popup.
+
 ### Tab switcher
 
-`Alt+Q` opens a visual tab switcher with thumbnail previews, functioning like Alt+Tab: hold Alt, tap
-Q to cycle through the tabs, and release Alt to switch automatically. You can customize this
-shortcut at `chrome://extensions/shortcuts`.
+Tap `Alt+Q` to switch straight to the previous tab. Hold Alt to see the preview grid on websites,
+tap Q to cycle, and release Alt to switch. Thumbnails load independently of navigation. You can
+customize this shortcut at `chrome://extensions/shortcuts`. If another tab-switcher extension
+already uses `Alt+Q`, assign it to Brovim on that page.
 
-The switcher shows preview cards for all awake tabs in the current window (sleeping or discarded
-tabs are excluded). Tabs are ordered most recently used first, with the previously active tab
-pre-selected so a quick tap switches back. While the switcher is open, you can also move with `h`
+The switcher shows every open tab in the current window, including discarded and frozen ones. There
+is no numeric limit. The current tab comes first, then tabs used this session (most recent first,
+with links you open in the background placed right after the current tab), then the rest by when
+they were last used, with the previous tab selected so a quick tap switches back. With only two tabs
+in the window, `Alt+Q` always swaps directly. While the switcher is open, you can also move with `h`
 `j` `k` `l` or the arrow keys, press `Enter` to switch, `x` to close the selected tab, and `Esc` (or
 click outside) to dismiss.
+
+On browser settings, new-tab pages and pages that block extension scripts, `Alt+Q` switches directly
+to the previous tab. It never opens a separate switcher window. The shortcut also works on excluded
+sites and while an input is focused. Unresponsive pages fall back to direct switching.
+
+Recency order survives extension reloads and resets when the browser starts a new session. Existing
+website tabs recover their Brovim controls automatically after an extension update.
 
 ### Search engines
 
@@ -72,6 +85,9 @@ YouTube, `gh` GitHub, `r` Reddit. Edit them under "Custom search engines" in the
 Open Options → Theme to change the hint box, hint letters, and typed letters. Save changes and press
 `f` on an open page to use the new colors. Each picker has a Reset link. Custom CSS under Advanced
 Options can override the colors.
+
+Type the displayed label to select a link, including `f` for an `F` label. Press `Esc` to cancel,
+even while hints are still loading. Fast selections typed during loading are retained.
 
 ## Custom key mappings
 
