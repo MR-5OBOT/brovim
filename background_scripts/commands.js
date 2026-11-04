@@ -79,14 +79,6 @@ const KeyMappingsParser = {
         return `${key} has an invalid modifier; valid modifiers are ${validModifiers}`;
       }
     };
-    const validateUrl = function (str) {
-      try {
-        new URL(str);
-        return true;
-      } catch {
-        return false;
-      }
-    };
 
     for (const line of configLines) {
       const tokens = line.split(/\s+/);
@@ -124,21 +116,9 @@ const KeyMappingsParser = {
           let hasUnknownOption = false;
           for (const option of Object.keys(options)) {
             if (allowedOptions.includes(option)) continue;
-            if (allowedOptions.includes("(any url)")) {
-              // Since this command allows for any URL as an argument, we perform some basic
-              // validation to ensure the provided option string is indeed a URL.
-              if (validateUrl(option)) continue;
-              hasUnknownOption = true;
-              errors.push(
-                `Command ${command} does not support option ${option}. ` +
-                  `Is this meant to be a valid URL?`,
-              );
-              break;
-            } else {
-              hasUnknownOption = true;
-              errors.push(`Command ${command} does not support option ${option}`);
-              break;
-            }
+            hasUnknownOption = true;
+            errors.push(`Command ${command} does not support option ${option}`);
+            break;
           }
           if (hasUnknownOption) break;
           keyToRegistryEntry[key] = new RegistryEntry({
@@ -438,14 +418,8 @@ const defaultKeyMappings = {
   "L": "goForward",
 
   // Manipulating tabs
-  "K": "nextTab",
-  "J": "previousTab",
-  "gt": "nextTab",
-  "gT": "previousTab",
-  "^": "visitPreviousTab",
   "<<": "moveTabLeft",
   ">>": "moveTabRight",
-  "t": "createTab",
   "x": "removeTab",
   "X": "restoreTab",
   "<a-p>": "togglePinTab",

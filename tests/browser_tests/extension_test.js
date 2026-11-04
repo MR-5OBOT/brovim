@@ -237,6 +237,11 @@ try {
     const down = await page.evaluate(() => scrollY);
     await key(["k"]);
     await page.waitForFunction((y) => scrollY < y, {}, down);
+    await key(["Control+e"]);
+    await page.waitForFunction(() => scrollY > 0);
+    const ctrlDown = await page.evaluate(() => scrollY);
+    await key(["Control+y"]);
+    await page.waitForFunction((y) => scrollY < y, {}, ctrlDown);
     await key(["l"]);
     await page.waitForFunction(() => scrollX > 0);
     await key(["h"]);
@@ -443,6 +448,38 @@ try {
     }
   });
 
+  await check("Vomnibar fits narrow screens and O opens the entered URL in a new tab", async () => {
+    await fresh();
+    await page.evaluate(() => {
+      document.body.style.background = "#18181b";
+      document.body.style.color = "#dedee4";
+    });
+    try {
+      for (const width of [1280, 375]) {
+        await page.setViewport({ width, height: 900 });
+        await key(["o"]);
+        const frame = await ui("vomnibar-frame");
+        const bounds = await frame.$eval("#vomnibar", (el) => {
+          const rect = el.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, width: innerWidth };
+        });
+        assert(bounds.left >= 0 && bounds.right <= bounds.width, JSON.stringify(bounds));
+        await page.screenshot({ path: `/tmp/brovim-vomnibar-${width}.png` });
+        await key(["Escape"]);
+      }
+      await key(["O"]);
+      const frame = await ui("vomnibar-frame");
+      await frame.type("input", `${origin}/opened-with-O`);
+      await key(["Enter"]);
+      const opened = await browser.waitForTarget((t) => t.url() === `${origin}/opened-with-O`);
+      assert(page.url() === `${origin}/`, "O replaced the current tab");
+      await (await opened.page()).close();
+    } finally {
+      await page.setViewport({ width: 1280, height: 900 });
+      await page.bringToFront();
+    }
+  });
+
   await check("? opens the help dialog with current bindings", async () => {
     await fresh();
     await key(["?"]);
@@ -451,6 +488,30 @@ try {
       (await help.evaluate(() => document.body.textContent)).includes("Brovim"),
       "Missing help title",
     );
+    await help.waitForSelector(".help-description");
+    assert(await help.$("#toggle-advanced") === null, "Help still has a show/hide toggle");
+    const rows = await help.$$eval(".row", (rows) =>
+      rows.map((row) => ({
+        text: row.textContent,
+        shown: getComputedStyle(row).display !== "none",
+      })));
+    assert(rows.every((row) => row.shown), "Some commands are hidden by default");
+    assert(rows.some((row) => row.text.includes("View page source")), "Missing source command");
+    assert(rows.some((row) => row.text.includes("Zoom in")), "Missing zoom command");
+    for (
+      const text of [
+        "Create new tab",
+        "Go one tab left",
+        "Go one tab right",
+        "Go to previously-visited tab",
+      ]
+    ) {
+      assert(
+        !rows.some((row) => row.text.includes(text)),
+        `Purged command is still shown: ${text}`,
+      );
+    }
+    await page.screenshot({ path: "/tmp/brovim-help-all-commands.png" });
     assert(await help.$("footer") === null, "Removed help banner is still present");
     assert(
       !(await help.$$eval(
@@ -637,19 +698,10 @@ try {
     }
   });
 
-  await check("t/x/X create, close and restore a tab", async () => {
+  await check("x/X close and restore a tab", async () => {
     await fresh();
-    await setOption("newTabCustomUrl", `${origin}/new-tab`);
-    await options.$eval("[name=newTabDestination][value=customUrl]", (el) => {
-      el.click();
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    });
-    await save();
-    await key(["t"]);
-    const target = await browser.waitForTarget((target) => target.url() === `${origin}/new-tab`, {
-      timeout: 5000,
-    });
-    const created = await target.page();
+    const created = await browser.newPage();
+    await created.goto(`${origin}/new-tab`);
     await created.waitForFunction(() => document.readyState === "complete");
     await pause(200);
     // Closing on keydown can destroy the target before Puppeteer dispatches keyup.
@@ -665,7 +717,7 @@ try {
     await (await restored.page()).close();
   });
 
-  await check("J/K, gt/gT, ^, << / >>, pin and mute", async () => {
+  await check("removed keys pass through; tab reordering, pin and mute still work", async () => {
     await fresh();
     const other = await browser.newPage();
     await other.goto(`${origin}/other`);
@@ -676,18 +728,24 @@ try {
       worker.evaluate(async () =>
         (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
       );
-    for (const binding of [["K"], ["g", "t"]]) {
+    const tabsBefore = await worker.evaluate(async () => (await chrome.tabs.query({})).length);
+    await page.evaluate(() => {
+      globalThis.passedKeys = [];
+      document.addEventListener("keydown", (event) => globalThis.passedKeys.push(event.key));
+    });
+    for (const binding of [["t"], ["J"], ["K"], ["g", "t"], ["g", "T"], ["^"]]) {
       await key(binding);
-      assert(await activeId() !== id, `${binding} did not switch tabs`);
-      await page.bringToFront();
-      await pause(200);
+      assert(await activeId() === id, `${binding} still switches tabs`);
     }
-    for (const binding of [["J"], ["g", "T"], ["^"]]) {
-      await key(binding);
-      assert(await activeId() !== id, `${binding} did not switch tabs`);
-      await page.bringToFront();
-      await pause(200);
-    }
+    assert(
+      await worker.evaluate(async () => (await chrome.tabs.query({})).length) === tabsBefore,
+      "Removed t command created a tab",
+    );
+    const passed = await page.evaluate(() => globalThis.passedKeys);
+    assert(
+      ["t", "J", "K", "^"].every((key) => passed.includes(key)),
+      `Removed keys were still captured: ${JSON.stringify(passed)}`,
+    );
     const before = await worker.evaluate((id) => chrome.tabs.get(id), id);
     await key([">", ">"]);
     assert(
@@ -742,7 +800,7 @@ try {
       before,
     );
     assert(await selected() === 1, "Closing a tab moved the selection");
-    const title = await switcher.$eval(".selected .card-label span", (el) => el.textContent);
+    const title = await switcher.$eval(".selected .card-title", (el) => el.textContent);
     await key(["Enter"]);
     await pause(200);
     const active = await worker.evaluate(async () =>
@@ -816,10 +874,12 @@ try {
           });
         });
         const id = await tabId();
+        const cycleStart = performance.now();
         await worker.evaluate(async (id) => {
           const tab = await chrome.tabs.get(id);
           await Promise.all(Array.from({ length: 19 }, () => openTabSwitcher(tab)));
         }, id);
+        console.log(`19 queued cycles: ${Math.round(performance.now() - cycleStart)} ms`);
         await frame.waitForFunction(
           (expected) =>
             [...document.querySelectorAll(".tab-card")].findIndex((card) =>
@@ -834,7 +894,7 @@ try {
           ),
           changes: globalThis.selectionChanges,
           rebuilds: globalThis.cardRebuilds,
-          selected: document.querySelector(".selected .card-label span").textContent,
+          selected: document.querySelector(".selected .card-title").textContent,
         }));
         assert(state.sameCards && state.rebuilds === 0, "Cycling rebuilt the preview grid");
         assert(state.changes === 38, `Expected two changed cards per move, got ${state.changes}`);
@@ -873,21 +933,89 @@ try {
     },
   );
 
-  await check("tab previews are downscaled and persisted in session storage", async () => {
+  await check(
+    "previews are captured once a page settles, keyed by URL, never with the switcher showing",
+    async () => {
+      const preview = (url) =>
+        worker.evaluate(async (url) => {
+          for (let i = 0; i < 60; i++) {
+            const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url];
+            if (stored) return stored;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          return null;
+        }, url);
+      await page.goto(`${origin}/settles`);
+      const settled = await preview(`${origin}/settles`);
+      assert(settled?.startsWith("data:image/jpeg;base64,"), "The settled page was not captured");
+      const width = await page.evaluate(
+        async (url) => (await createImageBitmap(await (await fetch(url)).blob())).width,
+        settled,
+      );
+      assert(width <= 480, `Preview is ${width}px wide`);
+      // A single-page app changing its URL is captured, but only once the switcher has closed.
+      await openSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector("#panel.ready");
+      await page.evaluate(() => history.pushState({}, "", "/moved-while-open"));
+      await pause(1600);
+      const moved = `${origin}/moved-while-open`;
+      assert(
+        await worker.evaluate(
+          async (url) => (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url],
+          moved,
+        ) == null,
+        "Captured the page while the switcher was showing",
+      );
+      await key(["Escape"]);
+      assert(await preview(moved), "The new URL was not captured after the switcher closed");
+    },
+  );
+
+  await check("a navigated tab never keeps the previous page's thumbnail", async () => {
     await fresh();
-    await pause(750);
-    const id = await tabId();
-    const thumbnail = await worker.evaluate(
-      async (id) =>
-        (await chrome.storage.session.get(`tabScreenshot-${id}`))[`tabScreenshot-${id}`],
-      id,
-    );
-    assert(thumbnail?.startsWith("data:image/jpeg;base64,"), "No stored screenshot");
-    const width = await page.evaluate(
-      async (url) => (await createImageBitmap(await (await fetch(url)).blob())).width,
-      thumbnail,
-    );
-    assert(width <= 480, `Thumbnail is ${width}px wide`);
+    const other = await browser.newPage();
+    const oldUrl = `${origin}/preview-old?title=Old%20page`;
+    const newUrl = `${origin}/preview-new?title=New%20page`;
+    await other.goto(oldUrl);
+    await page.bringToFront();
+    const id = await tabId(other);
+    // Simulate a cached preview and then a cache miss at the background storage boundary.
+    await worker.evaluate((oldUrl) => {
+      globalThis.savedPreviewHandler = sendRequestHandlers.getTabScreenshots;
+      sendRequestHandlers.getTabScreenshots = ({ urls }) =>
+        urls.map((url) =>
+          url === oldUrl
+            ? "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+            : null
+        );
+    }, oldUrl);
+    try {
+      await openSwitcher();
+      let frame = await ui("tab-switcher-frame");
+      await frame.waitForSelector(`.tab-card[data-id="${id}"] .card-thumb img`);
+      await key(["Escape"]);
+      await other.goto(newUrl);
+      await page.bringToFront();
+      await openSwitcher();
+      frame = await ui("tab-switcher-frame");
+      await frame.waitForSelector("#panel.ready .tab-card.selected");
+      const card = `.tab-card[data-id="${id}"]`;
+      assert(await frame.$eval(`${card} .card-title`, (el) => el.textContent) === "New page");
+      assert(
+        await frame.$(`${card} .card-thumb img`) === null,
+        "New page is paired with the old page's screenshot",
+      );
+      await key(["Escape"]);
+    } finally {
+      await worker.evaluate(() => {
+        sendRequestHandlers.getTabScreenshots = globalThis.savedPreviewHandler;
+        delete globalThis.savedPreviewHandler;
+      });
+      await key(["Escape"]);
+      await other.close();
+      await page.bringToFront();
+    }
   });
 
   await check(
@@ -1108,7 +1236,7 @@ try {
     try {
       await openSwitcher();
       const switcher = await ui("tab-switcher-frame");
-      await switcher.waitForSelector(".tab-card.selected");
+      await switcher.waitForSelector("#panel.ready .tab-card.selected");
       assert(
         await worker.evaluate(() => globalThis.thumbnailRequestPending),
         "Expected the thumbnail request to remain pending",
@@ -1126,7 +1254,7 @@ try {
       await key(["Escape"]);
     } finally {
       await worker.evaluate(() => {
-        globalThis.finishThumbnailRequest?.({});
+        globalThis.finishThumbnailRequest?.([]);
         sendRequestHandlers.getTabScreenshots = globalThis.originalGetScreenshots;
         delete globalThis.originalGetScreenshots;
         delete globalThis.finishThumbnailRequest;
@@ -1167,7 +1295,7 @@ try {
         await page.emulateMediaFeatures([{ name: "prefers-color-scheme", value: scheme }]);
         await openSwitcher();
         const switcher = await ui("tab-switcher-frame");
-        await switcher.waitForSelector(".tab-card.selected");
+        await switcher.waitForSelector("#panel.ready .tab-card.selected");
         const size = await switcher.$eval(
           "#tab-switcher",
           (el) => ({
@@ -1344,7 +1472,7 @@ try {
   );
 
   await check(
-    "switcher includes every open tab, like TabGlance, with the active tab first",
+    "switcher hides sleeping tabs and keeps awake background tabs, current tab first",
     async () => {
       await fresh();
       const unvisited = await worker.evaluate(
@@ -1364,13 +1492,13 @@ try {
         const switcher = await ui("tab-switcher-frame");
         await switcher.waitForSelector(".tab-card.selected");
         const titles = await switcher.$$eval(
-          ".card-label span",
+          ".card-title",
           (els) => els.map((el) => el.textContent),
         );
         assert(titles[0] === "Brovim browser fixture", JSON.stringify(titles));
         assert(titles.includes("Awake"), "Visited awake tab was omitted");
         assert(titles.includes("Unvisited"), "Unvisited tab was omitted");
-        assert(titles.includes("Sleeping"), "Discarded sleeping tab was omitted");
+        assert(!titles.includes("Sleeping"), "Discarded sleeping tab was included");
         await page.setViewport({ width: 640, height: 700 });
         await switcher.waitForFunction(() => {
           const rect = document.querySelector("#tab-switcher").getBoundingClientRect();
@@ -1389,6 +1517,129 @@ try {
       }
     },
   );
+
+  await check("switcher shows only the 10 most recent tabs, like TabGlance", async () => {
+    await fresh();
+    const urls = Array.from({ length: 11 }, (_, i) => `${origin}/extra${i}?title=Extra${i}`);
+    try {
+      // Visit each so the oldest one (Extra0) falls past the cap.
+      for (const url of urls) await worker.evaluate((url) => chrome.tabs.create({ url }), url);
+      await page.bringToFront();
+      await pause(300);
+      await openSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector(".tab-card.selected");
+      const titles = await switcher.$$eval(
+        ".card-title",
+        (els) => els.map((el) => el.textContent),
+      );
+      assert(titles.length === 10, JSON.stringify(titles));
+      assert(
+        titles[0] === "Brovim browser fixture" && titles[1] === "Extra10",
+        JSON.stringify(titles),
+      );
+      assert(!titles.includes("Extra0"), "Oldest tab was shown past the cap");
+      // Closing the selected card (Extra10) refills the grid with the next hidden tab.
+      await key(["x"]);
+      await switcher.waitForFunction(() =>
+        [...document.querySelectorAll(".card-title")].some((el) => el.textContent === "Extra1")
+      );
+      await key(["Escape"]);
+    } finally {
+      await worker.evaluate(async (urls) => {
+        const ids = (await chrome.tabs.query({})).filter((t) => urls.includes(t.url)).map((t) =>
+          t.id
+        );
+        if (ids.length) await chrome.tabs.remove(ids);
+      }, urls);
+    }
+  });
+
+  await check(
+    "a card's × or a middle click closes its tab, and a click switches to it",
+    async () => {
+      await fresh();
+      const peers = [];
+      for (const name of ["Alpha", "Beta", "Gamma"]) {
+        const peer = await browser.newPage();
+        await peer.goto(`${origin}/close-${name.toLowerCase()}?title=Close%20${name}`);
+        peers.push(peer);
+      }
+      await page.bringToFront();
+      await pause(200);
+      const open = async () =>
+        (await worker.evaluate((title) => chrome.tabs.query({ title }), "Close *")).length;
+      try {
+        await openSwitcher();
+        const switcher = await ui("tab-switcher-frame");
+        await switcher.waitForSelector("#panel.ready .tab-card.selected");
+        // The nth-child selector of the card with this title.
+        const card = async (title) =>
+          `.tab-card:nth-child(${await switcher.$$eval(
+            ".card-title",
+            (els, title) => els.findIndex((el) => el.textContent === title) + 1,
+            title,
+          )})`;
+        const gone = (title) =>
+          switcher.waitForFunction(
+            (title) =>
+              ![...document.querySelectorAll(".card-title")].some((el) => el.textContent === title),
+            {},
+            title,
+          );
+        await switcher.click(`${await card("Close Beta")} .close-tab`);
+        await gone("Close Beta");
+        assert(await open() === 2, "The × did not close the tab");
+        await switcher.click(await card("Close Gamma"), { button: "middle" });
+        await gone("Close Gamma");
+        assert(await open() === 1, "A middle click did not close the tab");
+        await switcher.click(`${await card("Close Alpha")} .card-title`);
+        await noUi("tab-switcher-frame");
+        await pause(200);
+        const active = await worker.evaluate(async () =>
+          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
+        );
+        assert(active === "Close Alpha", `A click switched to ${active}`);
+      } finally {
+        for (const peer of peers) if (!peer.isClosed()) await peer.close();
+        await page.bringToFront();
+      }
+    },
+  );
+
+  await check("cards per row and rows settings size the grid", async () => {
+    await fresh();
+    const extras = [];
+    for (let i = 0; i < 4; i++) {
+      const extra = await browser.newPage();
+      await extra.goto(`${origin}/layout-${i}`);
+      extras.push(extra);
+    }
+    await page.bringToFront();
+    try {
+      await worker.evaluate(async () => {
+        await Settings.set("tabSwitcherColumns", 3);
+        await Settings.set("tabSwitcherRows", 1);
+      });
+      await pause(300);
+      await openSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector("#panel.ready .tab-card.selected");
+      const layout = await switcher.$eval("#tab-switcher", (el) => ({
+        cards: el.children.length,
+        columns: getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      }));
+      assert(layout.cards === 3 && layout.columns === 3, JSON.stringify(layout));
+      await key(["Escape"]);
+    } finally {
+      await worker.evaluate(async () => {
+        await Settings.set("tabSwitcherColumns", 5);
+        await Settings.set("tabSwitcherRows", 2);
+      });
+      for (const extra of extras) await extra.close();
+      await page.bringToFront();
+    }
+  });
 
   await check("a link opened in the background is listed right after the current tab", async () => {
     await fresh();

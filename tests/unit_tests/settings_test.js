@@ -26,69 +26,34 @@ context("settings", () => {
     });
   });
 
-  context("v2.4 migration", () => {
-    setup(async () => {
-      await chrome.storage.sync.set({
-        settingsVersion: "2.3",
-      });
-    });
-
-    teardown(async () => {
+  should("drop removed new-tab preferences from imports and later saves", async () => {
+    try {
+      const legacy = {
+        settingsVersion: "2.4.2",
+        newTabDestination: "customUrl",
+        newTabCustomUrl: "https://example.com",
+        newTabUrl: "pages/blank.html",
+        openVomnibarOnNewTabPage: true,
+        scrollStepSize: 123,
+      };
+      await chrome.storage.sync.set(legacy);
+      await Settings.load();
+      assert.equal(123, Settings.get("scrollStepSize"));
+      for (
+        const key of [
+          "newTabDestination",
+          "newTabCustomUrl",
+          "newTabUrl",
+          "openVomnibarOnNewTabPage",
+        ]
+      ) {
+        assert.equal(undefined, Settings.get(key));
+      }
+      await Settings.setSettings(legacy);
+      const stored = await chrome.storage.sync.get(null);
+      assert.equal(["scrollStepSize", "settingsVersion"], Object.keys(stored).sort());
+    } finally {
       await Settings.clear();
-    });
-
-    should("Handle null newTabUrl", async () => {
-      // Users who never changed newTabUrl from its old default ("about:newtab") won't have it
-      // stored, because Settings.pruneOutDefaultValues removes keys equal to the default. The
-      // migration should still set browserNewTabPage as the destination.
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.equal(Settings.newTabDestinations.browserNewTabPage, settings.newTabDestination);
-    });
-
-    should("Remove deprecated option", async () => {
-      await chrome.storage.sync.set({ newTabUrl: "pages/blank.html" });
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.isFalse(Object.hasOwn(settings, "newTabUrl"));
-    });
-
-    should("Handle pages/blank.html new tab URL", async () => {
-      await chrome.storage.sync.set({ newTabUrl: "pages/blank.html" });
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.equal(Settings.newTabDestinations.vimiumNewTabPage, settings.newTabDestination);
-    });
-
-    should("Handle https://example.com new tab URL", async () => {
-      await chrome.storage.sync.set({ newTabUrl: "https://example.com" });
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.equal(Settings.newTabDestinations.customUrl, settings.newTabDestination);
-      assert.equal("https://example.com", settings.newTabCustomUrl);
-    });
-  });
-
-  context("v2.4.1 migration", () => {
-    setup(async () => {
-      await chrome.storage.sync.set({ settingsVersion: "2.4.0" });
-    });
-
-    teardown(async () => {
-      await Settings.clear();
-    });
-
-    should("Sets default/missing newTabDestination to browserNewTabPage", async () => {
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.equal(Settings.newTabDestinations.browserNewTabPage, settings.newTabDestination);
-    });
-
-    should("Preserve customUrl destination", async () => {
-      await chrome.storage.sync.set({ newTabDestination: Settings.newTabDestinations.customUrl });
-      await Settings.load();
-      const settings = Settings.getSettings();
-      assert.equal(Settings.newTabDestinations.customUrl, settings.newTabDestination);
-    });
+    }
   });
 });

@@ -122,9 +122,6 @@
         "pages/doc_search_completion.html",
         "pages/command_listing.html",
         "resources/tlds.txt",
-        // This allows one to script the reloading of Vimium.
-        // This should only be enabled in development.
-        // "pages/reload.html",
         "_favicon/*"
       ],
       "matches": [

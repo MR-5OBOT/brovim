@@ -54,12 +54,6 @@ input[type="radio"] {
   margin-right: 8px;
 }
 
-.boolean-label {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-
 pre,
 code,
 .code {
@@ -86,29 +80,6 @@ h2 {
   margin: 12px 0;
   font-size: 16px;
   font-weight: normal;
-}
-
-#settings-grid-container {
-  display: grid;
-  font-size: 14px;
-  grid-template-columns: auto 320px;
-  /* This is required so the "save changes" panel at the bottom of the options page doesn't cover
-   * any settings content. */
-  margin-bottom: 100px;
-}
-
-/* Adds a blank line in the grid. */
-#settings-grid-container .spacer {
-  grid-column-start: 1;
-  grid-column-end: 3;
-  height: 10px;
-}
-
-/* These should span the full width of the grid. */
-#settings-grid-container h2,
-#settings-grid-container header {
-  grid-column-start: 1;
-  grid-column-end: 3;
 }
 
 .example {
@@ -146,42 +117,10 @@ div#exampleKeyMapping {
   margin-top: 5px;
 }
 
-#new-tab-url-container {
-  display: grid;
-  grid-template-columns: auto 100%;
-  grid-auto-rows: 1.5em;
-  row-gap: 10px;
-  align-items: center;
-}
-
-input[name="newTabCustomUrl"] {
-  grid-column-start: 2;
-}
-
-#openVomnibarContainer {
-  display: flex;
-  align-items: center;
-  grid-column-start: 2;
-}
-
-input[name="newTabCustomUrl"] {
-  width: 400px;
-}
-
 #link-hint-characters-container,
 #link-hint-numbers-container,
 #wait-for-enter {
   display: contents;
-}
-
-.link-hint-characters-field {
-  width: 100%;
-  /* These text fields look strange when they're excessively long. */
-  max-width: 400px;
-}
-
-.link-hint-characters-field input {
-  width: 100%;
 }
 
 input[name="scrollStepSize"] {
@@ -345,10 +284,6 @@ footer {
   white-space: nowrap;
 }
 
-#backupLink {
-  cursor: pointer;
-}
-
 input#upload-backup {
   max-width: 400px;
 }
@@ -422,8 +357,6 @@ input#upload-backup {
     color: var(--vimium-foreground-text-color);
     text-shadow: none;
   }
-  button:hover {}
-  button:active {}
 
   button[disabled],
   button[disabled]:hover,

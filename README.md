@@ -19,33 +19,36 @@ The Options page opens from the help dialog (type `?`) or from the extension's d
 
 ## Key bindings
 
-Type `?` on any page to see the bindings that are currently active.
+Type `?` on any page to see all active bindings, including the assigned browser tab-switcher
+shortcut. Help always shows every bound command; there is no advanced-command toggle.
 
-| Keys                | Action                                                          |
-| ------------------- | --------------------------------------------------------------- |
-| `j` `k` `h` `l`     | Scroll down / up / left / right                                 |
-| `gg` `G`            | Scroll to top / bottom                                          |
-| `d` `u`             | Scroll half a page down / up                                    |
-| `zH` `zL`           | Scroll all the way left / right                                 |
-| `f` `F`             | Open a link in this tab / a new tab (hold Shift to flip)        |
-| `<a-f>`             | Open several links in new tabs                                  |
-| `yf`                | Copy a link's URL                                               |
-| `/` `n` `N`         | Find (plain text, smartcase), next match, previous match        |
-| `o` `O`             | Vomnibar: open URL, history, or web search (this tab / new tab) |
-| `b` `B`             | Vomnibar: bookmarks (this tab / new tab)                        |
-| `ge`                | Edit the current URL                                            |
-| `Alt+Q`             | Visual tab switcher, Alt+Tab style (browser shortcut)           |
-| `J` `K` (`gT` `gt`) | Previous / next tab                                             |
-| `^`                 | Go to the previously visited tab                                |
-| `t` `x` `X`         | New tab, close tab, restore closed tab                          |
-| `<<` `>>`           | Move the tab left / right                                       |
-| `<a-p>` `<a-m>`     | Pin / mute the tab                                              |
-| `H` `L`             | History back / forward                                          |
-| `r` `R`             | Reload / hard reload                                            |
-| `yy` `p` `P`        | Copy the URL, open the clipboard URL here / in a new tab        |
-| `i` `gi`            | Insert mode, focus the first text input                         |
-| `zi` `zo` `z0`      | Zoom in / out / reset                                           |
-| `gs`                | View source                                                     |
+Use `o` to enter a URL or search in this tab, or `O` to open it in a new tab. The redundant new-tab
+settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, `K`, `gt`, `gT` and
+`^` are no longer bound or available as commands.
+
+| Keys            | Action                                                          |
+| --------------- | --------------------------------------------------------------- |
+| `j` `k` `h` `l` | Scroll down / up / left / right                                 |
+| `gg` `G`        | Scroll to top / bottom                                          |
+| `d` `u`         | Scroll half a page down / up                                    |
+| `zH` `zL`       | Scroll all the way left / right                                 |
+| `f` `F`         | Open a link in this tab / a new tab (hold Shift to flip)        |
+| `<a-f>`         | Open several links in new tabs                                  |
+| `yf`            | Copy a link's URL                                               |
+| `/` `n` `N`     | Find (plain text, smartcase), next match, previous match        |
+| `o` `O`         | Vomnibar: open URL, history, or web search (this tab / new tab) |
+| `b` `B`         | Vomnibar: bookmarks (this tab / new tab)                        |
+| `ge`            | Edit the current URL                                            |
+| `Alt+Q`         | Visual tab switcher, Alt+Tab style (browser shortcut)           |
+| `x` `X`         | Close tab / restore closed tab                                  |
+| `<<` `>>`       | Move the tab left / right                                       |
+| `<a-p>` `<a-m>` | Pin / mute the tab                                              |
+| `H` `L`         | History back / forward                                          |
+| `r` `R`         | Reload / hard reload                                            |
+| `yy` `p` `P`    | Copy the URL, open the clipboard URL here / in a new tab        |
+| `i` `gi`        | Insert mode, focus the first text input                         |
+| `zi` `zo` `z0`  | Zoom in / out / reset                                           |
+| `gs`            | View source                                                     |
 
 Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
 example `map J scrollDown count=5`.
@@ -55,22 +58,33 @@ popup.
 
 ### Tab switcher
 
-Tap `Alt+Q` to switch straight to the previous tab. Hold Alt to see the preview grid on websites,
-tap Q to cycle, and release Alt to switch. Thumbnails load independently of navigation. You can
-customize this shortcut at `chrome://extensions/shortcuts`. If another tab-switcher extension
-already uses `Alt+Q`, assign it to Brovim on that page.
+The switcher works like TabGlance's: a grid of tab previews, most recently used first. Sleeping
+(discarded or frozen) tabs and hidden tabs are excluded; awake background tabs remain available.
 
-The switcher shows every open tab in the current window, including discarded and frozen ones. There
-is no numeric limit. The current tab comes first, then tabs used this session (most recent first,
-with links you open in the background placed right after the current tab), then the rest by when
-they were last used, with the previous tab selected so a quick tap switches back. With only two tabs
-in the window, `Alt+Q` always swaps directly. While the switcher is open, you can also move with `h`
-`j` `k` `l` or the arrow keys, press `Enter` to switch, `x` to close the selected tab, and `Esc` (or
-click outside) to dismiss.
+- **Keyboard:** tap `Alt+Q` to switch straight to the next tab in your chosen order (the previous
+  tab by default). Hold Alt to see the grid, tap Q to move through it (Shift+Q goes back), and
+  release Alt to switch. The grid shows your 10 most recently used tabs in the window (5 per row, 2
+  rows; both can be changed). Closing one brings in the next. The arrow keys, `h` `j` `k` `l` and
+  Tab also move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc` or a
+  click outside cancels.
+- **Mouse:** hover a card to select it, click to switch, and use its `×` or a middle click to close
+  the tab.
+
+The current tab comes first, then tabs used this session (links you open in the background come
+right after the current tab), then the rest by when they were last used. Options › Tab switcher
+offers tab bar order instead, the number of cards per row and rows, a liquid glass panel, direct
+swapping with two tabs (on by default), and the preview settings below. Change the shortcut at
+`chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
+
+Previews are taken after a page has finished loading and settled, and again after its URL changes or
+you scroll far. Opening and cycling the grid never waits for a new capture or for stored previews to
+load. Captures are deferred while Brovim's own UI is on screen. Previews are saved by page address
+on this device (the 60 most recent by default), so they survive browser restarts. Incognito previews
+are kept only until the browser closes. Tabs without a preview show their site's first letter.
 
 On browser settings, new-tab pages and pages that block extension scripts, `Alt+Q` switches directly
-to the previous tab. It never opens a separate switcher window. The shortcut also works on excluded
-sites and while an input is focused. Unresponsive pages fall back to direct switching.
+using your chosen order. It never opens a separate switcher window. The shortcut also works on
+excluded sites and while an input is focused. Unresponsive pages fall back to direct switching.
 
 Recency order survives extension reloads and resets when the browser starts a new session. Existing
 website tabs recover their Brovim controls automatically after an extension update.
@@ -119,4 +133,4 @@ results.
 
 ## License
 
-MIT, like Vimium. See [MIT-LICENSE.txt](MIT-LICENSE.txt) and [CREDITS](CREDITS).
+MIT, like Vimium.

@@ -3,7 +3,7 @@
 **Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
 **Base:** Based on `philc/vimium` (full history kept; no longer a GitHub fork)\
 **Date:** November 4, 2026\
-**Status:** Final audit fixes verified locally; latest fixes remain uncommitted. See section 10.
+**Status:** Final audit fixes verified locally; latest fixes remain uncommitted. See section 11.
 
 ---
 
@@ -91,13 +91,12 @@ explicit custom CSS is preserved, including any colors it overrides.
 2. **Whole-UI Dark/Custom Theming:** Global dark theme engine (neutral dark grey, `#141414`) with
    purple accents (`#68039B` / `#8819c9`) shared across the Vomnibar, HUD notices, Help Dialog, and
    key badges.
-3. **Visual Tab Switcher (Tab Switcher Previews-style):** A compact dark strip of tab previews
-   (`TabSwitcher.activate`, opened via `Alt+Q`) centered over the page, with no header or search
-   box. Shows every open tab in the current window, TabGlance-style, including unvisited, discarded
-   and frozen tabs, with no numeric cap. Tabs are ordered most recently used first, and the previous
-   tab starts selected. Releasing Alt auto-switches immediately. Cached screenshots
-   (`chrome.tabs.captureVisibleTab`, stored as small thumbnails in `chrome.storage.session`),
-   favicons, `h/j/k/l` navigation, and `x` to close.
+3. **Visual Tab Switcher (rebuilt after TabGlance):** A black (or liquid glass) panel of tab cards
+   over a lightly blurred page; the cards follow the system's light or dark theme. `Alt+Q` shows the
+   10 most recently used tabs (cards per row and rows are settings) with the previous tab selected;
+   releasing Alt switches. Cards have a preview or a letter tile, the title and the site, and a `×`
+   to close. Previews are captured when a page has settled and kept by URL in local storage (session
+   storage for incognito). TabGlance has no license, so this is Brovim's own code, not a copy.
 4. **Curated Search Engine Defaults:** Pre-configured ready-to-use search keywords in
    `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, `g` for
    Google, and `ddg` for DuckDuckGo).
@@ -237,18 +236,15 @@ Previously maintained in `TODOS.md`; this report is now the canonical project re
 
 ### 3. Visual Tab Switcher (TabGlance-style)
 
-- [x] **Snapshot Caching Service:** Capture active tab screenshots using
-      `chrome.tabs.captureVisibleTab` on navigation and tab activation, downscale them to 480px
-      thumbnails, and cache them in `chrome.storage.session` (survives the service worker being
-      suspended).
-- [x] **Preview Strip UI:** A compact dark panel centered over the page (no header or search box),
-      showing every open tab in the current window, most recently used first, including unvisited,
-      discarded and frozen tabs, with no fixed limit. Rows wrap to fit the screen (including when
-      resized); a click outside closes it.
-- [x] **Card Components:** Display thumbnail screenshot, website favicon, and clean truncated page
-      title.
-- [x] **Fallback Cards:** Clean placeholder with domain and favicon when a visited tab has no cached
-      screenshot.
+- [x] **Snapshot Caching Service:** The page's content script waits until it has settled (no visible
+      DOM change, layout shift or new largest paint for 800ms, at most 4.8s) after loading, coming
+      into view, a URL change or a long scroll, and just before the switcher opens. The background
+      captures it, downscales it to 480px and keeps the newest 60 by URL in `chrome.storage.local`
+      (incognito: `chrome.storage.session`). Never captured while Brovim's UI is showing.
+- [x] **Preview Grid UI:** TabGlance-style panel: 5 cards per row, 2 rows, a scroll hint when cards
+      overflow; a click outside closes it.
+- [x] **Card Components:** Preview (4:3), two-line title, site name, and a `×` close button.
+- [x] **Fallback Cards:** The site's first letter on a color derived from the site.
 - [x] **Keyboard Navigation:**
   - Move selection across the grid using `h`, `j`, `k`, `l` (and arrow keys).
   - Press `Enter` to switch to the selected tab.
@@ -434,7 +430,9 @@ runner).
 - Run: `./make.js check`
 - Ensure all tests pass cleanly with zero lint errors.
 
-## 10. Final Browser Audit (November 4, 2026)
+## 10. Earlier Browser Audit (November 4, 2026)
+
+Historical snapshot; section 11 records the current behavior and verification.
 
 The retained Vimium code and history (pre-streamlining commit `5aa29614`) were used as the reference
 for core keyboard behavior. The 19 intentional feature removals remain in place.
@@ -461,10 +459,11 @@ for core keyboard behavior. The 19 intentional feature removals remain in place.
   denial is respected; users must allow clipboard access in their site permissions to use `p`/`P`.
 - **Invalidated extension contexts:** URL/focus checks handle invalidation both before and during
   their background request. Existing tabs shut down old handlers after the extension is replaced.
-- **Recent-tab switcher:** matches TabGlance: every open tab in the current window (including
-  discarded, frozen and unvisited ones), the active tab first, then most recently used, with links
-  opened in the background right after the current tab. Two-tab windows swap directly. There is no
-  numeric cap. Resizing the window recalculates the preview grid.
+- **Recent-tab switcher:** rebuilt after TabGlance's UI and behavior: the 10 most recently used tabs
+  in the current window (its default 5x2 grid), the active tab first, with links opened in the
+  background right after the current tab. Closing a card refills the grid from the older tabs. Tab
+  bar order, liquid glass, layout and preview settings live in Options › Tab switcher. Two-tab
+  windows swap directly by default.
 - **Fast browser-wide switching:** quick Alt+Q taps activate the previous eligible tab without
   creating a preview frame. Holding Alt on ordinary websites opens the in-page grid; thumbnails load
   separately so navigation does not wait for them. Protected pages switch directly. The separate
@@ -533,3 +532,66 @@ the browser's extension error list are not evidence of a fresh error.
 `REPORT.md` is the canonical report. `TODOS.md` and the old standalone plan were incorporated into
 sections 8 and 9, then removed. The duplicate `~/reports/vim-browser-streamlining-report.md` is now
 a symlink to this file, so both locations show one maintained report.
+
+## 11. Current Brovim Audit and Cleanup (November 4, 2026)
+
+This audit reviewed the existing work against the screenshots and the user's follow-up requests. The
+user clarified that only sleeping tabs should be hidden; awake background tabs remain listed.
+
+### Current behavior
+
+- The switcher lists awake tabs in the current window, with the active tab first and MRU order by
+  default. Discarded, frozen and hidden tabs are excluded from both the grid and direct switching.
+- Grid opening no longer waits for a screenshot capture (formerly up to 150 ms), thumbnail loading
+  (formerly up to 100 ms), or a fade animation. Cycling updates the selected cards without
+  rebuilding the grid. Passive preview capture remains available.
+- Navigating a tab invalidates its old preview. Failed capture attempts no longer consume the
+  successful-capture cooldown, so a loading page can be captured once it finishes.
+- The redundant New tabs settings card, custom blank-page startup and automatic Vomnibar behavior
+  are removed. Legacy backups ignore the retired preferences.
+- The commands `createTab`, `previousTab`, `nextTab` and `visitPreviousTab`, their handlers, and the
+  bindings `t`, `J`, `K`, `gt`, `gT` and `^` are removed. `o`/`O` provide URL entry and search;
+  `Alt+Q` provides tab switching. Close/restore, tab reordering, pinning and muting remain
+  available.
+- Help always shows every bound command and the actual assigned browser switcher shortcut. The
+  advanced-command toggle, hidden-row CSS, command classification and stored preference are removed.
+- The Vomnibar has a softer layered shadow, a clearer purple focus ring, and fits narrow screens.
+  The existing settings layout is retained and works after malformed tab-order imports.
+
+### Repository cleanup
+
+Removed the unused development reload pair (`pages/reload.html`, `background_scripts/reload.js`),
+the broken old Vomnibar demo pair (`test_harnesses/vomnibar_harness.html` and `.js`), empty plan
+folders, obsolete settings CSS, and dead parser support used only by the removed create-tab command.
+Removed broken README links to files already absent before this audit. Automated tests, build tools,
+remaining manual fixtures and the consolidated report are retained. Generated packages are rebuilt
+from the current source; development/test files remain excluded.
+
+### Verification
+
+| Check                                                            | Result                      |
+| ---------------------------------------------------------------- | --------------------------- |
+| Formatting and lint (`./make.js check`)                          | Pass                        |
+| Unit tests (`./make.js test-unit`)                               | 178/178 pass                |
+| DOM tests in Helium/Chromium                                     | 87/87 pass                  |
+| Installed source browser suite                                   | 51/51 pass                  |
+| Extracted Chrome Store ZIP browser suite                         | 51/51 pass                  |
+| Chrome Store, Canary and Firefox package builds                  | Pass                        |
+| ZIP CRC, source freshness, local JS imports and build exclusions | Pass for all three packages |
+| Source imports and HTML asset paths                              | All resolved                |
+| Final diff whitespace check                                      | Pass                        |
+
+The final source run measured a quick-swap request at 12 ms and 19 queued cycles at 32 ms. The
+packaged run measured 21 ms for each. These are measurements in an isolated test browser, not a
+latency guarantee for every machine or website. The rapid-cycle check confirms that selection
+changes preserve the preview cards and commit the final highlighted tab on Alt release.
+
+Rendered Help, settings and Vomnibar screenshots were inspected. The browser suite verifies all
+remaining default binding groups, removed-key pass-through, current-window awake-tab eligibility,
+slow-thumbnail navigation, early Alt release, protected/excluded pages, preview invalidation and
+extension replacement. Runtime checks use Helium/Chromium; Firefox packaging is validated without
+claiming Firefox runtime coverage.
+
+Reload Brovim on the browser's extensions page to activate the source changes in an existing
+installation. The current packages are under `dist/chrome-store`, `dist/chrome-canary` and
+`dist/firefox`. Changes remain uncommitted.

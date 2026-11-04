@@ -15,13 +15,17 @@ const options = {
   linkHintTextColor: "string",
   linkHintCharacters: "string",
   linkHintNumbers: "string",
-  newTabCustomUrl: "string",
-  newTabDestination: "option",
-  openVomnibarOnNewTabPage: "boolean",
   scrollStepSize: "number",
   searchEngines: "string",
   settingsVersion: "string", // This is a hidden field.
   smoothScroll: "boolean",
+  tabSwitcherAutoCapture: "boolean",
+  tabSwitcherColumns: "select",
+  tabSwitcherGlass: "boolean",
+  tabSwitcherMaxThumbnails: "select",
+  tabSwitcherOrder: "option",
+  tabSwitcherRows: "select",
+  tabSwitcherTwoTabSwap: "boolean",
   userDefinedLinkHintCss: "string",
   waitForEnterForFilteredHints: "boolean",
 };
@@ -35,7 +39,6 @@ export async function init() {
   const saveButton = document.querySelector("#save");
 
   const onUpdated = () => {
-    maintainNewTabUrlView();
     maintainLinkHintsView();
     updateHintPreview();
     saveButton.disabled = false;
@@ -43,7 +46,7 @@ export async function init() {
     document.querySelector("#save-status").textContent = "Unsaved changes";
   };
 
-  for (const el of document.querySelectorAll("input, textarea")) {
+  for (const el of document.querySelectorAll("input, textarea, select")) {
     // We want to immediately enable the save button when a setting is changed, so we want to use
     // the HTML element's "input" event here rather than the "change" event.
     el.addEventListener("input", () => onUpdated());
@@ -199,8 +202,14 @@ function setFormFromSettings(settings) {
       case "string":
         el.value = value;
         break;
+      case "select":
+        el.value = String(value);
+        if (el.selectedIndex < 0) el.value = String(Settings.defaultOptions[optionName]);
+        break;
       case "option": {
-        const optionEl = document.querySelector(`input[name="${optionName}"][value="${value}"]`);
+        const choices = [...document.querySelectorAll(`input[name="${optionName}"]`)];
+        const optionEl = choices.find((el) => el.value === value) ??
+          choices.find((el) => el.value === Settings.defaultOptions[optionName]);
         optionEl.checked = true;
         break;
       }
@@ -213,7 +222,6 @@ function setFormFromSettings(settings) {
 
   document.querySelector("#upload-backup").value = "";
   maintainLinkHintsView();
-  maintainNewTabUrlView();
   updateHintPreview();
 }
 
@@ -231,6 +239,9 @@ function getSettingsFromForm() {
         break;
       case "string":
         value = el.value.trim();
+        break;
+      case "select":
+        value = Number(el.value);
         break;
       case "option": {
         const optionEl = document.querySelector(`input[name="${optionName}"]:checked`);
@@ -354,20 +365,6 @@ export async function saveOptions() {
 
 function showElement(el, visible) {
   el.style.display = visible ? null : "none";
-}
-
-// Hide or show extra form elements depending on which radio button is selected for
-// newTabDestination.
-function maintainNewTabUrlView() {
-  const destination = document.querySelector("[name=newTabDestination]:checked").value;
-  showElement(
-    document.querySelector("#openVomnibarContainer"),
-    destination == Settings.newTabDestinations.vimiumNewTabPage,
-  );
-  showElement(
-    document.querySelector("[name=newTabCustomUrl]"),
-    destination == Settings.newTabDestinations.customUrl,
-  );
 }
 
 // Display the UI for link hint numbers vs. characters, depending upon the value of

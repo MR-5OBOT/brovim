@@ -125,17 +125,3 @@ div.divider {
   margin: 10px auto;
   background-color: var(--vimium-border-color);
 }
-
-/* Advanced commands are hidden by default until "show advanced" is clicked. */
-.row.advanced {
-  display: none;
-}
-
-#dialog.show-advanced .row.advanced {
-  display: contents;
-}
-
-#toggle-advanced {
-  text-align: right;
-  font-size: 10px;
-}

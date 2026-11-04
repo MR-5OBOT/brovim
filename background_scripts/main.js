@@ -12,7 +12,8 @@ import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
 import { openTabSwitcher } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
-import { getRecentTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
+import { getSwitcherTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
+import { captureThumbnail, findThumbnails } from "./thumbnails.js";
 
 import {
   BookmarkCompleter,
@@ -96,17 +97,13 @@ if (!globalThis.isUnitTests) {
   })();
 
   chrome.tabs.onActivated?.addListener(({ tabId }) => {
-    Utils.setTimeout(350, () => captureActiveTab(tabId));
+    Utils.setTimeout(400, () => previewTab(tabId));
   });
 
   chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.status === "complete" && tab.active) {
-      Utils.setTimeout(350, () => captureActiveTab(tabId));
+      Utils.setTimeout(400, () => previewTab(tabId));
     }
-  });
-
-  chrome.tabs.onRemoved?.addListener((tabId) => {
-    chrome.storage.session.remove(screenshotKey(tabId));
   });
 
   // The Alt+Q browser shortcut from manifest.json. Holding Alt and pressing Q again cycles; releasing
@@ -118,38 +115,15 @@ if (!globalThis.isUnitTests) {
   });
 }
 
-// Tab switcher thumbnails live in chrome.storage.session, so they survive the service worker being
-// suspended (an in-memory cache is wiped after ~30s of idling).
-const screenshotKey = (tabId) => `tabScreenshot-${tabId}`;
-
-async function captureActiveTab(tabId) {
+// Pages with Brovim's content script capture their own previews once they look settled. Others
+// (PDFs, or tabs left over from before an extension update) are captured shortly after they appear.
+async function previewTab(tabId) {
   try {
-    const tab = await chrome.tabs.get(tabId);
-    // The user may have switched tabs during the capture delay; don't file another tab's pixels
-    // under this one.
-    if (!tab.active) return;
-    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg" });
-    await chrome.storage.session.set({ [screenshotKey(tabId)]: await shrinkImage(dataUrl) });
+    await chrome.tabs.sendMessage(tabId, { handler: "startTabPreview" }, { frameId: 0 });
   } catch {
-    // Restricted pages (chrome://, the web store) can't be captured.
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (tab?.active) await captureThumbnail(tab.id, tab.url);
   }
-}
-
-// Downscales a screenshot to thumbnail size, so that hundreds fit in storage.session's 10MB quota
-// and the switcher doesn't have to decode full-resolution screenshots.
-async function shrinkImage(dataUrl, width = 480) {
-  const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob());
-  const scale = Math.min(1, width / bitmap.width);
-  const canvas = new OffscreenCanvas(
-    Math.round(bitmap.width * scale),
-    Math.round(bitmap.height * scale),
-  );
-  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: 0.7 });
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return "data:image/jpeg;base64," + btoa(binary);
 }
 
 function muteTab(tab) {
@@ -291,67 +265,6 @@ function nextZoomLevel(currentZoom, steps) {
 // These are commands which are bound to keystrokes which must be handled by the background page.
 // They are mapped in commands.js.
 const BackgroundCommands = {
-  // Create a new tab. Also, with:
-  //     map X createTab http://www.bbc.com/news
-  // create a new tab with the given URL.
-  createTab: createRepeatCommand(async function (request) {
-    if (request.urls == null) {
-      if (request.url) {
-        // If the request contains a URL, then use it.
-        request.urls = [request.url];
-      } else {
-        // Otherwise, if we have a registryEntry containing URLs, then use them.
-        const options = Object.keys(request.registryEntry.options);
-        const promises = options.map((opt) => UrlUtils.isUrl(opt));
-        const isUrl = await Promise.all(promises);
-        const urlList = options.filter((_, i) => isUrl[i]);
-        if (urlList.length > 0) {
-          request.urls = urlList;
-        } else {
-          // Otherwise, just create a new tab.
-          let url;
-          const destination = Settings.get("newTabDestination");
-          const customUrl = Settings.get("newTabCustomUrl");
-          if (destination == Settings.newTabDestinations.vimiumNewTabPage) {
-            url = Settings.vimiumNewTabPageUrl;
-          } else if (destination == Settings.newTabDestinations.customUrl && customUrl.length > 0) {
-            url = customUrl;
-          } else {
-            url = UrlUtils.chromeNewTabUrl;
-          }
-          request.urls = [url];
-        }
-      }
-    }
-    if (request.registryEntry.options.incognito || request.registryEntry.options.window) {
-      // Firefox does not allow an incognito window to be created with the URL about:newtab. It
-      // throws this error: "Illegal URL: about:newtab".
-      const urls = request.urls.filter((u) => u != UrlUtils.chromeNewTabUrl);
-      const windowConfig = {
-        url: urls,
-        incognito: request.registryEntry.options.incognito || false,
-      };
-      await chrome.windows.create(windowConfig);
-    } else {
-      const urls = request.urls.slice().reverse();
-      if (request.position == null) {
-        request.position = request.registryEntry.options.position;
-      }
-      while (urls.length > 0) {
-        const url = urls.pop();
-        const tab = await TabOperations.openUrlInNewTab(Object.assign(request, { url }));
-        // Ensure subsequent invocations of this command place the next tab directly after this one.
-        Object.assign(request, { tab, position: "after", active: false });
-      }
-    }
-  }),
-
-  nextTab(request) {
-    return selectTab("next", request);
-  },
-  previousTab(request) {
-    return selectTab("previous", request);
-  },
   async removeTab({ count, tab }) {
     await forCountTabs(count, tab, (tab) => {
       // In Firefox, Ctrl-W will not close a pinned tab, but on Chrome, it will. We try to be
@@ -393,16 +306,6 @@ const BackgroundCommands = {
     chrome.tabs.setZoom(tabId, 0); // setZoom of 0 sets to the tab default.
   },
 
-  async visitPreviousTab({ count, tab }) {
-    await bgUtils.tabRecency.init();
-    let tabIds = bgUtils.tabRecency.getTabsByRecency();
-    tabIds = tabIds.filter((tabId) => tabId !== tab.id);
-    if (tabIds.length > 0) {
-      const id = tabIds[(count - 1) % tabIds.length];
-      selectSpecificTab({ id });
-    }
-  },
-
   async reload({ count, tab, registryEntry }) {
     const bypassCache = registryEntry.options.hard != null ? registryEntry.options.hard : false;
     await forCountTabs(count, tab, (tab) => {
@@ -418,24 +321,6 @@ async function forCountTabs(count, currentTab, callback) {
   for (const tab of tabs.slice(startTabIndex, startTabIndex + count)) {
     callback(tab);
   }
-}
-
-// Selects a tab before or after the currently selected tab.
-// - direction: "next" or "previous".
-function selectTab(direction, { count, tab }) {
-  chrome.tabs.query(visibleTabsQueryArgs, function (tabs) {
-    if (tabs.length > 1) {
-      const toSelect = (() => {
-        switch (direction) {
-          case "next":
-            return (getTabIndex(tab, tabs) + count) % tabs.length;
-          case "previous":
-            return ((getTabIndex(tab, tabs) - count) + (count * tabs.length)) % tabs.length;
-        }
-      })();
-      chrome.tabs.update(tabs[toSelect].id, { active: true });
-    }
-  });
 }
 
 chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId }) => {
@@ -608,13 +493,13 @@ const sendRequestHandlers = {
   async quickSwitchTab({ tab }) {
     return { switched: (await switchToPreviousRecentTab(tab)) != null };
   },
-  // Every open tab in the window, the active tab first, then most recently used first.
+  // Awake tabs in the window, in the switcher's order (the active tab first).
   async getOpenTabsWithScreenshots({ tab, windowId, includeScreenshots = true }) {
-    const tabs = await getRecentTabs(windowId ?? tab.windowId);
+    const tabs = await getSwitcherTabs(windowId ?? tab.windowId);
     const screenshots = includeScreenshots
-      ? await chrome.storage.session.get(tabs.map((t) => screenshotKey(t.id)))
-      : {};
-    return tabs.map((t) => ({
+      ? await findThumbnails(tabs.map((t) => t.url), tab?.incognito)
+      : [];
+    return tabs.map((t, i) => ({
       id: t.id,
       index: t.index,
       title: t.title || "Untitled",
@@ -622,12 +507,16 @@ const sendRequestHandlers = {
       favIconUrl: t.favIconUrl || "",
       active: t.active,
       pinned: t.pinned,
-      screenshot: screenshots[screenshotKey(t.id)] || null,
+      screenshot: screenshots[i] ?? null,
     }));
   },
-  async getTabScreenshots({ ids }) {
-    const stored = await chrome.storage.session.get(ids.map(screenshotKey));
-    return Object.fromEntries(ids.map((id) => [id, stored[screenshotKey(id)] || null]));
+  // The stored preview for each URL, or null.
+  getTabScreenshots({ urls, tab }) {
+    return findThumbnails(urls, tab?.incognito);
+  },
+  // From a page's content script, once the page looks settled.
+  captureTabThumbnail({ tab, url }) {
+    return captureThumbnail(tab.id, url);
   },
   async closeSpecificTab({ id }) {
     await chrome.tabs.remove(id);

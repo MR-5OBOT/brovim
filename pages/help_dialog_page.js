@@ -22,20 +22,8 @@ function ellipsize(s, maxLength) {
   return s.substring(0, Math.max(0, maxLength - ellipsis.length)) + ellipsis;
 }
 
-// Returns true if the command should be labeled as "advanced" for UI purposes.
-function isAdvancedCommand(command, options) {
-  // Use some bespoke logic to label some command + option combos as advanced.
-  return command.advanced ||
-    (command.name == "reload" && options.includes("hard"));
-}
-
 const HelpDialogPage = {
   dialogElement: null,
-
-  // This setting is pulled out of local storage. It's false by default.
-  getShowAdvancedCommands() {
-    return Settings.get("helpDialog_showAdvancedCommands");
-  },
 
   init() {
     if (this.dialogElement != null) {
@@ -57,12 +45,6 @@ const HelpDialogPage = {
         chrome.runtime.sendMessage({ handler: "openOptionsPageInNewTab" });
       }, false);
     }
-
-    document.querySelector("#toggle-advanced a").addEventListener(
-      "click",
-      HelpDialogPage.toggleAdvancedCommands.bind(HelpDialogPage),
-      false,
-    );
 
     document.documentElement.addEventListener("click", (event) => {
       if (!this.dialogElement.contains(event.target)) {
@@ -97,9 +79,6 @@ const HelpDialogPage = {
 
     const rowEl = rowTemplate.cloneNode(true);
     rowEl.querySelector(".help-description").textContent = command.desc;
-    if (isAdvancedCommand(command, options)) {
-      rowEl.querySelector(".row").classList.add("advanced");
-    }
     const keysEl = rowEl.querySelector(".key-bindings");
     for (const key of keys.sort(compareKeys)) {
       const node = keysTemplate.cloneNode(true);
@@ -125,7 +104,14 @@ const HelpDialogPage = {
 
   async show() {
     const commandToOptionsToKeys =
-      (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys;
+      (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys ?? {};
+    // The browser shortcut lives outside page key mappings. Include its actual assigned key.
+    const shortcuts = await chrome.commands?.getAll?.() ?? [];
+    const shortcut = shortcuts.find((command) => command.name === "open_tab_switcher")?.shortcut;
+    if (shortcut) {
+      const switcher = commandToOptionsToKeys["TabSwitcher.activate"] ??= {};
+      switcher[""] = [...(switcher[""] ?? []), shortcut];
+    }
     const rowsByGroup = this.getRowsForDialog(commandToOptionsToKeys);
 
     for (const [group, rows] of Object.entries(rowsByGroup)) {
@@ -137,41 +123,12 @@ const HelpDialogPage = {
       }
     }
 
-    this.showAdvancedCommands(this.getShowAdvancedCommands());
-
     // "Click" the dialog element (so that it becomes scrollable).
     DomUtils.simulateClick(this.dialogElement);
   },
 
   hide() {
     UIComponentMessenger.postMessage({ name: "hide" });
-  },
-
-  //
-  // Advanced commands are hidden by default so they don't overwhelm new and casual users.
-  //
-  toggleAdvancedCommands(event) {
-    const container = document.querySelector("#container");
-    const scrollHeightBefore = container.scrollHeight;
-    event.preventDefault();
-    const showAdvanced = HelpDialogPage.getShowAdvancedCommands();
-    HelpDialogPage.showAdvancedCommands(!showAdvanced);
-    Settings.set("helpDialog_showAdvancedCommands", !showAdvanced);
-    // Try to keep the "show advanced commands" button in the same scroll position.
-    const scrollHeightDelta = container.scrollHeight - scrollHeightBefore;
-    if (scrollHeightDelta > 0) {
-      container.scrollTop += scrollHeightDelta;
-    }
-  },
-
-  showAdvancedCommands(visible) {
-    const caption = visible ? "Hide advanced commands" : "Show advanced commands";
-    document.querySelector("#toggle-advanced a").textContent = caption;
-    if (visible) {
-      HelpDialogPage.dialogElement.classList.add("show-advanced");
-    } else {
-      HelpDialogPage.dialogElement.classList.remove("show-advanced");
-    }
   },
 };
 

@@ -338,20 +338,36 @@ body.options-page {
   color: var(--settings-muted);
   font-size: 12px;
 }
+.options-page select {
+  flex: none;
+  min-width: 76px;
+  padding: 7px 9px;
+  color: var(--settings-text);
+  background: var(--settings-control);
+  border: 1px solid #37363e;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.options-page select:focus {
+  border-color: var(--settings-focus);
+  box-shadow: 0 0 0 3px #9d64c71a;
+}
 .options-page input[name="scrollStepSize"] {
   width: 80px;
   margin: 0;
   padding: 7px 9px;
 }
 
-.options-page #new-tab-url-container {
+.options-page .setting-choices {
   display: block;
   min-width: 0;
   padding: 0;
   margin: 0;
   border: 0;
 }
-.new-tab-choices legend {
+.setting-choices legend {
   padding: 0;
   font-weight: 600;
 }
@@ -373,43 +389,7 @@ body.options-page {
   color: var(--settings-muted);
   font-size: 12px;
 }
-.options-page #openVomnibarContainer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 8px 29px;
-  font-size: 12px;
-  color: var(--settings-muted);
-}
-.options-page #openVomnibarContainer input {
-  margin: 0;
-}
-.options-page input[name="newTabCustomUrl"] {
-  width: calc(100% - 29px);
-  max-width: 100%;
-  margin: 0 0 8px 29px;
-}
-.settings-note {
-  margin-top: 17px;
-  padding: 15px 17px;
-  border: 1px solid #37303e;
-  border-radius: 7px;
-  background: #211c27;
-  color: #b6afc0;
-  font-size: 12px;
-  line-height: 1.65;
-}
-.settings-note strong {
-  color: #ddd3e6;
-  font-size: 12px;
-  font-weight: 550;
-}
-.settings-note p {
-  margin: 5px 0 9px;
-}
-.settings-note kbd {
-  white-space: nowrap;
-}
+
 .shortcut-controls {
   display: flex;
   align-items: center;
@@ -953,9 +933,7 @@ body.options-page {
   .exclusion-actions .field-description {
     max-width: 100%;
   }
-  .settings-note {
-    padding: 12px;
-  }
+
   .field-heading {
     gap: 10px;
   }

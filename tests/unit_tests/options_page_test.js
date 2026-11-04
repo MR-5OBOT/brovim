@@ -20,6 +20,16 @@ context("options page", () => {
     assert.equal(settings.keyMappings, field.value);
   });
 
+  should("recover an invalid imported tab order so settings remain editable", async () => {
+    await Settings.set("tabSwitcherOrder", 'unknown"]');
+    await optionsPage.init();
+    assert.equal("mru", document.querySelector('[name="tabSwitcherOrder"]:checked').value);
+    optionsPage.getOptionEl("scrollStepSize").value = "90";
+    await optionsPage.saveOptions();
+    assert.equal(90, Settings.get("scrollStepSize"));
+    assert.equal("mru", Settings.get("tabSwitcherOrder"));
+  });
+
   should("show validation errors for invalid fields on save", async () => {
     const el = optionsPage.getOptionEl("keyMappings");
     assert.isFalse(el.classList.contains("validation-error"));

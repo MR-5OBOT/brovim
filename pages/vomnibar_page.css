@@ -23,15 +23,18 @@ ul {
 #vomnibar {
   display: block;
   position: relative;
-  width: 90%;
-  max-width: 800px;
-  min-width: 460px;
+  box-sizing: border-box;
+  width: min(800px, calc(100% - 48px));
+  min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #e6e6e6;
   background: #141414;
   text-align: left;
-  border-radius: 4px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.65);
+  border-radius: 10px;
+  box-shadow:
+    0 2px 6px rgb(0 0 0 / 18%),
+    0 12px 32px -8px rgb(0 0 0 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 4%);
   border: 1px solid #2e2e2e;
   overflow: hidden;
   z-index: 2139999999;
@@ -62,7 +65,8 @@ ul {
   color: #ffffff;
   border-radius: 4px;
   border: 1px solid #333333;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 16%);
+  min-width: 0;
   width: 100%;
   outline: none;
   box-sizing: border-box;
@@ -70,8 +74,8 @@ ul {
 }
 
 #vomnibar input:focus {
-  border-color: #4a026e;
-  box-shadow: 0 0 0 2px rgba(74, 2, 110, 0.45);
+  border-color: #9859bd;
+  box-shadow: 0 0 0 2px rgb(152 89 189 / 16%);
 }
 
 #vomnibar input::placeholder {
@@ -84,7 +88,7 @@ ul {
 }
 
 #vomnibar ul {
-  max-height: 440px;
+  max-height: min(440px, calc(100vh - 144px));
   overflow-y: auto;
 }
 

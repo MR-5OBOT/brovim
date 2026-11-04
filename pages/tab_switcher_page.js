@@ -1,138 +1,252 @@
+import "../lib/utils.js";
+import "../lib/settings.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-// Shows every open tab in the window as previews, most recently used first, starting on the previous
-// tab. Keys: h/j/k/l or arrows move, Enter switches, x closes, Esc (or a click outside) dismisses.
-// Opened with the Alt+Q browser shortcut: hold Alt and tap Q to move; releasing Alt switches.
+// The tab switcher, modeled on TabGlance: the most recently used tabs, at most "cards per row" ×
+// "rows" of them, starting on the previous tab. Hold Alt and tap Q to move; releasing Alt switches.
+// The arrow keys, h/j/k/l and Tab also move, Enter switches, x, Delete or Backspace close the
+// selected tab, and Esc or a click outside cancels. The mouse selects a card by hovering once it
+// really moves, switches with a click and closes a tab with the card's × or a middle click.
 
-const panel = document.getElementById("tab-switcher");
-const cardGap = 6; // The #tab-switcher grid gap in tab_switcher_page.css.
+const panel = document.getElementById("panel");
+const grid = document.getElementById("tab-switcher");
+const scrollHint = document.getElementById("scroll-hint");
+const reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
+// Letter tile colors.
+const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
-let tabs = [];
+let allTabs = []; // Awake tabs in this window, in switcher order: the current tab first.
+let tabs = []; // The tabs shown as cards.
 let selectedIndex = 0;
-let columns = 1;
+let selectedCard = null;
 let isAltCycling = false;
+let visible = false;
+let activation = 0;
 // Resolves once the tab list for the current activation has loaded. A quick Alt+Q tap can release
 // Alt before that, so commits and cycling wait on it.
 let tabsLoaded = Promise.resolve();
-let activation = 0;
-let selectedCard = null;
-let visible = false;
-const reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
+let closing = null; // The pending close request.
+// The last pointer position. Hovering selects only once the mouse really moves: not when the grid
+// appears under it, or scrolls under it after a key press.
+let pointer = null;
+let focusGuard = null;
+
+// A layout setting, or its default if the stored value is out of range.
+function layoutSetting(key, min, max) {
+  const value = Number(Settings.get(key));
+  return Number.isInteger(value) && value >= min && value <= max
+    ? value
+    : Settings.defaultOptions[key];
+}
+const columnSetting = () => layoutSetting("tabSwitcherColumns", 3, 6);
 
 async function fetchTabs() {
   const currentActivation = ++activation;
+  await Settings.onLoaded();
+  let list = [];
   try {
-    const currentTabs = await chrome.runtime.sendMessage({
+    list = await chrome.runtime.sendMessage({
       handler: "getOpenTabsWithScreenshots",
       includeScreenshots: false,
     }) || [];
-    if (currentActivation !== activation) return;
-    // Keep decoded previews while refreshing the list and its recency order.
-    const previousTabs = new Map(tabs.map((tab) => [tab.id, tab]));
-    tabs = currentTabs.map((tab) => ({
-      ...tab,
-      screenshot: previousTabs.get(tab.id)?.screenshot,
-    }));
   } catch (err) {
     console.error("Failed to load tabs:", err);
-    tabs = [];
   }
-  selectedIndex = tabs.length > 1 ? 1 : 0; // The previously used tab.
+  if (currentActivation !== activation) return;
+  // Keep decoded previews while refreshing the list and its order.
+  const previousTabs = new Map(allTabs.map((tab) => [tab.id, tab]));
+  allTabs = list.map((tab) => ({
+    ...tab,
+    screenshot: previousTabs.get(tab.id)?.url === tab.url
+      ? previousTabs.get(tab.id).screenshot
+      : null,
+  }));
+  panel.classList.toggle("glass", Settings.get("tabSwitcherGlass") === true);
+  chooseTabs();
+  if (tabs.length < 2) {
+    hide();
+    return;
+  }
+  selectedIndex = 1; // The previous tab.
   render();
-  panel.style.visibility = "visible";
-  loadScreenshots(currentActivation).catch(() => {});
+  // Show usable cards immediately; cached previews arrive without delaying keys or painting.
+  panel.classList.add("ready");
+  postPanel();
+  guardFocus();
+  loadScreenshots(currentActivation, tabs);
 }
 
-async function loadScreenshots(currentActivation) {
+function chooseTabs() {
+  tabs = allTabs.slice(0, columnSetting() * layoutSetting("tabSwitcherRows", 1, 3));
+}
+
+async function loadScreenshots(currentActivation, tabsToLoad) {
   const screenshots = await chrome.runtime.sendMessage({
     handler: "getTabScreenshots",
-    ids: tabs.map((tab) => tab.id),
-  });
-  if (currentActivation !== activation) return;
-  tabs.forEach((tab, index) => {
-    const screenshot = screenshots?.[tab.id];
+    urls: tabsToLoad.map((tab) => tab.url),
+  }).catch(() => null);
+  if (currentActivation !== activation || !screenshots) return;
+  await Promise.all(tabsToLoad.map(async (tab, i) => {
+    const screenshot = screenshots[i];
     if (!screenshot || tab.screenshot === screenshot) return;
     tab.screenshot = screenshot;
-    const card = panel.children[index];
+    const card = [...grid.children].find((el) => el.dataset.id == tab.id);
+    if (!card) return;
     const img = createImage(screenshot);
     // Decode before replacing the visible preview, avoiding a blank frame during image loading.
-    img.decode().then(() => {
-      if (currentActivation === activation && card?.parentElement === panel) {
-        card.querySelector(".card-thumb").replaceChildren(img);
-      }
-    }).catch(() => {});
-  });
-}
-
-function updateColumns() {
-  // As many columns as fit on screen; more tabs wrap onto further rows.
-  const cardWidth = parseFloat(getComputedStyle(panel).getPropertyValue("--card-width"));
-  const maxColumns = Math.floor((globalThis.innerWidth - 80 + cardGap) / (cardWidth + cardGap));
-  columns = Math.max(1, Math.min(tabs.length, maxColumns));
-  panel.style.setProperty("--columns", columns);
+    await img.decode().catch(() => {});
+    if (currentActivation === activation && card.parentElement === grid) {
+      card.querySelector(".card-thumb").firstElementChild.replaceWith(img);
+    }
+  }));
 }
 
 function render() {
-  updateColumns();
-  panel.replaceChildren(...tabs.map(createCard));
+  const columns = columnSetting();
+  grid.classList.toggle("few", tabs.length < columns);
+  grid.style.setProperty("--columns", Math.min(columns, tabs.length));
+  grid.replaceChildren(...tabs.map(createCard));
+  selectedCard = null;
   updateSelection(false);
+  postPanel();
 }
 
-function createCard(tab) {
+function createCard(tab, index) {
+  const host = hostname(tab.url);
   const card = document.createElement("div");
   card.className = "tab-card";
-  card.addEventListener("click", () => switchToTab(tab.id));
+  card.id = `tab-card-${index}`;
+  card.dataset.id = tab.id;
+  card.dataset.index = index;
+  card.setAttribute("role", "gridcell");
+  card.setAttribute("aria-selected", "false");
+  card.setAttribute("aria-label", host ? `${tab.title} — ${host}` : tab.title);
+  card.addEventListener("click", (event) => {
+    if (event.button !== 0) return;
+    select(index);
+    commit();
+  });
+  // Close on a middle click, without the autoscroll or paste of pressing the middle button.
+  card.addEventListener("mousedown", (event) => event.button === 1 && event.preventDefault());
+  card.addEventListener("auxclick", (event) => event.button === 1 && closeTab(index));
 
   const thumb = document.createElement("div");
   thumb.className = "card-thumb";
-  if (tab.screenshot) {
-    thumb.append(createImage(tab.screenshot));
-  } else if (tab.favIconUrl) {
-    thumb.append(createImage(tab.favIconUrl, "big-favicon"));
-  } else {
-    thumb.textContent = hostname(tab.url);
-  }
+  const close = document.createElement("button");
+  close.className = "close-tab";
+  close.type = "button";
+  close.tabIndex = -1;
+  close.textContent = "×";
+  close.title = "Close tab";
+  close.setAttribute("aria-label", `Close ${tab.title}`);
+  close.addEventListener("click", (event) => {
+    event.stopPropagation();
+    closeTab(index);
+  });
+  thumb.append(tab.screenshot ? createImage(tab.screenshot) : letterTile(tab, host), close);
 
-  const label = document.createElement("div");
-  label.className = "card-label";
-  if (tab.favIconUrl) label.append(createImage(tab.favIconUrl));
-  const title = document.createElement("span");
+  const title = document.createElement("div");
+  title.className = "card-title";
   title.textContent = tab.title;
-  label.append(title);
-
-  card.append(thumb, label);
+  const site = document.createElement("div");
+  site.className = "card-host";
+  site.textContent = host || tab.url;
+  card.append(thumb, title, site);
   return card;
 }
 
-function createImage(src, className) {
+function createImage(src) {
   const img = document.createElement("img");
-  img.loading = "lazy";
   img.src = src;
-  if (className) img.className = className;
-  img.onerror = () => img.remove();
+  img.alt = "";
+  img.draggable = false;
   return img;
+}
+
+function letterTile(tab, host) {
+  const tile = document.createElement("div");
+  tile.className = "letter-tile";
+  let hash = 0;
+  for (const char of host || tab.url || tab.title) hash = (hash * 31 + char.codePointAt(0)) | 0;
+  tile.style.setProperty("--hue", hues[Math.abs(hash) % hues.length]);
+  tile.textContent = firstLetter(host.replace(/^www\./, "")) || firstLetter(tab.title.trim()) ||
+    "?";
+  return tile;
+}
+
+// The first character as the reader sees it, such as a whole emoji.
+function firstLetter(text) {
+  const first = Intl.Segmenter
+    ? new Intl.Segmenter().segment(text)[Symbol.iterator]().next().value?.segment
+    : Array.from(text)[0];
+  return first?.toUpperCase() ?? "";
 }
 
 function hostname(url) {
   try {
-    return new URL(url).hostname || url;
+    return new URL(url).hostname;
   } catch {
-    return url;
+    return "";
   }
 }
 
+function select(index) {
+  if (index === selectedIndex) return;
+  selectedIndex = index;
+  updateSelection();
+}
+
 function updateSelection(animate = true) {
-  const nextCard = panel.children[selectedIndex];
+  const nextCard = grid.children[selectedIndex];
   if (selectedCard !== nextCard) {
     selectedCard?.classList.remove("selected");
+    selectedCard?.setAttribute("aria-selected", "false");
     nextCard?.classList.add("selected");
+    nextCard?.setAttribute("aria-selected", "true");
     selectedCard = nextCard;
   }
+  // Names the selected card for screen readers.
+  if (nextCard) grid.setAttribute("aria-activedescendant", nextCard.id);
   nextCard?.scrollIntoView({
     block: "nearest",
     inline: "nearest",
     behavior: animate && !reducedMotion.matches ? "smooth" : "instant",
   });
+  updateScrollHint();
+}
+
+function updateScrollHint() {
+  scrollHint.classList.toggle(
+    "show",
+    panel.scrollHeight - panel.clientHeight - panel.scrollTop > 12,
+  );
+}
+
+// Liquid glass blurs the page under the panel, which this frame can't do, so the content script
+// does, and needs to know where the panel is.
+function postPanel() {
+  if (!visible || !panel.classList.contains("ready") || !panel.classList.contains("glass")) return;
+  const { left, top, width, height } = panel.getBoundingClientRect();
+  UIComponentMessenger.postMessage({ name: "panel", rect: { left, top, width, height } });
+}
+
+// Moves through the cards in order, wrapping around.
+function step(delta) {
+  if (tabs.length === 0) return;
+  select((selectedIndex + delta + tabs.length) % tabs.length);
+}
+
+// Moves a row up or down, wrapping within the column and skipping the gaps of a short last row.
+function moveRow(delta) {
+  if (tabs.length === 0) return;
+  const columns = Math.min(columnSetting(), tabs.length);
+  const rows = Math.ceil(tabs.length / columns);
+  const column = selectedIndex % columns;
+  let row = Math.floor(selectedIndex / columns);
+  do {
+    row = (row + delta + rows) % rows;
+  } while (row * columns + column >= tabs.length);
+  select(row * columns + column);
 }
 
 function whenTabsLoaded(action) {
@@ -142,88 +256,97 @@ function whenTabsLoaded(action) {
   });
 }
 
-function move(step) {
-  const next = selectedIndex + step;
-  if (next >= 0 && next < tabs.length) {
-    selectedIndex = next;
-    updateSelection();
-  }
-}
-
-function cycle(backwards = false) {
-  if (tabs.length < 2) return;
-  selectedIndex = (selectedIndex + (backwards ? -1 : 1) + tabs.length) % tabs.length;
-  updateSelection();
-}
-
 function commit() {
-  whenTabsLoaded(() => {
-    if (tabs[selectedIndex]) {
-      switchToTab(tabs[selectedIndex].id);
-    } else {
-      hide();
-    }
+  whenTabsLoaded(async () => {
+    // Never switch to a tab that is being closed.
+    await closing;
+    const tab = tabs[selectedIndex];
+    hide();
+    if (tab) await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tab.id });
   });
 }
 
-async function switchToTab(tabId) {
-  hide();
-  await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tabId });
-}
-
-async function closeTab(tabId) {
-  await chrome.runtime.sendMessage({ handler: "closeSpecificTab", id: tabId });
-  tabs = tabs.filter((t) => t.id !== tabId);
-  if (tabs.length === 0) {
+async function closeTab(index) {
+  const tab = tabs[index];
+  if (!tab || closing) return;
+  select(index);
+  closing = chrome.runtime.sendMessage({ handler: "closeSpecificTab", id: tab.id }).catch(() => {});
+  await closing;
+  closing = null;
+  allTabs = allTabs.filter((t) => t.id !== tab.id);
+  // The next most recent tab takes the free place.
+  chooseTabs();
+  if (tabs.length < 2) {
     hide();
     return;
   }
-  // Keep the selection where it was, so pressing x repeatedly doesn't jump back to (and close) the
-  // current tab.
-  selectedIndex = Math.min(selectedIndex, tabs.length - 1);
+  // Keep the selection in place, so pressing x repeatedly doesn't jump back to the current tab.
+  selectedIndex = Math.max(0, Math.min(index, tabs.length - 1));
   render();
+  loadScreenshots(activation, tabs.filter((t) => !t.screenshot));
 }
 
 function hide() {
   activation++;
   visible = false;
   isAltCycling = false;
+  clearInterval(focusGuard);
+  panel.classList.remove("ready");
   UIComponentMessenger.postMessage({ name: "hide" });
+}
+
+// If the browser or another app takes the focus, possibly without delivering the Alt release,
+// what the user wanted is unknown, so cancel, like TabGlance.
+function guardFocus() {
+  clearInterval(focusGuard);
+  let focused = false;
+  focusGuard = setInterval(() => {
+    if (document.hasFocus()) focused = true;
+    else if (focused) hide();
+  }, 100);
 }
 
 const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
 
-function handleKeydown(event) {
+// The action for a key, or null if the switcher doesn't use it.
+function keyAction(event) {
   const key = event.key;
-  if (key === "Escape") {
+  if (key === "Enter") return commit;
+  if (key === "Tab") return () => step(event.shiftKey ? -1 : 1);
+  switch (vimDirections[key] ?? key) {
+    case "ArrowLeft":
+      return () => step(-1);
+    case "ArrowRight":
+      return () => step(1);
+    case "ArrowUp":
+      return () => moveRow(-1);
+    case "ArrowDown":
+      return () => moveRow(1);
+  }
+  // Alt+Q, or Q while Alt is still held.
+  if (key.toLowerCase() === "q" && (event.altKey || isAltCycling)) {
+    isAltCycling = true;
+    return () => step(event.shiftKey ? -1 : 1);
+  }
+  if (["x", "Delete", "Backspace"].includes(key)) {
+    return () => !event.repeat && closeTab(selectedIndex);
+  }
+  return null;
+}
+
+function handleKeydown(event) {
+  if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
+  pointer = null;
+  if (event.key === "Escape") {
     event.preventDefault();
     hide();
     return;
   }
-  // Alt+Q cycling, or Q / Tab while Alt is still held.
-  if ((key.toLowerCase() === "q" || key === "Tab") && (event.altKey || isAltCycling)) {
-    event.preventDefault();
-    isAltCycling = true;
-    whenTabsLoaded(() => cycle(event.shiftKey));
-    return;
-  }
-  if (key === "Enter") {
-    event.preventDefault();
-    commit();
-    return;
-  }
-  if (key === "x") {
-    event.preventDefault();
-    whenTabsLoaded(() => {
-      if (tabs[selectedIndex]) closeTab(tabs[selectedIndex].id);
-    });
-    return;
-  }
-  const direction = vimDirections[key] ?? key;
-  const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[direction];
-  if (step == null) return;
+  const action = keyAction(event);
+  if (!action) return;
   event.preventDefault();
-  whenTabsLoaded(() => move(step));
+  event.stopPropagation();
+  whenTabsLoaded(action);
 }
 
 function handleKeyup(event) {
@@ -239,14 +362,15 @@ UIComponentMessenger.registerHandler((event) => {
     case "activate":
       visible = true;
       isAltCycling = event.data.isAltCycle ?? false;
+      pointer = null;
       // Hide the previous list until the fresh one (in the new recency order) is rendered.
-      panel.style.visibility = "hidden";
+      panel.classList.remove("ready");
       tabsLoaded = fetchTabs();
       if (event.data.commitOnOpen) commit();
       break;
     case "cycleNext":
       isAltCycling = true;
-      whenTabsLoaded(() => cycle());
+      whenTabsLoaded(() => step(1));
       break;
     case "commitSelection":
       commit();
@@ -257,6 +381,7 @@ UIComponentMessenger.registerHandler((event) => {
     case "hidden":
       visible = false;
       isAltCycling = false;
+      clearInterval(focusGuard);
       activation++;
       break;
   }
@@ -265,8 +390,16 @@ UIComponentMessenger.registerHandler((event) => {
 globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
 globalThis.addEventListener("resize", () => {
-  updateColumns();
-  if (visible) updateSelection(false);
+  if (!visible) return;
+  updateScrollHint();
+  postPanel();
+});
+panel.addEventListener("scroll", updateScrollHint, { passive: true });
+document.addEventListener("mousemove", (event) => {
+  const moved = pointer && (pointer.x !== event.clientX || pointer.y !== event.clientY);
+  pointer = { x: event.clientX, y: event.clientY };
+  const card = moved && event.target.closest?.(".tab-card");
+  if (visible && card) select(Number(card.dataset.index));
 });
 // A click outside the panel dismisses the switcher.
 document.body.addEventListener("click", (event) => {

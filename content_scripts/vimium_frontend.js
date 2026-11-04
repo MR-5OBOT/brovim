@@ -189,6 +189,8 @@ const checkEnabledAfterURLChange = forTrusted(function (_request) {
   }
   // The URL changing feels like navigation to the user, so reset the scroller (see #3119).
   Scroller.reset();
+  // A single-page app showed a new page: its switcher preview is due once it has settled.
+  TabPreview.start("route");
   if (windowIsFocused()) {
     checkIfEnabledForUrl();
   }
@@ -249,19 +251,6 @@ const onFocus = forTrusted(function (event) {
 // to receive events when Vimium is not enabled.
 globalThis.addEventListener("focus", onFocus, true);
 globalThis.addEventListener("hashchange", checkEnabledAfterURLChange, true);
-
-async function initializeOnDomReady() {
-  const isVimiumNewTabPage = document.location.href == Settings.vimiumNewTabPageUrl;
-  if (!isVimiumNewTabPage) return;
-
-  // Show the Vomnibar.
-  await Settings.onLoaded();
-  if (Settings.get("openVomnibarOnNewTabPage")) {
-    await Utils.populateBrowserInfo();
-    DomUtils.injectUserCss();
-    Vomnibar.activate(0, {});
-  }
-}
 
 const onUnload = Utils.makeIdempotent(() => {
   HintCoordinator.exit({ isSuccess: false });
@@ -390,6 +379,10 @@ const messageHandlers = {
   cancelTabSwitcher({ requestId }) {
     TabSwitcher.cancel(requestId);
   },
+  // The tab became active. Also tells the background that this page captures its own preview.
+  startTabPreview() {
+    TabPreview.start("visible");
+  },
   runInTopFrame({ sourceFrameId, registryEntry }) {
     // TODO(philc): it seems to me that we should be able to get rid of this runInTopFrame
     // command, and instead use chrome.tabs.sendMessage with a frameId 0 from the background page.
@@ -423,8 +416,13 @@ async function handleMessage(request, sender) {
   // Some request are handled elsewhere in the code base; ignore them here.
   const shouldHandleMessage = request.handler !== "userIsInteractingWithThePage" &&
     (isEnabledForUrl ||
-      ["checkEnabledAfterURLChange", "runInTopFrame", "openTabSwitcher", "cancelTabSwitcher"]
-        .includes(request.handler));
+      [
+        "checkEnabledAfterURLChange",
+        "runInTopFrame",
+        "openTabSwitcher",
+        "cancelTabSwitcher",
+        "startTabPreview",
+      ].includes(request.handler));
   if (shouldHandleMessage) {
     const result = await messageHandlers[request.handler](request, sender);
     return result;
@@ -522,7 +520,6 @@ const testEnv = globalThis.window == null;
 if (!testEnv) {
   initWindowIsFocused();
   initializePreDomReady();
-  DomUtils.documentReady().then(initializeOnDomReady);
 }
 
 Object.assign(globalThis, {

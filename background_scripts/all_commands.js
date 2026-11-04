@@ -1,7 +1,6 @@
 // This is the order they will be shown in the help dialog.
 //
 // Properties:
-// - advanced: advanced commands are not shown in the help dialog by default.
 // - background: whether this command has to be run by the background page.
 // - desc: shown in the help dialog and command listing page.
 // - details: extra help information that will only be shown on the command listing page.
@@ -76,14 +75,12 @@ const allCommands = [
     name: "scrollRight",
     desc: "Scroll right",
     group: "navigation",
-    advanced: true,
   },
 
   {
     name: "scrollToLeft",
     desc: "Scroll all the way to the left",
     group: "navigation",
-    advanced: true,
     noRepeat: true,
   },
 
@@ -91,7 +88,6 @@ const allCommands = [
     name: "scrollToRight",
     desc: "Scroll all the way to the right",
     group: "navigation",
-    advanced: true,
     noRepeat: true,
   },
 
@@ -153,7 +149,6 @@ const allCommands = [
         "instead of clicking on the link, copy its text.",
     },
     group: "navigation",
-    advanced: true,
   },
 
   {
@@ -166,7 +161,6 @@ const allCommands = [
     name: "LinkHints.activateModeWithQueue",
     desc: "Open multiple links in a new tab",
     group: "navigation",
-    advanced: true,
     noRepeat: true,
   },
 
@@ -174,14 +168,12 @@ const allCommands = [
     name: "LinkHints.activateModeToOpenIncognito",
     desc: "Open a link in incognito window",
     group: "navigation",
-    advanced: true,
   },
 
   {
     name: "LinkHints.activateModeToCopyLinkUrl",
     desc: "Copy a link URL to the clipboard",
     group: "navigation",
-    advanced: true,
   },
 
   //
@@ -304,43 +296,6 @@ const allCommands = [
   //
 
   {
-    name: "createTab",
-    desc: "Create new tab",
-    options: {
-      "(any url)": "Open this URL, rather than the browser's new tab page. " +
-        "E.g.: `map X createTab https://example.com`",
-      window: "Create the tab in a new window",
-      incognito: "Create the tab in an incognito window",
-      position: "Where to place the tab in the tab bar. " +
-        "One of `start`, `before`, `after`, `end`. `after` is the default.",
-    },
-    group: "tabs",
-    background: true,
-    repeatLimit: 20,
-  },
-
-  {
-    name: "previousTab",
-    desc: "Go one tab left",
-    group: "tabs",
-    background: true,
-  },
-
-  {
-    name: "nextTab",
-    desc: "Go one tab right",
-    group: "tabs",
-    background: true,
-  },
-
-  {
-    name: "visitPreviousTab",
-    desc: "Go to previously-visited tab",
-    group: "tabs",
-    background: true,
-  },
-
-  {
     name: "togglePinTab",
     desc: "Pin or unpin current tab",
     group: "tabs",
@@ -382,7 +337,6 @@ const allCommands = [
     name: "moveTabLeft",
     desc: "Move tab to the left",
     group: "tabs",
-    advanced: true,
     background: true,
   },
 
@@ -390,7 +344,6 @@ const allCommands = [
     name: "moveTabRight",
     desc: "Move tab to the right",
     group: "tabs",
-    advanced: true,
     background: true,
   },
 
@@ -398,7 +351,6 @@ const allCommands = [
     name: "setZoom",
     desc: "Set zoom",
     group: "tabs",
-    advanced: true,
     background: true,
     options: {
       level: "The zoom level. This can be a range of [0.25, 5.0]. 1.0 is the default.",
@@ -410,7 +362,6 @@ const allCommands = [
     name: "zoomIn",
     desc: "Zoom in",
     group: "tabs",
-    advanced: true,
     background: true,
   },
 
@@ -418,7 +369,6 @@ const allCommands = [
     name: "zoomOut",
     desc: "Zoom out",
     group: "tabs",
-    advanced: true,
     background: true,
   },
 
@@ -426,7 +376,6 @@ const allCommands = [
     name: "zoomReset",
     desc: "Reset zoom",
     group: "tabs",
-    advanced: true,
     background: true,
     noRepeat: true,
   },
@@ -439,7 +388,6 @@ const allCommands = [
     name: "toggleViewSource",
     desc: "View page source",
     group: "misc",
-    advanced: true,
     noRepeat: true,
   },
 

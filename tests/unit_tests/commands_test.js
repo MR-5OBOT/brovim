@@ -69,7 +69,7 @@ context("KeyMappingsParser", () => {
   });
 
   should("parse a URL parameter alongside an option value", () => {
-    // URLs alongside the "position" option occurs in the createTab command.
+    // URL-shaped option names must retain their query string.
     const result = KeyMappingsParser.parseCommandOptions('abc.com/?param=val position="end"');
     assert.equal({ "abc.com/?param=val": true, position: "end" }, result);
   });
@@ -99,6 +99,12 @@ context("KeyMappingsParser", () => {
     assert.equal(1, getErrors("map a example-command").length);
   });
 
+  should("reject the purged new-tab and tab-navigation commands", () => {
+    for (const command of ["createTab", "previousTab", "nextTab", "visitPreviousTab"]) {
+      assert.equal(1, getErrors(`map q ${command}`).length);
+    }
+  });
+
   should("reject unknown options on map statements", () => {
     assert.equal(0, getErrors("map j LinkHints.activateMode action=focus").length);
     assert.equal(1, getErrors("map j LinkHints.activateMode unknownOption=a").length);
@@ -107,11 +113,6 @@ context("KeyMappingsParser", () => {
   should("reject count option on commands with noRepeat=true", () => {
     assert.equal(0, getErrors("map j scrollLeft count=1").length);
     assert.equal(1, getErrors("map j copyCurrentUrl count=1").length);
-  });
-
-  should("allow arbitrary URLs as arguments to commands with (any url) as an option", () => {
-    assert.equal(0, getErrors("map j createTab http://example.com").length);
-    assert.equal(1, getErrors("map j createTab invalid-url").length);
   });
 
   context("parseLines", () => {

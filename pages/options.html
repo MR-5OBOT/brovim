@@ -21,6 +21,7 @@
         <nav class="settings-nav" aria-label="Settings sections">
           <a href="#general" aria-current="location"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M7 6.5h.01M10 6.5h.01"/></svg><span>General</span></a>
           <a href="#keyboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="13" rx="3"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M10 14h.01M14 14h.01M18 14h.01M8 17h8"/></svg><span>Keyboard</span></a>
+          <a href="#tab-switcher"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="8" height="7" rx="1.5"/><rect x="13" y="4" width="8" height="7" rx="1.5"/><rect x="3" y="13" width="8" height="7" rx="1.5"/><rect x="13" y="13" width="8" height="7" rx="1.5"/></svg><span>Tab switcher</span></a>
           <a href="#sites"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z"/><path d="m9 12 2 2 4-4"/></svg><span>Excluded sites</span></a>
           <a href="#link-hints"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 3 14 9-7 1-3 7-4-17Z"/><path d="m13 14 5 6"/></svg><span>Link hints</span></a>
           <a href="#appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18h1a2 2 0 0 0 1-4c-1-1 0-3 2-3h2a3 3 0 0 0 3-3 9 9 0 0 0-9-8Z"/><path d="M7 10h.01M10 6.5h.01M15 7h.01M6.5 14h.01"/></svg><span>Appearance</span></a>
@@ -40,36 +41,7 @@
         <input type="hidden" name="settingsVersion">
 
         <section id="general" class="settings-section" aria-labelledby="general-title">
-          <header class="section-heading"><h2 id="general-title">General</h2><p>Choose how new tabs, scrolling and page focus behave.</p></header>
-          <div class="settings-card">
-            <fieldset id="new-tab-url-container" class="new-tab-choices" aria-describedby="new-tab-help">
-              <legend>New tabs</legend>
-              <p class="field-description">Choose the page opened by Brovim’s <kbd>t</kbd> shortcut.</p>
-              <label class="choice-row" for="vimiumNewTabPage">
-                <input id="vimiumNewTabPage" type="radio" name="newTabDestination" value="vimiumNewTabPage">
-                <span><strong>Blank page with Brovim</strong><small>A minimal page that supports Brovim’s page shortcuts.</small></span>
-              </label>
-              <div id="openVomnibarContainer" class="choice-suboption">
-                <input id="openVomnibarOnNewTabPage" type="checkbox" name="openVomnibarOnNewTabPage">
-                <label for="openVomnibarOnNewTabPage">Open the Vomnibar when the page loads</label>
-              </div>
-              <label class="choice-row" for="browserNewTabPage">
-                <input id="browserNewTabPage" type="radio" name="newTabDestination" value="browserNewTabPage">
-                <span><strong>Browser’s default new-tab page</strong><small>Use your browser’s usual start page.</small></span>
-              </label>
-              <label class="choice-row" for="customUrl">
-                <input id="customUrl" type="radio" name="newTabDestination" value="customUrl">
-                <span><strong>Custom URL</strong><small>Open a page of your choice.</small></span>
-              </label>
-              <label class="sr-only" for="new-tab-custom-url">Custom new-tab URL</label>
-              <input id="new-tab-custom-url" type="text" name="newTabCustomUrl" placeholder="https://example.com" spellcheck="false" style="display: none">
-            </fieldset>
-            <div id="new-tab-help" class="settings-note">
-              <strong>What about Ctrl+T and the + button?</strong>
-              <p>They keep your browser’s new-tab page. This setting only changes Brovim’s <kbd>t</kbd> command. Page shortcuts are restricted on built-in browser pages; <kbd>Alt+Q</kbd> still works there.</p>
-              <a href="https://github.com/philc/vimium#how-to-allow-vimium-to-work-on-new-tab-pages" target="_blank" rel="noopener">About shortcuts on new-tab pages <span aria-hidden="true">↗</span></a>
-            </div>
-          </div>
+          <header class="section-heading"><h2 id="general-title">General</h2><p>Choose how scrolling and page focus behave.</p></header>
           <div class="settings-card row-card">
             <div class="setting-row">
               <label class="field-copy" for="scroll-step"><strong>Scroll step</strong><span>Distance moved by <kbd>j</kbd>, <kbd>k</kbd>, <kbd>h</kbd> and <kbd>l</kbd>.</span></label>
@@ -84,7 +56,7 @@
         <section id="keyboard" class="settings-section" aria-labelledby="keyboard-title">
           <header class="section-heading"><h2 id="keyboard-title">Keyboard</h2><p>Manage the tab-switcher shortcut and your own key mappings.</p></header>
           <div class="settings-card row-card">
-            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Visual tab switcher</strong><span id="tab-switcher-description">Switch between all open tabs, most recently used first.</span></div><div class="shortcut-controls"><kbd id="tab-switcher-shortcut">Alt+Q</kbd><button id="manage-shortcuts" class="secondary-button" type="button">Manage shortcut <span aria-hidden="true">↗</span></button></div></div>
+            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Visual tab switcher</strong><span id="tab-switcher-description">Switch between awake tabs in this window, most recently used first.</span></div><div class="shortcut-controls"><kbd id="tab-switcher-shortcut">Alt+Q</kbd><button id="manage-shortcuts" class="secondary-button" type="button">Manage shortcut <span aria-hidden="true">↗</span></button></div></div>
             <label class="setting-row" for="keyboard-layout"><span class="field-copy"><strong>Use the US keyboard layout</strong><span>Interpret command keys as QWERTY, regardless of your keyboard layout.</span></span><input id="keyboard-layout" name="ignoreKeyboardLayout" type="checkbox" class="switch" role="switch"></label>
           </div>
           <div class="settings-card editor-card">
@@ -96,6 +68,33 @@ map z2 setZoom level=2
 unmap j
 unmapAll
 # Lines beginning with # or " are comments.</pre></details>
+          </div>
+        </section>
+
+        <section id="tab-switcher" class="settings-section" aria-labelledby="tab-switcher-title">
+          <header class="section-heading"><h2 id="tab-switcher-title">Tab switcher</h2><p>Hold <kbd>Alt</kbd> and tap <kbd>Q</kbd> to move through your recent tabs; release <kbd>Alt</kbd> to switch.</p></header>
+          <div class="settings-card">
+            <fieldset class="setting-choices">
+              <legend>Tab order</legend>
+              <label class="choice-row" for="tab-order-mru">
+                <input id="tab-order-mru" type="radio" name="tabSwitcherOrder" value="mru">
+                <span><strong>Most recently used</strong><small>The tab you used last comes right after the current one. Sleeping tabs are hidden.</small></span>
+              </label>
+              <label class="choice-row" for="tab-order-tabstrip">
+                <input id="tab-order-tabstrip" type="radio" name="tabSwitcherOrder" value="tabstrip">
+                <span><strong>Tab bar order</strong><small>Left to right, starting at the current tab.</small></span>
+              </label>
+            </fieldset>
+          </div>
+          <div class="settings-card row-card">
+            <label class="setting-row" for="two-tab-swap"><span class="field-copy"><strong>Swap directly with two tabs</strong><span>With only two awake tabs in the window, <kbd>Alt+Q</kbd> switches without showing the switcher.</span></span><input id="two-tab-swap" name="tabSwitcherTwoTabSwap" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="switcher-glass"><span class="field-copy"><strong>Liquid glass</strong><span>A see-through panel that blurs and bends the page behind it. Turn off for a lighter, faster look.</span></span><input id="switcher-glass" name="tabSwitcherGlass" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="switcher-columns"><span class="field-copy"><strong>Cards per row</strong><span>How many tabs fit side by side.</span></span><select id="switcher-columns" name="tabSwitcherColumns"><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
+            <label class="setting-row" for="switcher-rows"><span class="field-copy"><strong>Rows</strong><span>How many rows of recent tabs <kbd>Alt+Q</kbd> shows.</span></span><select id="switcher-rows" name="tabSwitcherRows"><option>1</option><option>2</option><option>3</option></select></label>
+          </div>
+          <div class="settings-card row-card">
+            <label class="setting-row" for="auto-capture"><span class="field-copy"><strong>Capture previews automatically</strong><span>When off, no new previews are taken. Saved ones are kept; other tabs show their site’s first letter.</span></span><input id="auto-capture" name="tabSwitcherAutoCapture" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="max-previews"><span class="field-copy"><strong>Previews to keep</strong><span>Previews are saved on this device only. Incognito previews are never saved to disk.</span></span><select id="max-previews" name="tabSwitcherMaxThumbnails"><option>30</option><option>60</option><option>120</option><option>240</option></select></label>
           </div>
         </section>
 

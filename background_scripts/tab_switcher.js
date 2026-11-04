@@ -12,8 +12,12 @@ export function openTabSwitcher(tab) {
 async function showTabSwitcher(tab) {
   tab ??= (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (!tab) return;
-  // With two tabs there is nothing to choose: swap directly, like TabGlance's two-tab switch.
-  if (!/^(https?|file):/i.test(tab.url || "") || (await getRecentTabs(tab.windowId)).length === 2) {
+  await Settings.onLoaded();
+  // With two tabs there is nothing to choose, so the shortcut can swap directly (TabGlance's
+  // two-tab option). Pages without content scripts can't show the grid, so they switch directly too.
+  const twoTabSwap = Settings.get("tabSwitcherTwoTabSwap") &&
+    (await getRecentTabs(tab.windowId)).length === 2;
+  if (!/^(https?|file):/i.test(tab.url || "") || twoTabSwap) {
     await switchToPreviousRecentTab(tab);
     return;
   }

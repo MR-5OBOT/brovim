@@ -220,8 +220,7 @@ iframe.vomnibar-frame {
   z-index: 2147483647;
 }
 
-iframe.vomnibar-frame.vimium-ui-component-visible,
-iframe.tab-switcher-frame.vimium-ui-component-visible {
+iframe.vomnibar-frame.vimium-ui-component-visible {
   animation: vimium-fade-in 0.12s ease-out;
 }
 
@@ -245,6 +244,35 @@ iframe.tab-switcher-frame {
   margin: 0;
   border: none;
   z-index: 2147483647;
+}
+
+/* Like TabGlance, the page behind the switcher is blurred a touch. */
+iframe.tab-switcher-frame.vimium-ui-component-visible {
+  backdrop-filter: blur(2px) saturate(1.05);
+}
+
+/* Liquid glass: the page under the switcher's panel, blurred and refracted. The switcher's content
+   script places it right after the frame, under the panel. */
+.tab-switcher-backdrop {
+  position: fixed;
+  z-index: 2147483646;
+  border-radius: 12px;
+  pointer-events: none;
+  backdrop-filter: blur(12px) saturate(1.9) brightness(1.12) contrast(1.06);
+  backdrop-filter: blur(12px) saturate(1.9) brightness(1.12) contrast(1.06)
+    url(#brovim-glass-refraction);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tab-switcher-backdrop {
+    backdrop-filter: blur(12px) saturate(1.7) brightness(1.06) contrast(1.05);
+    backdrop-filter: blur(12px) saturate(1.7) brightness(1.06) contrast(1.05)
+      url(#brovim-glass-refraction);
+  }
+}
+
+iframe.vimium-ui-component-hidden + .tab-switcher-backdrop {
+  display: none;
 }
 
 div.vimium-flash {
