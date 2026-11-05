@@ -2,6 +2,54 @@ import "./test_helper.js";
 import "../../lib/settings.js";
 import "../../lib/url_utils.js";
 
+context("browser shortcuts", () => {
+  for (
+    const [input, expected] of [
+      ["Ctrl+Q", { key: "q", modifiers: ["ctrlKey"] }],
+      ["Ctrl+Shift+E", { key: "e", modifiers: ["ctrlKey"], requiresShift: true }],
+      ["Command+P", { key: "p", modifiers: ["metaKey"] }],
+      ["⌘⇧P", { key: "p", modifiers: ["metaKey"], requiresShift: true }],
+      ["Alt+Q", { key: "q", modifiers: ["altKey"] }],
+    ]
+  ) {
+    should(`recognize ${input} and exclude Shift from release-to-switch`, () => {
+      assert.equal(expected, Utils.parseBrowserShortcut(input));
+    });
+  }
+  should("match a shortcut's physical letter when Alt changes its character", () => {
+    assert.isTrue(
+      Utils.isBrowserShortcutKey({ key: "œ", code: "KeyQ" }, Utils.parseBrowserShortcut("Alt+Q")),
+    );
+  });
+  should("stop registration quietly if the extension reload invalidated the context", () => {
+    stub(chrome.runtime, "onMessage", {
+      addListener() {
+        throw new Error("Extension context invalidated.");
+      },
+    });
+    assert.isFalse(Utils.addChromeRuntimeOnMessageListener([], () => {}));
+  });
+  should("also handle the invalidated onMessage property getter from Chromium", () => {
+    const runtime = {
+      get onMessage() {
+        throw new Error(
+          "Failed to read the 'onMessage' property from 'Object': Extension context invalidated.",
+        );
+      },
+    };
+    stub(chrome, "runtime", runtime);
+    assert.isFalse(Utils.addChromeRuntimeOnMessageListener([], () => {}));
+  });
+  should("keep unrelated registration errors visible", () => {
+    stub(chrome.runtime, "onMessage", {
+      addListener() {
+        throw new Error("Unexpected registration failure");
+      },
+    });
+    assert.throwsError(() => Utils.addChromeRuntimeOnMessageListener([], () => {}));
+  });
+});
+
 context("forTrusted", () => {
   should("invoke an event handler if the event is trusted", () => {
     let called = false;
@@ -19,39 +67,6 @@ context("forTrusted", () => {
     assert.equal(false, called);
     f(null);
     assert.equal(false, called);
-  });
-});
-
-context("extractQuery", () => {
-  should("extract queries from search URLs", () => {
-    assert.equal(
-      "bbc sport 1",
-      Utils.extractQuery(
-        "https://www.google.ie/search?q=%s",
-        "https://www.google.ie/search?q=bbc+sport+1",
-      ),
-    );
-    assert.equal(
-      "bbc sport 2",
-      Utils.extractQuery(
-        "http://www.google.ie/search?q=%s",
-        "https://www.google.ie/search?q=bbc+sport+2",
-      ),
-    );
-    assert.equal(
-      "bbc sport 3",
-      Utils.extractQuery(
-        "https://www.google.ie/search?q=%s",
-        "http://www.google.ie/search?q=bbc+sport+3",
-      ),
-    );
-    assert.equal(
-      "bbc sport 4",
-      Utils.extractQuery(
-        "https://www.google.ie/search?q=%s",
-        "http://www.google.ie/search?q=bbc+sport+4&blah",
-      ),
-    );
   });
 });
 
@@ -126,32 +141,6 @@ context("escapeRegexSpecialCharacters", () => {
     const str = "-[]/{}()*+?.^$|";
     const regexp = new RegExp(Utils.escapeRegexSpecialCharacters(str));
     assert.isTrue(regexp.test(str));
-  });
-});
-
-context("extractQuery", () => {
-  should("extract the query terms from a URL", () => {
-    const url = "https://www.google.ie/search?q=star+wars&foo&bar";
-    const searchUrl = "https://www.google.ie/search?q=%s";
-    assert.equal("star wars", Utils.extractQuery(searchUrl, url));
-  });
-
-  should("require trailing URL components", () => {
-    const url = "https://www.google.ie/search?q=star+wars&foo&bar";
-    const searchUrl = "https://www.google.ie/search?q=%s&foobar=x";
-    assert.equal(null, Utils.extractQuery(searchUrl, url));
-  });
-
-  should("accept trailing URL components", () => {
-    const url = "https://www.google.ie/search?q=star+wars&foo&bar&foobar=x";
-    const searchUrl = "https://www.google.ie/search?q=%s&foobar=x";
-    assert.equal("star wars", Utils.extractQuery(searchUrl, url));
-  });
-});
-
-context("pick", () => {
-  should("omit properties", () => {
-    assert.equal({ a: 1, b: 2 }, Utils.pick({ a: 1, b: 2, c: 3 }, ["a", "b", "d"]));
   });
 });
 

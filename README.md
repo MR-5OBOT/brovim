@@ -61,30 +61,47 @@ popup.
 The switcher works like TabGlance's: a grid of tab previews, most recently used first. Sleeping
 (discarded or frozen) tabs and hidden tabs are excluded; awake background tabs remain available.
 
-- **Keyboard:** tap `Alt+Q` to switch straight to the next tab in your chosen order (the previous
-  tab by default). Hold Alt to see the grid, tap Q to move through it (Shift+Q goes back), and
-  release Alt to switch. The grid shows your 10 most recently used tabs in the window (5 per row, 2
-  rows; both can be changed). Closing one brings in the next. The arrow keys, `h` `j` `k` `l` and
-  Tab also move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc` or a
-  click outside cancels.
-- **Mouse:** hover a card to select it, click to switch, and use its `×` or a middle click to close
-  the tab.
+The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
+reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its
+letter to move through the same list; release the modifier to switch. Adding Shift moves back unless
+Shift is already part of your assigned shortcut.
 
-The current tab comes first, then tabs used this session (links you open in the background come
-right after the current tab), then the rest by when they were last used. Options › Tab switcher
-offers tab bar order instead, the number of cards per row and rows, a liquid glass panel, direct
-swapping with two tabs (on by default), and the preview settings below. Change the shortcut at
+The grid shows up to 10 recent awake tabs (5 per row, 2 rows; both can be changed). Repeated
+shortcut presses wrap within those displayed cards; older tabs beyond this grid stay outside the
+cycle. Closing a card brings in the next eligible tab. Arrow keys, `h` `j` `k` `l` and Tab also
+move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse
+movement, clicks, middle clicks, touch and wheel input do not operate the switcher; there are no
+close buttons.
+
+The current tab comes first, then tabs used this session (new background tabs come right after the
+current tab, including tabs created without an opener), then the rest by when they were last used.
+This is also how TabGlance's cycling grid places the current tab. Options › Tab switcher offers tab
+bar order instead, the number of cards per row and rows, a liquid glass panel, direct swapping with
+two tabs (on by default), and the preview settings below. Change the shortcut at
 `chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
 
-Previews are taken after a page has finished loading and settled, and again after its URL changes or
-you scroll far. Opening and cycling the grid never waits for a new capture or for stored previews to
-load. Captures are deferred while Brovim's own UI is on screen. Previews are saved by page address
-on this device (the 60 most recent by default), so they survive browser restarts. Incognito previews
-are kept only until the browser closes. Tabs without a preview show their site's first letter.
+Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
+after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the
+grid's first draw; opening and cycling never wait for a new capture or for storage. Captures are
+deferred while Brovim's own UI is on screen. Previews are saved by page address on this device (the
+60 most recent by default), so they survive browser restarts. Incognito previews are kept only until
+the browser closes. A tab without a saved preview shows its site's first letter until you view it:
+Chrome can capture only the active tab in a window.
 
-On browser settings, new-tab pages and pages that block extension scripts, `Alt+Q` switches directly
-using your chosen order. It never opens a separate switcher window. The shortcut also works on
-excluded sites and while an input is focused. Unresponsive pages fall back to direct switching.
+On browser settings, new-tab pages and pages that block extension scripts, the shortcut switches
+directly using your chosen order. Further presses while held continue the original list instead of
+bouncing between two tabs; the grid resumes on the next page that supports it. Protected pages
+cannot report key releases, so abandoned fallback gestures expire after three seconds of inactivity.
+The switcher never opens a separate window. The shortcut also works on excluded sites and while an
+input is focused. Unresponsive pages fall back to direct switching.
+
+`Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
+active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`
+and remove `Ctrl+Tab` from **Next tab** (and `Ctrl+Shift+Tab` from **Previous tab**, if desired).
+This is a browser-wide preference, independent of whether Brovim is enabled. See the
+[Chrome shortcut restrictions](https://developer.chrome.com/docs/extensions/reference/api/commands#key-combination-requirements)
+and
+[Helium's shortcut settings](https://github.com/imputnet/helium/blob/main/patches/helium/settings/custom-keyboard-shortcuts-page.patch).
 
 Recency order survives extension reloads and resets when the browser starts a new session. Existing
 website tabs recover their Brovim controls automatically after an extension update.
@@ -122,11 +139,37 @@ The build and test tasks need [Deno](https://deno.com):
 ./make.js test-unit   # unit tests
 ./make.js test-dom    # DOM tests in headless Chrome (Puppeteer)
 ./make.js test-browser # installed-extension checks in temporary Chromium
+./make.js test-lifecycle # real incognito window and background-worker recovery
+./make.js test-native # actual Alt+Q events on an isolated X server (Linux)
 ./make.js package     # store zips in dist/
 ```
 
 `test-dom` uses Puppeteer's Chrome. Set `PUPPETEER_EXECUTABLE_PATH` to use a browser that's already
 installed.
+
+`test-lifecycle` also supports Firefox. Extract the Firefox ZIP built by `package`, then run:
+
+```sh
+BROVIM_TEST_BROWSER=firefox PUPPETEER_EXECUTABLE_PATH=/path/to/firefox \
+  BROVIM_EXTENSION_PATH=/path/to/extracted-firefox-package ./make.js test-lifecycle
+```
+
+These checks use temporary profiles. Firefox checks cover hints, the Vomnibar, scrolling, settings,
+thumbnail capture, private-cache storage and the tab switcher.
+
+On Linux, `test-native` uses Python 3, libX11 and libXtst to send real keyboard events to a
+dedicated Xvfb server. Choose a free display number that differs from your desktop:
+
+```sh
+Xvfb :91 -screen 0 1280x900x24 -nolisten tcp -ac &
+brovim_xvfb_pid=$!
+BROVIM_NATIVE_DISPLAY=:91 ./make.js test-native
+kill "$brovim_xvfb_pid"
+```
+
+This checks accelerator delivery, rapid cycling inside the recent grid, reverse cycling, modifier
+release and protected-page handoff. It refuses the desktop display, including equivalent screen
+aliases, so its keyboard events stay off your normal browser session.
 
 See [REPORT.md](REPORT.md) for the consolidated roadmap, implementation history, and verification
 results.

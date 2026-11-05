@@ -3,7 +3,8 @@
 **Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
 **Base:** Based on `philc/vimium` (full history kept; no longer a GitHub fork)\
 **Date:** November 4, 2026\
-**Status:** Final audit fixes verified locally; latest fixes remain uncommitted. See section 11.
+**Status:** Startup, recency and browser-lifecycle fixes verified locally; changes remain
+uncommitted. See section 13.
 
 ---
 
@@ -595,3 +596,291 @@ claiming Firefox runtime coverage.
 Reload Brovim on the browser's extensions page to activate the source changes in an existing
 installation. The current packages are under `dist/chrome-store`, `dist/chrome-canary` and
 `dist/firefox`. Changes remain uncommitted.
+
+## 12. First-Opening Thumbnails and Performance (November 4, 2026)
+
+The user requested thumbnails on first load, refreshed each time, with TabGlance's behavior and
+switching speed checked. Existing locally saved previews now accompany the first tab-list response
+from a preloaded memory cache. A slow storage read or screenshot never holds up the grid or keys.
+Only the displayed cards' images are included (at most 18), so a large window does not send every
+saved image on each opening. Missing images still load asynchronously.
+
+Visible pages get a preview after their first paint, even while slower resources are loading,
+followed by a settled refresh. Returning to a tab refreshes it even when its previous capture is
+recent. Navigation, SPA route changes and long scrolls also schedule updates. Tracking-parameter
+variants share the most recent capture rather than allowing an older exact URL to win.
+
+Early rate-limited captures retry independently of the settling wait. Leaving a tab cancels its
+settling observer/timer; returning starts a fresh capture. A route change during settling, including
+one during an older pending capture, retains its own early capture. Capture requests check both
+before and after the screenshot that Brovim UI is absent.
+
+The repeated-opening benchmark found a separate race: the previous close's delayed focus-restore
+message could dismiss a newly opened grid. Focus restoration now leaves a newly focused Brovim UI
+alone. The same rapid open/close loop passes after the fix.
+
+The general audit also fixed group mute mappings: the unmute branch was unreachable, and querying
+only audible tabs omitted muted tabs whose playback had stopped. Mute notifications now target the
+requesting frame rather than every iframe. Regression tests reproduced the failures before the
+fixes; independent review checked the changes and identified the route-during-settling edge case.
+
+### Verification and measurements
+
+| Check                                                                                | Result             |
+| ------------------------------------------------------------------------------------ | ------------------ |
+| Formatting/lint                                                                      | Pass               |
+| Unit tests                                                                           | 198/198 pass       |
+| DOM tests in Helium/Chromium                                                         | 87/87 pass         |
+| Installed source browser suite                                                       | 54/54 pass         |
+| Extracted Chrome Store ZIP browser suite                                             | 54/54 pass         |
+| Chrome Store, Canary and Firefox builds                                              | Pass               |
+| ZIP CRC, manifest paths, local imports, HTML assets, source freshness and exclusions | Pass for all three |
+
+The source browser suite measured:
+
+| Interaction                                                  | Time                        |
+| ------------------------------------------------------------ | --------------------------- |
+| First opening with cached, decoded thumbnails                | 90 ms                       |
+| Cached grid opening, 10 immediate reopenings                 | 13 ms median; 30 ms maximum |
+| Quick swap without a preview frame                           | 30 ms                       |
+| 19 queued selection cycles                                   | 22 ms total                 |
+| First-paint thumbnail saved while an image was still loading | 760 ms                      |
+| Changed thumbnail saved on a repeat visit                    | 830 ms                      |
+
+The packaged extension measured 98 ms for the first cached opening; 15 ms median and 28 ms maximum
+for 10 reopenings; 25 ms for a quick swap; and 23 ms for 19 queued cycles. Its first-paint capture
+was saved in 749 ms, with a changed repeat-visit preview saved in 832 ms.
+
+These are isolated-browser measurements, including automation overhead, rather than timing
+guarantees. The first-opening check blocks the separate image-loading response to prove the first
+draw already has cached thumbnails; its rapid reopenings also cover the focus race. A delayed-image
+fixture proves early capture happens before full page load and is refined afterward.
+
+Like [TabGlance's documented local cache](https://github.com/just2d/tabglance#privacy), previews
+stay on the device. Chrome's
+[captureVisibleTab API](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab)
+captures only the active tab in a window. A tab with no saved preview therefore gets its first
+screenshot when viewed; background tabs are never activated just to collect images. Incognito
+preview separation is covered by unit tests. Firefox's package is validated; Firefox runtime and
+incognito browser behavior were not exercised in this follow-up. The checks do not establish that
+every website/browser combination has zero bugs.
+
+Reload the extension to activate the changes. Updated packages are under `dist/chrome-store`,
+`dist/chrome-canary` and `dist/firefox`.
+
+## 13. Reported Startup Errors, Tab Ordering and Runtime Coverage (November 4, 2026)
+
+The user supplied an extension-error screenshot showing an undefined `initializeFrame` response
+being dereferenced as `response.isEnabledForUrl`, plus missing-receiver promise rejections. Browser
+regressions reproduced both classes before the fixes.
+
+- Frame initialization now starts with page keys available, validates replies, and retries empty or
+  malformed replies and temporary receiver/channel failures. Invalidated extension contexts shut
+  down their orphaned scripts. A frame with no valid reply does not install modes from missing
+  state; later focus/navigation checks can reconnect it.
+- Concurrent checks preserve a newer focus/navigation invalidation. A delayed response for an older
+  URL cannot override the current route's exclusions or pass keys. Both full exclusion and partial
+  pass-key cases are exercised with delayed responses.
+- Late focus/hint broadcasts and mute notifications tolerate their destination frame disappearing
+  after navigation. The previous code produced the screenshot's missing-receiver rejection in the
+  service worker; the same browser regression now produces none.
+
+### TabGlance ordering comparison
+
+Compared Brovim with TabGlance **1.5.13**, both the installed extension files and the package
+downloaded from Chrome's official update service. TabGlance's cycling mode puts the active tab at
+the first card and preselects the next card. Brovim keeps that behavior. The user-reported late
+WhatsApp position led to three independently reproduced ordering fixes:
+
+1. Newly created background tabs without an `openerTabId` were never added to recency. They fell
+   behind every recorded visit even when newly opened. All new background tabs now rank just after
+   the current tab, matching TabGlance. A real-browser regression includes a WhatsApp-style excluded
+   URL and confirms the card is second, ahead of an older visited tab.
+2. A delayed window-focus query could register the former active tab after a newer activation,
+   reversing their order. A revision guard discards the stale result.
+3. Browser startup could load storage, replay new activations, then erase those activations during
+   reset. Startup now clears old state before replaying visits received after the startup event.
+
+Exclusion rules do not filter the browser's recency events. Sleeping, frozen and hidden tabs remain
+excluded as requested. The new ordering regressions failed before the changes and pass afterward.
+
+### Firefox and background lifecycle
+
+Firefox lacks the session-storage access-level API, so the existing compatibility layer aliases
+session storage to local storage. That also sent private thumbnails to disk and could overwrite the
+normal thumbnail cache. Private previews now stay in a separate in-memory cache when this fallback
+is active. The alias case is covered by a failing-then-passing unit regression and a Firefox runtime
+check that verifies the private URL never reaches local storage.
+
+The new `test-lifecycle` task uses temporary profiles. Chromium checks open a real incognito window,
+exercise hints and the Vomnibar, verify actual normal/private capture storage, explicitly stop the
+extension worker, confirm destruction of its target, then verify a replacement worker can open the
+first Vomnibar while retaining MRU state and private previews. Firefox checks use the built Firefox
+package and cover its core controls, settings, thumbnail storage and switcher selection.
+
+### Current verification
+
+| Check                                                                | Result             |
+| -------------------------------------------------------------------- | ------------------ |
+| Formatting/lint and diff whitespace                                  | Pass               |
+| Unit tests                                                           | 202/202 pass       |
+| DOM tests in Helium/Chromium                                         | 87/87 pass         |
+| Installed source browser suite                                       | 59/59 pass         |
+| Extracted Chrome Store ZIP browser suite                             | 59/59 pass         |
+| Packaged Chromium incognito/worker lifecycle                         | 5/5 pass           |
+| Packaged Firefox 159.0.1 lifecycle                                   | 8/8 pass           |
+| Chrome Store, Canary and Firefox package builds                      | Pass               |
+| ZIP CRC, manifest/import/HTML paths, source freshness and exclusions | Pass for all three |
+
+The original Firefox limitations in earlier sections describe those earlier audits. This follow-up
+adds actual Firefox runtime coverage. It does not claim exhaustive coverage of every Firefox version
+or website. Updated ZIPs are in `dist/`. Reload the installed extension, clear the previous error
+entries and reload affected tabs to verify the new build rather than historical error logs.
+
+## 14. Configured Shortcuts, Stable Cycling and Keyboard-only Input (November 5, 2026)
+
+The reported Ctrl+Q two-tab loop had two causes: the content controller and grid assumed Alt+Q, and
+protected-page fallback rebuilt MRU after every activation. New unit and browser regressions
+reproduced those failures before the changes.
+
+- The switcher reads the actual assigned command, recognizes Control/Alt/Command and macOS glyphs,
+  and confirms on the matching modifier release. Shift reverses direction unless it is part of the
+  assigned shortcut. Quick release, release during startup, rapid queued commands and focus loss
+  retain their existing handling.
+- Protected-page fallback carries one window's fixed list through subsequent commands. Activations
+  caused by the switcher cannot rewrite that gesture's order. Removed, sleeping and hidden tabs are
+  skipped; a bounded scan handles an entirely vanished snapshot. Release, a fresh modifier press,
+  external tab/window movement or three seconds of fallback inactivity ends the carried gesture. The
+  idle limit is a recovery heuristic: protected pages cannot report key releases.
+- The initial grid keeps its existing size and appearance. Continuing past its edge reaches all
+  remaining awake tabs in successive grids. Reverse opening and a one-card final grid are tested.
+  Closing cards retains keyboard selection and refills the current grid. Commits revalidate the
+  target so a tab discarded, frozen, hidden, moved or closed during selection is not awakened.
+- As explicitly requested, the switcher is now keyboard-only. Removed × buttons, hover selection,
+  click-to-switch, middle-click close and outside-click dismissal. Pointer, touch and wheel defaults
+  are blocked within its covering frame. Keyboard navigation, Enter, Escape and x/Delete/Backspace
+  remain available. Colors, card styling, layout, thumbnails and glass appearance are preserved.
+- The new error screenshot exposed listener registration continuing after the extension context was
+  invalidated. Initialization now stops after the awaited check if unloaded; registration also
+  catches Chromium's invalidated `onMessage` property getter. Unrelated errors still propagate.
+- Grid requests use the existing authenticated parent port. The owning content script sends the
+  runtime request, retaining the actual tab, window and privacy context even when Firefox would omit
+  `sender.tab` for an extension iframe. A real incognito grid check verifies both private tab
+  membership and the exact private preview bytes.
+
+Independent review identified the late carried-release, required-Shift, final-page, exhausted-list,
+commit eligibility and iframe-context edge cases. Each was addressed; the final proxy review found
+no further actionable issue.
+
+### Verification and timing
+
+| Check                                                              | Result       |
+| ------------------------------------------------------------------ | ------------ |
+| Formatting/lint and diff whitespace                                | Pass         |
+| Unit regressions                                                   | 220/220 pass |
+| DOM suite                                                          | 87/87 pass   |
+| Installed source browser suite                                     | 63/63 pass   |
+| Extracted Chrome Store ZIP browser suite                           | 63/63 pass   |
+| Real Chromium incognito/worker lifecycle                           | 6/6 pass     |
+| Firefox 159.0.1 lifecycle                                          | 8/8 pass     |
+| Chrome Store, Canary and Firefox builds/integrity/source freshness | Pass         |
+
+The source run measured 103 ms for the first opening with cached images, 12 ms median and 24 ms
+maximum over ten immediate reopenings, 29 ms for a quick swap, and 31 ms total for nineteen queued
+moves. A loading fixture obtained its early thumbnail in 134 ms; a repeat-visit refresh took 837 ms.
+These measurements include automation overhead and are not guarantees for arbitrary pages/devices.
+
+The final packaged run measured 77 ms for the first cached opening, 15 ms median and 34 ms maximum
+for ten reopenings, 24 ms for a quick swap, and 25 ms total for nineteen queued moves. Its loading
+fixture saved an early thumbnail in 141 ms, with a repeat-visit refresh in 822 ms.
+
+The shortcut regressions dispatch the command callback through the loaded extension and deliver real
+page/frame keyboard events. They do not establish that an OS or another extension will grant Brovim
+a conflicting accelerator. Assign Ctrl+Q to Brovim in the browser's extension shortcut page. Chrome
+reserves browser shortcuts and does not support Tab as an extension command key. Brovim therefore
+cannot conditionally suppress Ctrl+Tab across all pages. Helium's browser shortcut settings can
+remove Next tab / Previous tab bindings browser-wide; README includes the verified route and
+primary-source links. No personal browser profile or global shortcut settings were modified.
+
+## 15. Follow-up: Keep Cycling Inside the Recent Grid
+
+The user clarified that “dead tabs” meant old tabs beyond the first grid. The previous iteration's
+pagination was an incorrect interpretation of the requested behavior: repeated presses traversed all
+awake tabs even though the initial grid showed only ten.
+
+Cycling now wraps within the displayed recent cards, using the configured columns × rows limit (ten
+by default). Reverse opening selects the last card in that same grid. Protected-page fallback
+snapshots use the identical limit, so internal pages cannot cycle into the older overflow either.
+Older eligible metadata is retained only to refill a free card after a close. No visual styling,
+keyboard-only behavior, shortcut binding or thumbnail behavior changes in this follow-up.
+
+The regressions verify repeated Ctrl+Q presses with more than ten tabs, reverse opening with a
+three-card limit, and protected-page fallback with limits of three, eight and ten. They failed
+before the correction. A carried-grid close/refill regression covers preserving the overflow
+candidates without making them reachable through ordinary cycling.
+
+Final verification: formatting/lint and diff whitespace passed; 223/223 unit tests passed; 64/64
+browser checks passed against both source and the extracted Chrome Store ZIP; and all eight Firefox
+lifecycle checks passed. All three packages were rebuilt and checked for ZIP integrity,
+manifest/import paths and exact source freshness.
+
+## 16. Release Verification and Cleanup
+
+The final pass verifies the requested keyboard-only switcher without changing its appearance: Alt+Q
+hold/repeat/release, reverse selection, first-grid wrapping, protected-page handoff, MRU order,
+sleeping-tab exclusion, immediate cached previews and refreshes, and recovery from the reported
+initialization/reload errors. Ctrl+Q and bindings containing Shift remain covered as well.
+
+### Cleanup
+
+Repository-wide reference checks confirmed that `Utils.extractQuery`, `Utils.zip`, `Utils.pick` and
+`Array.copy` had no production callers. Removed them and the five obsolete utility-specific tests;
+retained matching-range and hint-routing coverage using direct assertions/destructuring. Also
+removed the unused mouse card index, obsolete direct-iframe message exceptions and window lookup,
+duplicate Alt-state tracking, and the test-only `browserShortcut` option. Its regression now invokes
+the actual browser-command path. Removed two temporary implementation-note files whose useful
+results are already consolidated here. Runtime assets, manual fixtures and test helpers with live
+references were retained.
+
+### Native shortcut coverage
+
+Added the optional `test-native` task. On a dedicated Xvfb display it sends XTest keyboard events
+through Chromium's actual accelerator registry rather than invoking Brovim's command callback. It
+verifies native opening, 39 rapid repeats in the same grid, Shift reversal, modifier release and
+protected-page handoff through several recent tabs. It requires an explicit local `:N` display and
+rejects the desktop's server number, including screen aliases. Four rejection cases are checked.
+README documents the dependencies and isolated-display setup.
+
+An intermittent selector timeout was traced to the test observer: the page DOM showed the visible
+1280×900 iframe while the shadow selector waited unsuccessfully. The native test now polls actual
+page DOM and resolves the corresponding browser frame, as the private/Firefox lifecycle tests do. No
+production delay or shortcut workaround was added. The clean source run completed 39 native repeats
+in 110 ms; the packaged run took 109 ms, including test-driver overhead.
+
+### Package asset correction
+
+The stronger archive audit found Firefox excluded all PNG icons despite HTML and notification
+references to `icon48.png` and `icon128.png`. A new Firefox runtime regression reproduced the
+missing settings logo. The package now retains shared PNG assets while keeping SVG manifest icons.
+The runtime regression and manifest/import/HTML asset checks pass after the correction.
+
+### Final checks
+
+| Check                                                                                | Result        |
+| ------------------------------------------------------------------------------------ | ------------- |
+| Formatting/lint and diff whitespace                                                  | Pass          |
+| Unit tests after cleanup                                                             | 218/218 pass  |
+| DOM tests                                                                            | 87/87 pass    |
+| Installed source browser suite                                                       | 64/64 pass    |
+| Extracted Chrome Store ZIP browser suite                                             | 64/64 pass    |
+| Native Alt+Q on source and packaged extension                                        | 5/5 pass each |
+| Desktop-display alias rejection                                                      | 4/4 pass      |
+| Real Chromium incognito/worker lifecycle                                             | 6/6 pass      |
+| Firefox 159.0.1 runtime, including packaged settings logo                            | 9/9 pass      |
+| All three package builds, CRC, paths, imports, HTML assets, freshness and exclusions | Pass          |
+
+The source run measured 48 ms for first cached opening, 11 ms median and 25 ms maximum over ten
+reopenings, 36 ms for a quick swap, and 32 ms total for nineteen queued command-callback cycles.
+Timing includes automation overhead and depends on the browser/device. Platform constraints remain
+as documented in README: Chrome captures only the active tab; protected pages cannot report key
+release; browser-reserved Ctrl+Tab needs browser-level shortcut configuration.

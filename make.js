@@ -190,8 +190,6 @@ async function buildStorePackage() {
   const excludeList = [
     "*.md",
     ".*",
-    "CREDITS",
-    "MIT-LICENSE.txt",
     "build_scripts",
     "dist",
     "docs",
@@ -239,10 +237,11 @@ async function buildStorePackage() {
   // Build the Firefox / Mozilla Addons store package.
   const firefoxManifest = createFirefoxManifest(chromeManifest);
   await writeDistManifest(firefoxManifest);
-  // Exclude PNG icons from the Firefox build, because we use the SVG directly.
+  // Keep shared PNG assets: the settings logo and upgrade notification still reference them,
+  // even though Firefox's manifest uses SVG toolbar icons.
   await shell("bash", [
     "-c",
-    `${zipCommand} ../firefox/brovim-firefox-${version}.zip . -x icons/*.png`,
+    `${zipCommand} ../firefox/brovim-firefox-${version}.zip .`,
   ]);
 
   await checkFilesFromManifestArePresent(firefoxManifest);
@@ -442,6 +441,16 @@ task("test-browser", [], async () => {
 
 desc("Run unit and DOM tests");
 task("test", ["test-unit", "test-dom"]);
+
+desc("Test real Alt+Q delivery on a dedicated BROVIM_NATIVE_DISPLAY (Xvfb)");
+task("test-native", [], async () => {
+  await shell("deno", ["run", "-A", "tests/browser_tests/native_shortcut_test.js"]);
+});
+
+desc("Test incognito/worker recovery, or Firefox when BROVIM_TEST_BROWSER=firefox");
+task("test-lifecycle", [], async () => {
+  await shell("deno", ["run", "-A", "tests/browser_tests/lifecycle_test.js"]);
+});
 
 desc("Check code formatting and lint issues");
 task("check", [], async () => {

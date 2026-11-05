@@ -196,6 +196,7 @@ class UIComponent {
             message: {
               handler: "focusFrame",
               forceFocusThisFrame: true,
+              restoreFocus: true,
             },
           });
         } else {

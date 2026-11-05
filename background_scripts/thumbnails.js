@@ -7,16 +7,28 @@ const storageKey = "tabThumbnails";
 // Well under the 10 MB storage quota, whatever the preview limit.
 const maxBytes = 6 * 1024 * 1024;
 const caches = {};
+const cacheLoads = {};
 
 const areaFor = (incognito) => incognito ? "session" : "local";
 
+// Older Firefox exposes session storage to content scripts through a local-storage fallback in
+// utils.js. Private screenshots must never follow that fallback onto disk or overwrite normal ones.
+const previewStorage = (area) =>
+  area === "session" && chrome.storage.session === chrome.storage.local
+    ? null
+    : chrome.storage[area];
+
 // URL -> JPEG data URL, oldest capture first. Storage keeps the insertion order of these keys.
 function cacheFor(area) {
-  caches[area] ??= chrome.storage[area].get(storageKey).then(
+  cacheLoads[area] ??= (previewStorage(area)?.get(storageKey) ?? Promise.resolve({})).then(
     (items) => new Map(Object.entries(items[storageKey] ?? {})),
     () => new Map(),
-  );
-  return caches[area];
+  ).then((cache) => caches[area] = cache);
+  return cacheLoads[area];
+}
+
+export function warmThumbnailCaches() {
+  return Promise.all([cacheFor("local"), cacheFor("session")]);
 }
 
 // Tracking parameters change a page's URL without changing what it shows.
@@ -39,17 +51,32 @@ export function pageKey(url) {
 }
 
 // The stored preview for each URL, or null.
-export async function findThumbnails(urls, incognito) {
-  const cache = await cacheFor(areaFor(incognito));
+function lookupThumbnails(cache, urls) {
+  if (!cache) return urls.map(() => null);
   const newestByPage = new Map();
   for (const url of cache.keys()) newestByPage.set(pageKey(url), url);
-  return urls.map((url) => cache.get(url) ?? cache.get(newestByPage.get(pageKey(url))) ?? null);
+  return urls.map((url) => cache.get(newestByPage.get(pageKey(url))) ?? null);
+}
+
+export async function findThumbnails(urls, incognito) {
+  return lookupThumbnails(await cacheFor(areaFor(incognito)), urls);
+}
+
+// The first grid paint can use memory without waiting for storage. A cold cache is filled in
+// parallel; the switcher requests any missing images after its cards and keyboard are ready.
+export function getCachedThumbnails(urls, incognito) {
+  const area = areaFor(incognito);
+  cacheFor(area);
+  return lookupThumbnails(caches[area], urls);
 }
 
 export async function storeThumbnail(url, incognito, dataUrl) {
   const area = areaFor(incognito);
   const cache = await cacheFor(area);
-  cache.delete(url);
+  const key = pageKey(url);
+  for (const oldUrl of cache.keys()) {
+    if (pageKey(oldUrl) === key) cache.delete(oldUrl);
+  }
   cache.set(url, dataUrl);
   const limit = Math.max(1, Math.round(Settings.get("tabSwitcherMaxThumbnails")) || 60);
   let bytes = 0;
@@ -61,20 +88,36 @@ export async function storeThumbnail(url, incognito, dataUrl) {
   }
   // ponytail: rewrites every preview (at most 6 MB) on each capture, as TabGlance does. Store one key
   // per URL plus an order list if these writes ever show up in profiles.
-  await chrome.storage[area].set({ [storageKey]: Object.fromEntries(cache) });
+  await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
 }
 
 // Captures the tab's visible area, if the tab is still active, loaded, and showing `url`.
 // Returns { retry: true } when the browser's limit of two captures a second was reached.
-export async function captureThumbnail(tabId, url) {
+export async function captureThumbnail(tabId, url, allowLoading = false) {
   await Settings.onLoaded();
   if (!Settings.get("tabSwitcherAutoCapture") || !/^(https?|file):/.test(url || "")) return {};
   const showing = async () => {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
-    return tab?.active && tab.status === "complete" && tab.url === url ? tab : null;
+    return tab?.active &&
+        (tab.status === "complete" || (allowLoading && tab.status === "loading")) &&
+        tab.url === url
+      ? tab
+      : null;
+  };
+  const pageAllowsCapture = async () => {
+    try {
+      const state = await chrome.tabs.sendMessage(tabId, {
+        handler: "canCaptureTabPreview",
+        url,
+      }, { frameId: 0 });
+      return state?.allowed !== false;
+    } catch {
+      // PDFs and other pages without content scripts still support passive capture.
+      return true;
+    }
   };
   const tab = await showing();
-  if (!tab) return {};
+  if (!tab || !await pageAllowsCapture()) return {};
   let dataUrl;
   try {
     dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg" });
@@ -83,7 +126,7 @@ export async function captureThumbnail(tabId, url) {
     return { retry: /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/.test(error?.message) };
   }
   // Don't file another page's pixels under this URL if the user switched tabs or navigated.
-  if (!(await showing())) return {};
+  if (!(await showing()) || !await pageAllowsCapture()) return {};
   await storeThumbnail(url, tab.incognito, await shrinkImage(dataUrl));
   return { captured: true };
 }

@@ -10,6 +10,57 @@ context("TabRecency", () => {
     tabRecency = new TabRecency();
   });
 
+  should("keep a newer activation ahead of a delayed window-focus result", async () => {
+    let focusChanged, activated, resolveFocus;
+    stub(chrome.windows.onFocusChanged, "addListener", (fn) => focusChanged = fn);
+    stub(chrome.tabs.onActivated, "addListener", (fn) => activated = fn);
+    stub(
+      chrome.tabs,
+      "query",
+      (query) =>
+        query.active
+          ? new Promise((resolve) => resolveFocus = resolve)
+          : Promise.resolve([{ id: 1 }, { id: 2 }, { id: 3 }]),
+    );
+    await tabRecency.init();
+    tabRecency.register(1);
+    const focusing = focusChanged(7);
+    activated({ tabId: 2, windowId: 7 });
+    resolveFocus([{ id: 1, windowId: 7, active: true }]);
+    await focusing;
+    activated({ tabId: 3, windowId: 7 });
+    assert.equal([3, 2, 1], tabRecency.getTabsByRecency());
+  });
+
+  should("preserve activations received after startup while storage is loading", async () => {
+    let activated, startup, resolveStorage;
+    stub(chrome.tabs.onActivated, "addListener", (fn) => activated = fn);
+    stub(chrome.runtime.onStartup, "addListener", (fn) => startup = fn);
+    stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }, { id: 2 }]));
+    stub(chrome.storage.session, "get", () => new Promise((resolve) => resolveStorage = resolve));
+    const loading = tabRecency.init();
+    const resetting = startup();
+    activated({ tabId: 1, windowId: 7 });
+    activated({ tabId: 2, windowId: 7 });
+    resolveStorage({ tabRecency: { 1: 30, 2: 10 } });
+    await Promise.all([loading, resetting]);
+    assert.equal([2, 1], tabRecency.getTabsByRecency());
+  });
+
+  should(
+    "rank a new background tab without an opener immediately after the current tab",
+    async () => {
+      let created;
+      stub(chrome.tabs.onCreated, "addListener", (fn) => created = fn);
+      stub(chrome.tabs, "query", () => Promise.resolve([]));
+      await tabRecency.init();
+      tabRecency.register(1);
+      tabRecency.register(2);
+      created({ id: 3, active: false, windowId: 7 });
+      assert.equal([2, 3, 1], tabRecency.getTabsByRecency());
+    },
+  );
+
   should("keep session visits across an extension reload and prune closed tabs", async () => {
     stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }, { id: 2 }, { id: 3 }]));
     await tabRecency.init();

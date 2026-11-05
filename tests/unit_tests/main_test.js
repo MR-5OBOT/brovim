@@ -3,6 +3,60 @@ import { withPromise } from "./test_helper.js";
 import "../../lib/settings.js";
 import "../../background_scripts/main.js";
 
+context("Mute tab groups", () => {
+  let tabs;
+
+  setup(() => {
+    tabs = [
+      { id: 1, audible: true, mutedInfo: { muted: false } },
+      { id: 2, audible: true, mutedInfo: { muted: false } },
+      { id: 3, audible: false, mutedInfo: { muted: true } },
+      { id: 4, audible: false, mutedInfo: { muted: false } },
+    ];
+    stub(chrome.tabs, "query", (query, callback) => {
+      callback(tabs.filter((tab) => query.audible == null || tab.audible === query.audible));
+    });
+    stub(chrome.tabs, "update", (id, { muted }) => {
+      tabs.find((tab) => tab.id === id).mutedInfo.muted = muted;
+    });
+    stub(chrome.tabs, "sendMessage", () => Promise.resolve());
+  });
+
+  should("unmute all muted tabs when playback stops after muting the group", () => {
+    const request = { tab: tabs[0], tabId: 1, registryEntry: { options: { all: true } } };
+    BackgroundCommands.toggleMuteTab(request, { frameId: 0 });
+    assert.equal([true, true, true, false], tabs.map((tab) => tab.mutedInfo.muted));
+    for (const tab of tabs) tab.audible = false;
+    BackgroundCommands.toggleMuteTab(request, { frameId: 0 });
+    assert.equal([false, false, false, false], tabs.map((tab) => tab.mutedInfo.muted));
+  });
+
+  should("toggle other tabs while preserving the current tab's mute state", () => {
+    const request = { tab: tabs[0], tabId: 1, registryEntry: { options: { other: true } } };
+    BackgroundCommands.toggleMuteTab(request, { frameId: 0 });
+    assert.equal([false, true, true, false], tabs.map((tab) => tab.mutedInfo.muted));
+    BackgroundCommands.toggleMuteTab(request, { frameId: 0 });
+    assert.equal([false, false, false, false], tabs.map((tab) => tab.mutedInfo.muted));
+  });
+
+  should("send each mute notification only to the requesting frame", () => {
+    const routes = [];
+    stub(chrome.tabs, "sendMessage", (id, message, options) => {
+      routes.push({ id, handler: message.handler, options });
+      return Promise.resolve();
+    });
+    for (const options of [{}, { all: true }, { other: true }]) {
+      const request = { tab: tabs[0], tabId: 1, registryEntry: { options } };
+      BackgroundCommands.toggleMuteTab(request, { frameId: 7 });
+      BackgroundCommands.toggleMuteTab(request, { frameId: 7 });
+    }
+    assert.equal(
+      Array(6).fill({ id: 1, handler: "showMessage", options: { frameId: 7 } }),
+      routes,
+    );
+  });
+});
+
 context("HintCoordinator", () => {
   should("cancel hint collection across frames without displaying late hints", async () => {
     let resolveDescriptors, collectionStarted;
@@ -53,7 +107,7 @@ context("HintCoordinator", () => {
     });
 
     receivedMessages = receivedMessages.map(
-      (m) => Utils.pick(m, ["frameId", "frameIdToHintDescriptors"]),
+      ({ frameId, frameIdToHintDescriptors }) => ({ frameId, frameIdToHintDescriptors }),
     );
 
     // Each frame should receive only the hint descriptors from the other frames.

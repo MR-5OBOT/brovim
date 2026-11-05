@@ -10,10 +10,15 @@ import "../background_scripts/completion/search_engines.js";
 import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
-import { openTabSwitcher } from "./tab_switcher.js";
+import { commitTabSwitcherCycle, endTabSwitcherCycle, openTabSwitcher } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { getSwitcherTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
-import { captureThumbnail, findThumbnails } from "./thumbnails.js";
+import {
+  captureThumbnail,
+  findThumbnails,
+  getCachedThumbnails,
+  warmThumbnailCaches,
+} from "./thumbnails.js";
 
 import {
   BookmarkCompleter,
@@ -86,6 +91,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onURLChange); // history.
 chrome.webNavigation.onReferenceFragmentUpdated.addListener(onURLChange); // Hash changed.
 
 if (!globalThis.isUnitTests) {
+  warmThumbnailCaches();
   // Cache "content_scripts/vimium.css" in chrome.storage.session for UI components.
   (function () {
     const url = chrome.runtime.getURL("content_scripts/vimium.css");
@@ -106,8 +112,8 @@ if (!globalThis.isUnitTests) {
     }
   });
 
-  // The Alt+Q browser shortcut from manifest.json. Holding Alt and pressing Q again cycles; releasing
-  // Alt switches tabs.
+  // The assigned browser shortcut (Alt+Q by default). Repeat it while holding the primary
+  // modifier to cycle; release the modifier to switch.
   chrome.commands?.onCommand?.addListener((command, tab) => {
     if (command === "open_tab_switcher") {
       openTabSwitcher(tab).catch((error) => console.warn("Could not open tab switcher:", error));
@@ -137,27 +143,25 @@ function toggleMuteTab(request, sender) {
 
   if ((registryEntry.options.all != null) || (registryEntry.options.other != null)) {
     // If there are any audible, unmuted tabs, then we mute them; otherwise we unmute any muted tabs.
-    chrome.tabs.query({ audible: true }, function (tabs) {
+    chrome.tabs.query({}, function (tabs) {
       let tab;
       if (registryEntry.options.other != null) {
         tabs = tabs.filter((t) => t.id !== currentTab.id);
       }
       const audibleUnmutedTabs = tabs.filter((t) => t.audible && !t.mutedInfo.muted);
-      if (audibleUnmutedTabs.length >= 0) {
+      if (audibleUnmutedTabs.length > 0) {
         chrome.tabs.sendMessage(tabId, {
-          frameId: sender.frameId,
           handler: "showMessage",
           message: `Muting ${audibleUnmutedTabs.length} tab(s).`,
-        });
+        }, { frameId: sender.frameId }).catch(() => {});
         for (tab of audibleUnmutedTabs) {
           muteTab(tab);
         }
       } else {
         chrome.tabs.sendMessage(tabId, {
-          frameId: sender.frameId,
           handler: "showMessage",
           message: "Unmuting all muted tabs.",
-        });
+        }, { frameId: sender.frameId }).catch(() => {});
         for (tab of tabs) {
           if (tab.mutedInfo.muted) {
             muteTab(tab);
@@ -168,16 +172,14 @@ function toggleMuteTab(request, sender) {
   } else {
     if (currentTab.mutedInfo.muted) {
       chrome.tabs.sendMessage(tabId, {
-        frameId: sender.frameId,
         handler: "showMessage",
         message: "Unmuted tab.",
-      });
+      }, { frameId: sender.frameId }).catch(() => {});
     } else {
       chrome.tabs.sendMessage(tabId, {
-        frameId: sender.frameId,
         handler: "showMessage",
         message: "Muted tab.",
-      });
+      }, { frameId: sender.frameId }).catch(() => {});
     }
     muteTab(currentTab);
   }
@@ -198,7 +200,16 @@ function getTabIndex(tab, tabs) {
 // Selects the tab with the ID specified in request.id
 //
 async function selectSpecificTab(request) {
-  const tab = await chrome.tabs.get(request.id);
+  const tab = await chrome.tabs.get(request.id).catch((error) => {
+    if (!request.awakeOnly) throw error;
+    return null;
+  });
+  // A tab can close, move or go to sleep while the fixed grid is open. Do not wake a tab
+  // that became unavailable after rendering its card.
+  if (
+    request.awakeOnly && (!tab || tab.discarded || tab.frozen || tab.hidden ||
+      (request.tab && request.tab.windowId !== tab.windowId))
+  ) return false;
   // Focus the tab's window. TODO(philc): Why are we null-checking chrome.windows here?
   if (chrome.windows != null) {
     await chrome.windows.update(tab.windowId, { focused: true });
@@ -353,10 +364,10 @@ const HintCoordinator = {
   // Forward the message in "request" to all frames the in sender's tab.
   broadcastLinkHintsMessage(request, sender) {
     if (request.messageType === "exit") this.pendingActivations.delete(sender.tab.id);
-    chrome.tabs.sendMessage(
+    return chrome.tabs.sendMessage(
       sender.tab.id,
       Object.assign(request, { handler: "linkHintsMessage" }),
-    );
+    ).catch(() => {});
   },
 
   // This is sent by the content script once the user issues the link hints command.
@@ -490,14 +501,29 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
-  async quickSwitchTab({ tab }) {
-    return { switched: (await switchToPreviousRecentTab(tab)) != null };
+  async quickSwitchTab({ tab, cycle }) {
+    return {
+      switched: cycle
+        ? await commitTabSwitcherCycle(tab, cycle)
+        : (await switchToPreviousRecentTab(tab)) != null,
+    };
+  },
+  endTabSwitcherCycle({ tab, id }) {
+    endTabSwitcherCycle(tab.windowId, id);
   },
   // Awake tabs in the window, in the switcher's order (the active tab first).
-  async getOpenTabsWithScreenshots({ tab, windowId, includeScreenshots = true }) {
+  async getOpenTabsWithScreenshots({
+    tab,
+    windowId,
+    includeScreenshots = true,
+    screenshotLimit = 18,
+  }) {
     const tabs = await getSwitcherTabs(windowId ?? tab.windowId);
-    const screenshots = includeScreenshots
-      ? await findThumbnails(tabs.map((t) => t.url), tab?.incognito)
+    const urls = tabs.slice(0, Math.max(0, Math.min(18, screenshotLimit))).map((t) => t.url);
+    const screenshots = includeScreenshots === "cached"
+      ? getCachedThumbnails(urls, tab?.incognito)
+      : includeScreenshots
+      ? await findThumbnails(urls, tab?.incognito)
       : [];
     return tabs.map((t, i) => ({
       id: t.id,
@@ -515,8 +541,8 @@ const sendRequestHandlers = {
     return findThumbnails(urls, tab?.incognito);
   },
   // From a page's content script, once the page looks settled.
-  captureTabThumbnail({ tab, url }) {
-    return captureThumbnail(tab.id, url);
+  captureTabThumbnail({ tab, url, allowLoading = false }) {
+    return captureThumbnail(tab.id, url, allowLoading);
   },
   async closeSpecificTab({ id }) {
     await chrome.tabs.remove(id);
@@ -526,7 +552,7 @@ const sendRequestHandlers = {
   sendMessageToFrames(request, sender) {
     const newRequest = Object.assign({}, request.message);
     const options = request.frameId != null ? { frameId: request.frameId } : {};
-    chrome.tabs.sendMessage(sender.tab.id, newRequest, options);
+    return chrome.tabs.sendMessage(sender.tab.id, newRequest, options).catch(() => {});
   },
   broadcastLinkHintsMessage(request, sender) {
     HintCoordinator.broadcastLinkHintsMessage(request, sender);
@@ -634,12 +660,7 @@ Utils.addChromeRuntimeOnMessageListener(
     // Firefox when the extension is first installed, domReady and initializeFrame messages come from
     // content scripts in about:blank URLs, which have a null sender.tab. I don't know what this
     // corresponds to. Since we expect a valid sender.tab, ignore those messages.
-    const fromSwitcher = sender.url?.split("?")[0] ===
-        chrome.runtime.getURL("pages/tab_switcher_page.html") &&
-      ["getOpenTabsWithScreenshots", "selectSpecificTab", "closeSpecificTab"].includes(
-        request.handler,
-      );
-    if (sender.tab == null && !fromSwitcher) return;
+    if (sender.tab == null) return;
     await Settings.onLoaded();
     request = Object.assign({ count: 1 }, request, {
       tab: sender.tab,

@@ -15,6 +15,8 @@ class TabRecency {
     this.tabIdToCounter = {};
     this.loaded = false;
     this.queuedActions = [];
+    this.activityRevision = 0;
+    this.resetOnLoad = false;
   }
 
   // Add listeners to chrome.tabs, and load the index from session storage.
@@ -29,12 +31,13 @@ class TabRecency {
     });
 
     chrome.tabs.onActivated.addListener((activeInfo) => {
+      this.activityRevision++;
       this.queueAction("register", activeInfo.tabId);
     });
-    // Links opened in the background. Foreground tabs are registered by onActivated; restored
-    // session tabs have no opener and keep their lastAccessed order.
+    // Like TabGlance, all newly created background tabs are recent, including tabs opened by
+    // another extension or restored without an opener. Foreground tabs use onActivated.
     chrome.tabs.onCreated.addListener((tab) => {
-      if (!tab.active && tab.openerTabId != null) this.queueAction("registerBackground", tab.id);
+      if (!tab.active) this.queueAction("registerBackground", tab.id);
     });
     chrome.runtime.onStartup.addListener(() => this.resetForBrowserStartup());
     chrome.tabs.onRemoved.addListener((tabId) => {
@@ -47,14 +50,22 @@ class TabRecency {
     });
 
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
+      const revision = ++this.activityRevision;
       if (windowId == chrome.windows.WINDOW_ID_NONE) return;
-      const tabs = await chrome.tabs.query({ windowId, active: true });
-      if (tabs[0]) {
+      const tabs = await chrome.tabs.query({ windowId, active: true }).catch(() => []);
+      // A new activation/focus can arrive while this query still describes the previous tab.
+      if (revision === this.activityRevision && tabs[0]) {
         this.queueAction("register", tabs[0].id);
       }
     });
 
     await this.loadFromStorage();
+    if (this.resetOnLoad) {
+      this.counter = 1;
+      this.tabIdToCounter = {};
+      this.resetOnLoad = false;
+      await this.saveToStorage();
+    }
     while (this.queuedActions.length > 0) {
       const [action, tabId] = this.queuedActions.shift();
       this.handleAction(action, tabId);
@@ -102,7 +113,13 @@ class TabRecency {
   }
 
   async resetForBrowserStartup() {
-    await this.init();
+    this.activityRevision++;
+    if (!this.loaded) {
+      this.resetOnLoad = true;
+      this.queuedActions = [];
+      await this.init();
+      return;
+    }
     this.counter = 1;
     this.tabIdToCounter = {};
     await this.saveToStorage();

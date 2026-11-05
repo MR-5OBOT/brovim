@@ -1,5 +1,16 @@
 import * as bgUtils from "./bg_utils.js";
 
+// Fallback cycling must stop at the same recent-card boundary as the visible grid.
+export function getTabSwitcherLimit() {
+  const value = (key, min, max) => {
+    const stored = Number(Settings.get(key));
+    return Number.isInteger(stored) && stored >= min && stored <= max
+      ? stored
+      : Settings.defaultOptions[key];
+  };
+  return value("tabSwitcherColumns", 3, 6) * value("tabSwitcherRows", 1, 3);
+}
+
 // Awake tabs in this window: the active tab first, then tabs used this session (most recent
 // first), then other awake tabs by lastAccessed. Sleeping and hidden tabs never enter the grid
 // or the quick-switch path.

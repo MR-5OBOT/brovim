@@ -2,11 +2,10 @@ import "../lib/utils.js";
 import "../lib/settings.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-// The tab switcher, modeled on TabGlance: the most recently used tabs, at most "cards per row" ×
-// "rows" of them, starting on the previous tab. Hold Alt and tap Q to move; releasing Alt switches.
-// The arrow keys, h/j/k/l and Tab also move, Enter switches, x, Delete or Backspace close the
-// selected tab, and Esc or a click outside cancels. The mouse selects a card by hovering once it
-// really moves, switches with a click and closes a tab with the card's × or a middle click.
+// Keyboard-only tab switcher: a fixed MRU list for each gesture, with one grid of cards at a
+// time. Cycling wraps within the displayed recent cards. Hold the assigned modifier and
+// repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l and Tab also move, Enter
+// switches, x/Delete/Backspace close the selected tab, and Escape cancels.
 
 const panel = document.getElementById("panel");
 const grid = document.getElementById("tab-switcher");
@@ -20,16 +19,28 @@ let tabs = []; // The tabs shown as cards.
 let selectedIndex = 0;
 let selectedCard = null;
 let isAltCycling = false;
+let shortcut = Utils.parseBrowserShortcut();
+let cycleId = null;
+let shiftIsDown = false;
 let visible = false;
 let activation = 0;
 // Resolves once the tab list for the current activation has loaded. A quick Alt+Q tap can release
 // Alt before that, so commits and cycling wait on it.
 let tabsLoaded = Promise.resolve();
 let closing = null; // The pending close request.
-// The last pointer position. Hovering selects only once the mouse really moves: not when the grid
-// appears under it, or scrolls under it after a key press.
-let pointer = null;
 let focusGuard = null;
+
+// Route requests through the owning content script so background handlers always receive the
+// correct window and privacy context. Extension iframe senders can lack sender.tab in Firefox.
+let requestId = 0;
+const requests = new Map();
+function sendRequest(message) {
+  return new Promise((resolve, reject) => {
+    const id = ++requestId;
+    requests.set(id, { resolve, reject });
+    UIComponentMessenger.postMessage({ name: "request", id, message });
+  });
+}
 
 // A layout setting, or its default if the stored value is out of range.
 function layoutSetting(key, min, max) {
@@ -40,26 +51,34 @@ function layoutSetting(key, min, max) {
 }
 const columnSetting = () => layoutSetting("tabSwitcherColumns", 3, 6);
 
-async function fetchTabs() {
+async function fetchTabs(options = {}) {
   const currentActivation = ++activation;
   await Settings.onLoaded();
   let list = [];
   try {
-    list = await chrome.runtime.sendMessage({
+    list = await sendRequest({
       handler: "getOpenTabsWithScreenshots",
-      includeScreenshots: false,
+      includeScreenshots: "cached",
+      screenshotLimit: columnSetting() * layoutSetting("tabSwitcherRows", 1, 3),
     }) || [];
   } catch (err) {
     console.error("Failed to load tabs:", err);
   }
   if (currentActivation !== activation) return;
+  if (options.cycle) {
+    const byId = new Map(list.map((tab) => [tab.id, tab]));
+    const cycleIds = new Set(options.cycle.tabIds);
+    list = [
+      ...options.cycle.tabIds.map((id) => byId.get(id)).filter(Boolean),
+      ...list.filter((tab) => !cycleIds.has(tab.id)),
+    ];
+  }
   // Keep decoded previews while refreshing the list and its order.
   const previousTabs = new Map(allTabs.map((tab) => [tab.id, tab]));
   allTabs = list.map((tab) => ({
     ...tab,
-    screenshot: previousTabs.get(tab.id)?.url === tab.url
-      ? previousTabs.get(tab.id).screenshot
-      : null,
+    screenshot: tab.screenshot ??
+      (previousTabs.get(tab.id)?.url === tab.url ? previousTabs.get(tab.id).screenshot : null),
   }));
   panel.classList.toggle("glass", Settings.get("tabSwitcherGlass") === true);
   chooseTabs();
@@ -67,7 +86,11 @@ async function fetchTabs() {
     hide();
     return;
   }
-  selectedIndex = 1; // The previous tab.
+  selectedIndex = options.cycle
+    ? Math.max(0, tabs.findIndex((tab) => tab.id === options.cycle.selectedId))
+    : options.reverse
+    ? tabs.length - 1
+    : 1;
   render();
   // Show usable cards immediately; cached previews arrive without delaying keys or painting.
   panel.classList.add("ready");
@@ -76,12 +99,14 @@ async function fetchTabs() {
   loadScreenshots(currentActivation, tabs);
 }
 
+const pageSize = () => columnSetting() * layoutSetting("tabSwitcherRows", 1, 3);
+
 function chooseTabs() {
-  tabs = allTabs.slice(0, columnSetting() * layoutSetting("tabSwitcherRows", 1, 3));
+  tabs = allTabs.slice(0, pageSize());
 }
 
 async function loadScreenshots(currentActivation, tabsToLoad) {
-  const screenshots = await chrome.runtime.sendMessage({
+  const screenshots = await sendRequest({
     handler: "getTabScreenshots",
     urls: tabsToLoad.map((tab) => tab.url),
   }).catch(() => null);
@@ -117,33 +142,12 @@ function createCard(tab, index) {
   card.className = "tab-card";
   card.id = `tab-card-${index}`;
   card.dataset.id = tab.id;
-  card.dataset.index = index;
   card.setAttribute("role", "gridcell");
   card.setAttribute("aria-selected", "false");
   card.setAttribute("aria-label", host ? `${tab.title} — ${host}` : tab.title);
-  card.addEventListener("click", (event) => {
-    if (event.button !== 0) return;
-    select(index);
-    commit();
-  });
-  // Close on a middle click, without the autoscroll or paste of pressing the middle button.
-  card.addEventListener("mousedown", (event) => event.button === 1 && event.preventDefault());
-  card.addEventListener("auxclick", (event) => event.button === 1 && closeTab(index));
-
   const thumb = document.createElement("div");
   thumb.className = "card-thumb";
-  const close = document.createElement("button");
-  close.className = "close-tab";
-  close.type = "button";
-  close.tabIndex = -1;
-  close.textContent = "×";
-  close.title = "Close tab";
-  close.setAttribute("aria-label", `Close ${tab.title}`);
-  close.addEventListener("click", (event) => {
-    event.stopPropagation();
-    closeTab(index);
-  });
-  thumb.append(tab.screenshot ? createImage(tab.screenshot) : letterTile(tab, host), close);
+  thumb.append(tab.screenshot ? createImage(tab.screenshot) : letterTile(tab, host));
 
   const title = document.createElement("div");
   title.className = "card-title";
@@ -262,7 +266,13 @@ function commit() {
     await closing;
     const tab = tabs[selectedIndex];
     hide();
-    if (tab) await chrome.runtime.sendMessage({ handler: "selectSpecificTab", id: tab.id });
+    if (tab) {
+      await sendRequest({
+        handler: "selectSpecificTab",
+        id: tab.id,
+        awakeOnly: true,
+      }).catch(() => {});
+    }
   });
 }
 
@@ -270,13 +280,13 @@ async function closeTab(index) {
   const tab = tabs[index];
   if (!tab || closing) return;
   select(index);
-  closing = chrome.runtime.sendMessage({ handler: "closeSpecificTab", id: tab.id }).catch(() => {});
+  closing = sendRequest({ handler: "closeSpecificTab", id: tab.id }).catch(() => {});
   await closing;
   closing = null;
   allTabs = allTabs.filter((t) => t.id !== tab.id);
   // The next most recent tab takes the free place.
   chooseTabs();
-  if (tabs.length < 2) {
+  if (allTabs.length < 2) {
     hide();
     return;
   }
@@ -293,6 +303,14 @@ function hide() {
   clearInterval(focusGuard);
   panel.classList.remove("ready");
   UIComponentMessenger.postMessage({ name: "hide" });
+  endCycle();
+}
+
+function endCycle() {
+  if (cycleId) {
+    sendRequest({ handler: "endTabSwitcherCycle", id: cycleId }).catch(() => {});
+  }
+  cycleId = null;
 }
 
 // If the browser or another app takes the focus, possibly without delivering the Alt release,
@@ -311,6 +329,13 @@ const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowR
 // The action for a key, or null if the switcher doesn't use it.
 function keyAction(event) {
   const key = event.key;
+  if (
+    Utils.isBrowserShortcutKey(event, shortcut) &&
+    (isAltCycling || shortcut.modifiers.every((modifier) => event[modifier]))
+  ) {
+    isAltCycling = true;
+    return () => step(event.shiftKey && !shortcut.requiresShift ? -1 : 1);
+  }
   if (key === "Enter") return commit;
   if (key === "Tab") return () => step(event.shiftKey ? -1 : 1);
   switch (vimDirections[key] ?? key) {
@@ -323,11 +348,6 @@ function keyAction(event) {
     case "ArrowDown":
       return () => moveRow(1);
   }
-  // Alt+Q, or Q while Alt is still held.
-  if (key.toLowerCase() === "q" && (event.altKey || isAltCycling)) {
-    isAltCycling = true;
-    return () => step(event.shiftKey ? -1 : 1);
-  }
   if (["x", "Delete", "Backspace"].includes(key)) {
     return () => !event.repeat && closeTab(selectedIndex);
   }
@@ -335,8 +355,8 @@ function keyAction(event) {
 }
 
 function handleKeydown(event) {
+  shiftIsDown = event.shiftKey;
   if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
-  pointer = null;
   if (event.key === "Escape") {
     event.preventDefault();
     hide();
@@ -350,7 +370,8 @@ function handleKeydown(event) {
 }
 
 function handleKeyup(event) {
-  if (event.key === "Alt" && isAltCycling) {
+  shiftIsDown = event.shiftKey;
+  if (Utils.isBrowserShortcutRelease(event, shortcut) && isAltCycling) {
     event.preventDefault();
     commit();
   }
@@ -359,18 +380,27 @@ function handleKeyup(event) {
 UIComponentMessenger.init();
 UIComponentMessenger.registerHandler((event) => {
   switch (event.data.name) {
+    case "response": {
+      const pending = requests.get(event.data.id);
+      requests.delete(event.data.id);
+      if (event.data.error) pending?.reject(new Error(event.data.error));
+      else pending?.resolve(event.data.result);
+      break;
+    }
     case "activate":
       visible = true;
       isAltCycling = event.data.isAltCycle ?? false;
-      pointer = null;
+      shortcut = event.data.shortcut ?? Utils.parseBrowserShortcut();
+      cycleId = event.data.cycle?.id ?? null;
+      shiftIsDown = event.data.reverse === true;
       // Hide the previous list until the fresh one (in the new recency order) is rendered.
       panel.classList.remove("ready");
-      tabsLoaded = fetchTabs();
+      tabsLoaded = fetchTabs(event.data);
       if (event.data.commitOnOpen) commit();
       break;
     case "cycleNext":
       isAltCycling = true;
-      whenTabsLoaded(() => step(1));
+      whenTabsLoaded(() => step(shiftIsDown && !shortcut.requiresShift ? -1 : 1));
       break;
     case "commitSelection":
       commit();
@@ -383,6 +413,7 @@ UIComponentMessenger.registerHandler((event) => {
       isAltCycling = false;
       clearInterval(focusGuard);
       activation++;
+      endCycle();
       break;
   }
 });
@@ -395,13 +426,22 @@ globalThis.addEventListener("resize", () => {
   postPanel();
 });
 panel.addEventListener("scroll", updateScrollHint, { passive: true });
-document.addEventListener("mousemove", (event) => {
-  const moved = pointer && (pointer.x !== event.clientX || pointer.y !== event.clientY);
-  pointer = { x: event.clientX, y: event.clientY };
-  const card = moved && event.target.closest?.(".tab-card");
-  if (visible && card) select(Number(card.dataset.index));
-});
-// A click outside the panel dismisses the switcher.
-document.body.addEventListener("click", (event) => {
-  if (event.target === document.body) hide();
-});
+// Keep focus and scrolling under keyboard control, including middle-click autoscroll, touch
+// panning and the context menu. The covering frame still consumes clicks above the web page.
+for (
+  const type of [
+    "pointerdown",
+    "mousedown",
+    "click",
+    "auxclick",
+    "contextmenu",
+    "wheel",
+    "touchstart",
+  ]
+) {
+  document.addEventListener(type, (event) => {
+    if (!visible) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, { capture: true, passive: false });
+}

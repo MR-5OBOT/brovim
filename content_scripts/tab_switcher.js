@@ -2,7 +2,10 @@ const TabSwitcher = {
   tabSwitcherUI: null,
   isAltCycling: false,
   isOpening: false,
-  altKeyIsDown: null,
+  modifierState: {},
+  keyboardEventAt: 0,
+  shortcut: Utils.parseBrowserShortcut(),
+  cycle: null,
   currentRequestId: null,
   cancelledPreviewRequest: null,
   shortcutRequest: null,
@@ -28,16 +31,23 @@ const TabSwitcher = {
     return this.open(sourceFrameId, options);
   },
 
-  async activateFromBrowserShortcut(requestId) {
+  async activateFromBrowserShortcut(requestId, options = {}) {
     if (this.isUnavailable) return { opened: false };
+    this.shortcut = options.shortcut ?? Utils.parseBrowserShortcut();
+    if (options.cycle || !this.tabSwitcherUI?.showing) this.cycle = options.cycle ?? null;
     this.currentRequestId = requestId;
     const focusedInFrame = ["IFRAME", "FRAME"].includes(document.activeElement?.tagName);
-    if (this.altKeyIsDown === false && !focusedInFrame) return await this.quickSwitch(requestId);
+    if (this.modifierReleased() && !focusedInFrame) return await this.quickSwitch(requestId);
 
     let complete;
     const released = new Promise((resolve) => complete = resolve);
     this.shortcutRequest = { id: requestId, complete };
-    const showing = this.activate(0, { altCycle: true, requestId }).then((opened) => ({ opened }));
+    const showing = this.activate(0, {
+      ...options,
+      altCycle: true,
+      requestId,
+      reverse: this.modifierState.shiftKey === true && !this.shortcut.requiresShift,
+    }).then((opened) => ({ opened }));
     try {
       return await Promise.race([showing, released]);
     } finally {
@@ -48,13 +58,18 @@ const TabSwitcher = {
   async quickSwitch(requestId) {
     this.cancelledPreviewRequest = requestId;
     this.isOpening = this.isAltCycling = false;
-    const result = await chrome.runtime.sendMessage({ handler: "quickSwitchTab" });
+    const result = await chrome.runtime.sendMessage({
+      handler: "quickSwitchTab",
+      cycle: this.cycle,
+    });
+    this.cycle = null;
     if (!result?.switched) HUD.show("No other tab to switch to.", 2000);
     return { opened: true, quickSwitch: true };
   },
 
   open(sourceFrameId, options) {
     this.init();
+    this.shortcut = options?.shortcut ?? Utils.parseBrowserShortcut();
     if (!globalThis.isUnitTests) HelpDialog.abort();
     this.isAltCycling = options?.altCycle !== false;
     this.isOpening = true;
@@ -72,8 +87,10 @@ const TabSwitcher = {
         {
           name: "activate",
           isAltCycle: this.isAltCycling,
-          commitOnOpen: this.pendingCommit ||
-            (options?.browserShortcut === true && this.altKeyIsDown === false),
+          shortcut: options?.shortcut ?? Utils.parseBrowserShortcut(),
+          cycle: options?.cycle,
+          reverse: options?.reverse,
+          commitOnOpen: this.pendingCommit,
         },
         { sourceFrameId, focus: true },
       );
@@ -90,9 +107,35 @@ const TabSwitcher = {
       this.uiLoad = this.tabSwitcherUI.load(
         "pages/tab_switcher_page.html",
         "tab-switcher-frame",
-        (event) => event.data?.name === "panel" && this.placeBackdrop(event.data),
+        (event) => this.handleUiMessage(event),
       );
     }
+  },
+
+  async handleUiMessage({ data }) {
+    if (data?.name === "panel") return this.placeBackdrop(data);
+    if (data?.name !== "request") return;
+    const allowed = [
+      "getOpenTabsWithScreenshots",
+      "getTabScreenshots",
+      "selectSpecificTab",
+      "closeSpecificTab",
+      "endTabSwitcherCycle",
+    ];
+    if (!allowed.includes(data.message?.handler)) return;
+    let result, error;
+    try {
+      // The authenticated parent port retains the source tab, window and private context even
+      // when Firefox omits sender.tab for extension-iframe runtime messages.
+      result = await chrome.runtime.sendMessage(data.message);
+    } catch (err) {
+      error = err.message;
+    }
+    await this.tabSwitcherUI.postMessage({
+      name: "response",
+      id: data.id,
+      ...(error ? { error } : { result }),
+    }).catch(() => {});
   },
 
   // For liquid glass, the page under the switcher's panel is blurred and refracted. The switcher's
@@ -159,8 +202,10 @@ const TabSwitcher = {
     }
   },
 
-  onAltReleased() {
+  onModifierReleased() {
     if (this.shortcutRequest && !this.tabSwitcherUI?.showing) {
+      if (this.shortcutRequest.released) return;
+      this.shortcutRequest.released = true;
       this.shortcutRequest.complete(this.quickSwitch(this.shortcutRequest.id));
       return;
     }
@@ -172,13 +217,57 @@ const TabSwitcher = {
       this.tabSwitcherUI.postMessage({ name: "commitSelection" });
     }
   },
+
+  modifierReleased() {
+    // A protected-page hop cannot update this page's key state. Ignore events from before the
+    // gesture, rather than treating an old Ctrl-up as a release of the arriving Ctrl+Q.
+    if (this.cycle && this.keyboardEventAt < this.cycle.startedAt) return false;
+    return this.shortcut.modifiers.some((key) => this.modifierState[key] === false);
+  },
+
+  rememberCycle(cycle, shortcut) {
+    this.cycle = cycle;
+    this.shortcut = shortcut;
+    if (this.modifierReleased()) this.endCycle();
+  },
+
+  endCycle() {
+    const id = this.cycle?.id;
+    this.cycle = null;
+    if (id) {
+      try {
+        chrome.runtime.sendMessage({ handler: "endTabSwitcherCycle", id }).catch(() => {});
+      } catch (error) {
+        if (!/Extension context invalidated/i.test(error?.message)) throw error;
+      }
+    }
+  },
+
+  recordKeyboardEvent(event) {
+    // A new primary-modifier press is a new gesture, even if its previous release happened on
+    // a protected page before this page received the carried cycle.
+    if (
+      event.type === "keydown" && !event.repeat &&
+      Utils.isBrowserShortcutRelease(event, this.shortcut) && this.cycle &&
+      !this.shortcutRequest && !this.tabSwitcherUI?.showing && !this.isOpening
+    ) this.endCycle();
+    this.keyboardEventAt = Date.now();
+    for (const key of ["altKey", "ctrlKey", "metaKey", "shiftKey"]) {
+      this.modifierState[key] = event[key];
+    }
+    if (event.type !== "keyup" || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
+    if (this.cycle && !this.shortcutRequest && !this.tabSwitcherUI?.showing && !this.isOpening) {
+      this.endCycle();
+    }
+    this.onModifierReleased();
+  },
 };
 
 // Keeps this page's switcher preview current, like TabGlance. After the page loads, comes into
 // view, changes its URL or scrolls far, wait until it looks settled (nothing visible has changed,
 // shifted or finished painting for 800ms, or 4.8s have passed), then ask the background to capture
-// it. A page is recaptured at most every 5s, except after a URL change, and never while Brovim's own
-// UI is showing.
+// it. A first-paint capture supplies an early preview on every load and visit; the settled capture
+// refines it. Scroll captures are throttled to 5s. Never capture while Brovim's UI is showing.
 const TabPreview = {
   enabled: false,
   waitStart: 0, // When the current wait for the page to settle began, or 0.
@@ -187,6 +276,7 @@ const TabPreview = {
   lastCaptureScrollY: 0,
   timer: null,
   pending: null,
+  pendingUrl: null,
   mutations: null,
 
   init() {
@@ -225,11 +315,21 @@ const TabPreview = {
   // - reason: "load", "visible", "route" (the URL changed), "scroll" or "retry" (a capture is
   //   still owed).
   start(reason) {
-    if (!this.enabled || document.hidden || !document.documentElement) return;
+    if (!this.enabled || !document.documentElement) return;
+    if (document.hidden) {
+      clearInterval(this.timer);
+      this.mutations?.disconnect();
+      this.waitStart = 0;
+      return;
+    }
     const now = performance.now();
+    const firstPaint = ["load", "visible", "route"].includes(reason);
     if (reason === "route") this.lastChange = now;
-    else if (reason !== "retry" && now - this.lastCapture < 5000) return;
-    if (this.waitStart) return;
+    else if (!firstPaint && reason !== "retry" && now - this.lastCapture < 5000) return;
+    if (this.waitStart) {
+      if (reason === "route") this.scheduleCapture(true);
+      return;
+    }
     this.waitStart = now;
     if (reason === "load") this.lastChange = now;
     this.mutations.observe(document.documentElement, {
@@ -240,6 +340,7 @@ const TabPreview = {
       attributeFilter: ["class", "style", "src", "srcset", "hidden"],
     });
     this.timer = setInterval(() => this.check(), 250);
+    if (firstPaint) this.scheduleCapture(true);
   },
 
   check() {
@@ -257,24 +358,42 @@ const TabPreview = {
       return;
     }
     // Let the page finish its current frame first.
-    requestAnimationFrame(() => requestIdleCallback(() => this.capture(), { timeout: 600 }));
+    this.scheduleCapture();
+  },
+
+  scheduleCapture(allowLoading = false) {
+    requestAnimationFrame(() =>
+      requestIdleCallback(() => this.capture(allowLoading), { timeout: 150 })
+    );
   },
 
   // Resolves once this page's preview has been captured, or that wasn't possible.
-  capture() {
+  capture(allowLoading = false) {
     if (!this.enabled || document.hidden || isBrovimUiVisible()) return Promise.resolve();
+    // A slow early capture must not swallow the settled refresh that follows it.
+    if (this.pending && (!allowLoading || this.pendingUrl !== location.href)) {
+      return this.pending.then(() => this.capture(allowLoading));
+    }
     try {
+      this.pendingUrl = location.href;
       this.pending ??= chrome.runtime.sendMessage({
         handler: "captureTabThumbnail",
         url: location.href,
+        allowLoading,
       }).then((result) => {
         if (result?.retry) {
-          setTimeout(() => this.start("retry"), 600);
+          setTimeout(() => {
+            if (allowLoading) this.scheduleCapture(true);
+            else this.start("retry");
+          }, 600);
         } else if (result?.captured) {
           this.lastCapture = performance.now();
           this.lastCaptureScrollY = globalThis.scrollY;
         }
-      }).catch(() => {}).finally(() => this.pending = null);
+      }).catch(() => {}).finally(() => {
+        this.pending = null;
+        this.pendingUrl = null;
+      });
     } catch {
       // The extension was updated or removed; its replacement keeps the previews.
       this.enabled = false;
@@ -317,10 +436,7 @@ globalThis.TabSwitcher = TabSwitcher;
 globalThis.TabPreview = TabPreview;
 
 if (globalThis.window != null) {
-  globalThis.addEventListener("keydown", (event) => TabSwitcher.altKeyIsDown = event.altKey, true);
-  globalThis.addEventListener("keyup", (event) => {
-    TabSwitcher.altKeyIsDown = event.altKey;
-    if (event.key === "Alt") TabSwitcher.onAltReleased();
-  }, true);
+  globalThis.addEventListener("keydown", (event) => TabSwitcher.recordKeyboardEvent(event), true);
+  globalThis.addEventListener("keyup", (event) => TabSwitcher.recordKeyboardEvent(event), true);
   if (DomUtils.isTopFrame() && /^(https?|file):$/.test(location.protocol)) TabPreview.init();
 }

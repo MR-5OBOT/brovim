@@ -18,7 +18,6 @@
   --glass-shadow: inset 0 1px 0 rgb(255 255 255 / 85%), inset 0 0 0 1px rgb(255 255 255 / 12%),
     0 28px 64px rgb(0 0 0 / 26%);
   --card: rgb(252 253 254);
-  --card-hover: rgb(243 245 248);
   --card-shadow: 0 1px 3px rgb(0 0 0 / 10%), 0 0 0 1px rgb(0 0 0 / 6%);
   --thumb: rgb(0 0 0 / 6%);
   --hint-pill: rgb(255 255 255 / 55%);
@@ -39,7 +38,6 @@
     --glass-shadow: inset 0 1px 0 rgb(255 255 255 / 50%), inset 0 0 0 1px rgb(255 255 255 / 10%),
       0 28px 64px rgb(0 0 0 / 50%);
     --card: rgb(30 33 40);
-    --card-hover: rgb(42 46 55);
     --card-shadow: 0 0 0 1px rgb(255 255 255 / 10%);
     --thumb: rgb(255 255 255 / 4%);
     --hint-pill: rgb(50 50 56 / 60%);
@@ -124,11 +122,7 @@ body {
   border: 2px solid transparent;
   border-radius: 6px;
   box-shadow: var(--card-shadow);
-  cursor: pointer;
-}
-
-.tab-card:hover {
-  background: var(--card-hover);
+  cursor: default;
 }
 
 .tab-card.selected {
@@ -169,36 +163,6 @@ body {
     background: linear-gradient(135deg, hsl(var(--hue) 34% 18%), hsl(var(--hue) 38% 12%));
     color: hsl(var(--hue) 85% 78%);
   }
-}
-
-.close-tab {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  padding: 0 0 2px;
-  color: #fff;
-  background: rgb(25 28 36 / 76%);
-  border: 1px solid rgb(255 255 255 / 55%);
-  border-radius: 50%;
-  box-shadow: 0 2px 7px rgb(0 0 0 / 28%);
-  font: 20px/1 system-ui, sans-serif;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.tab-card:hover .close-tab,
-.tab-card.selected .close-tab {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.close-tab:hover {
-  background: rgb(220 38 38 / 92%);
 }
 
 .card-title {

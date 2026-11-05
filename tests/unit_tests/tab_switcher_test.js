@@ -5,7 +5,192 @@ import "../../content_scripts/ui_component.js";
 import "../../content_scripts/tab_switcher.js";
 import "../../background_scripts/main.js";
 import * as bgUtils from "../../background_scripts/bg_utils.js";
-import { findThumbnails, pageKey, storeThumbnail } from "../../background_scripts/thumbnails.js";
+import {
+  captureThumbnail,
+  findThumbnails,
+  pageKey,
+  storeThumbnail,
+} from "../../background_scripts/thumbnails.js";
+import * as Thumbnails from "../../background_scripts/thumbnails.js";
+import * as SwitcherCommands from "../../background_scripts/tab_switcher.js";
+
+context("configured switcher shortcut", () => {
+  for (const [columns, rows] of [[3, 1], [4, 2], [5, 2]]) {
+    should(`keep protected-page cycling within the ${columns * rows} recent cards`, async () => {
+      await Settings.onLoaded();
+      const oldColumns = Settings.get("tabSwitcherColumns");
+      const oldRows = Settings.get("tabSwitcherRows");
+      const limit = columns * rows;
+      const tabs = Array.from({ length: limit + 3 }, (_, index) => ({
+        id: 5000 + index,
+        index,
+        windowId: 890,
+        active: index === 0,
+        url: "chrome://extensions/",
+      }));
+      stub(
+        chrome.tabs,
+        "query",
+        (query) => Promise.resolve(tabs.filter((tab) => !query.active || tab.active)),
+      );
+      stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+      const selected = [];
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        bgUtils.tabRecency.register(id);
+        selected.push(id);
+        return Promise.resolve(tabs.find((tab) => tab.id === id));
+      });
+      await bgUtils.tabRecency.init();
+      for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
+      try {
+        await Settings.set("tabSwitcherColumns", columns);
+        await Settings.set("tabSwitcherRows", rows);
+        for (let i = 0; i < limit * 2 + 2; i++) {
+          await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
+        }
+        assert.equal(
+          Array.from({ length: limit * 2 + 2 }, (_, i) => 5000 + ((i + 1) % limit)),
+          selected,
+        );
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(890);
+        await Settings.set("tabSwitcherColumns", oldColumns);
+        await Settings.set("tabSwitcherRows", oldRows);
+      }
+    });
+  }
+  should("start a fresh gesture on a new modifier press after a protected-page hop", () => {
+    const messages = [];
+    stub(TabSwitcher, "cycle", { id: "old-hop", startedAt: 100 });
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Ctrl+Q"));
+    stub(TabSwitcher, "tabSwitcherUI", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(chrome.runtime, "sendMessage", (message) => {
+      messages.push(message);
+      return Promise.resolve();
+    });
+    TabSwitcher.recordKeyboardEvent({
+      type: "keydown",
+      key: "Control",
+      ctrlKey: true,
+      repeat: false,
+    });
+    assert.equal(null, TabSwitcher.cycle);
+    assert.equal([{ handler: "endTabSwitcherCycle", id: "old-hop" }], messages);
+  });
+  should("forward grid data requests through the owning content script", async () => {
+    const replies = [];
+    const request = { handler: "getTabScreenshots", urls: ["https://private.example/"] };
+    stub(chrome.runtime, "sendMessage", (message) => {
+      assert.equal(request, message);
+      return Promise.resolve(["private-image"]);
+    });
+    stub(TabSwitcher, "tabSwitcherUI", {
+      postMessage: (message) => {
+        replies.push(message);
+        return Promise.resolve();
+      },
+    });
+    await TabSwitcher.handleUiMessage({ data: { name: "request", id: 7, message: request } });
+    assert.equal([{ name: "response", id: 7, result: ["private-image"] }], replies);
+  });
+  should("recover if all frozen-list candidates disappear during a tab query", async () => {
+    const source = { id: 911, windowId: 889, active: true, url: "chrome://extensions/" };
+    let active = source;
+    let eligible = [source, { id: 912, index: 1 }, { id: 913, index: 2 }];
+    stub(chrome.tabs, "query", (query) => Promise.resolve(query.active ? [active] : eligible));
+    stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+    const selected = [];
+    stub(chrome.tabs, "update", (id) => {
+      selected.push(id);
+      active = { ...source, id };
+      return Promise.resolve(active);
+    });
+    await SwitcherCommands.openTabSwitcher(source);
+    eligible = [914, 915, 916].map((id, index) => ({ id, index, active: index === 0 }));
+    await SwitcherCommands.openTabSwitcher(active);
+    assert.equal([912, 915], selected);
+    SwitcherCommands.endTabSwitcherCycle(889);
+  });
+  for (const state of [{ discarded: true }, { frozen: true }, { hidden: true }]) {
+    should(`not wake an unavailable grid selection: ${JSON.stringify(state)}`, async () => {
+      stub(chrome.tabs, "get", () => Promise.resolve({ id: 901, windowId: 1, ...state }));
+      stub(chrome.tabs, "update", () => {
+        throw new Error("Unavailable tab was activated");
+      });
+      stub(chrome.windows, "update", () => {
+        throw new Error("Unavailable tab's window was focused");
+      });
+      assert.isFalse(await sendRequestHandlers.selectSpecificTab({ id: 901, awakeOnly: true }));
+    });
+  }
+  should("end a carried gesture if Control was released before its message arrived", () => {
+    const messages = [];
+    stub(TabSwitcher, "keyboardEventAt", 101);
+    stub(TabSwitcher, "modifierState", { ctrlKey: false });
+    stub(chrome.runtime, "sendMessage", (message) => {
+      messages.push(message);
+      return Promise.resolve();
+    });
+    TabSwitcher.rememberCycle(
+      { id: "released-cycle", startedAt: 100 },
+      Utils.parseBrowserShortcut("Ctrl+Q"),
+    );
+    assert.equal(null, TabSwitcher.cycle);
+    assert.equal([{ handler: "endTabSwitcherCycle", id: "released-cycle" }], messages);
+  });
+  should("open with Ctrl held even when Alt is up", async () => {
+    stub(globalThis, "document", { activeElement: { tagName: "BODY" } });
+    stub(TabSwitcher, "modifierState", { ctrlKey: true, altKey: false });
+    let shown = false;
+    stub(TabSwitcher, "activate", () => {
+      shown = true;
+      return Promise.resolve(true);
+    });
+    stub(TabSwitcher, "quickSwitch", () => Promise.resolve({ opened: true, quickSwitch: true }));
+    const result = await TabSwitcher.activateFromBrowserShortcut("ctrl-test", {
+      shortcut: Utils.parseBrowserShortcut("Ctrl+Q"),
+    });
+    assert.isTrue(shown);
+    assert.equal({ opened: true }, result);
+  });
+
+  should("keep a frozen order through protected-page hops, then reset after release", async () => {
+    const tabs = [801, 802, 803, 804].map((id, index) => ({
+      id,
+      index,
+      windowId: 888,
+      active: index === 0,
+      url: "chrome://extensions/",
+    }));
+    stub(
+      chrome.tabs,
+      "query",
+      (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+    );
+    stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+    const selected = [];
+    stub(chrome.tabs, "update", (id) => {
+      for (const tab of tabs) tab.active = tab.id === id;
+      bgUtils.tabRecency.register(id);
+      selected.push(id);
+      return Promise.resolve(tabs.find((t) => t.id === id));
+    });
+    await bgUtils.tabRecency.init();
+    for (const id of [804, 803, 802, 801]) bgUtils.tabRecency.register(id);
+    await SwitcherCommands.openTabSwitcher(tabs[0]);
+    await SwitcherCommands.openTabSwitcher(tabs[1]);
+    tabs[3].discarded = true;
+    await SwitcherCommands.openTabSwitcher(tabs[2]);
+    assert.equal([802, 803, 801], selected);
+    SwitcherCommands.endTabSwitcherCycle(888);
+    await SwitcherCommands.openTabSwitcher(tabs[0]);
+    assert.equal(803, selected.at(-1));
+    SwitcherCommands.endTabSwitcherCycle(888);
+  });
+});
 
 context("TabSwitcher", () => {
   should("initialize and open tab switcher UI", async () => {
@@ -163,7 +348,210 @@ context("TabSwitcher", () => {
   );
 });
 
+context("TabPreview first paint and repeat visits", () => {
+  let captures, now;
+  setup(() => {
+    now = 10000;
+    captures = [];
+    stub(globalThis, "performance", { now: () => now });
+    stub(globalThis, "document", {
+      hidden: false,
+      readyState: "interactive",
+      documentElement: { children: [] },
+      getElementById: () => null,
+    });
+    stub(globalThis, "location", { href: "https://preview.example/" });
+    stub(globalThis, "requestAnimationFrame", (callback) => callback());
+    stub(globalThis, "requestIdleCallback", (callback) => callback());
+    stub(globalThis, "setInterval", () => 0);
+    stub(TabPreview, "mutations", { observe() {}, disconnect() {} });
+    stub(TabPreview, "enabled", true);
+    stub(TabPreview, "waitStart", 0);
+    stub(TabPreview, "lastCapture", -Infinity);
+    stub(TabPreview, "pending", null);
+    stub(chrome.runtime, "sendMessage", (message) => {
+      captures.push(message);
+      return Promise.resolve({ captured: true });
+    });
+  });
+
+  should("capture after the first paint while the page is still loading", async () => {
+    TabPreview.start("load");
+    await TabPreview.pending;
+    assert.equal(1, captures.length);
+    assert.isTrue(captures[0].allowLoading);
+  });
+
+  should("refresh each visit even if the last successful capture was recent", async () => {
+    TabPreview.lastCapture = now - 1000;
+    TabPreview.start("visible");
+    await TabPreview.pending;
+    assert.equal(1, captures.length);
+  });
+
+  should("refine the early preview after the page finishes loading and settles", async () => {
+    TabPreview.start("load");
+    await TabPreview.pending;
+    now += 1000;
+    document.readyState = "complete";
+    TabPreview.check();
+    await TabPreview.pending;
+    assert.equal(2, captures.length);
+  });
+
+  should("coalesce duplicate visibility requests during one settling period", async () => {
+    TabPreview.start("visible");
+    TabPreview.start("visible");
+    await TabPreview.pending;
+    assert.equal(1, captures.length);
+  });
+
+  should("retry an early rate-limited capture while resources are still loading", async () => {
+    let retry;
+    stub(globalThis, "setTimeout", (callback) => retry = callback);
+    stub(chrome.runtime, "sendMessage", (message) => {
+      captures.push(message);
+      return Promise.resolve(captures.length === 1 ? { retry: true } : { captured: true });
+    });
+    TabPreview.start("load");
+    await TabPreview.pending;
+    retry();
+    await TabPreview.pending;
+    assert.equal(2, captures.length);
+  });
+
+  should(
+    "start a new early capture after leaving and quickly returning during settling",
+    async () => {
+      TabPreview.start("load");
+      await TabPreview.pending;
+      document.hidden = true;
+      TabPreview.start("visible");
+      document.hidden = false;
+      now += 100;
+      TabPreview.start("visible");
+      await TabPreview.pending;
+      assert.equal(2, captures.length);
+    },
+  );
+});
+
+context("TabPreview navigation while settling", () => {
+  should("capture a new route immediately during an existing settling period", async () => {
+    const captures = [];
+    stub(globalThis, "document", {
+      hidden: false,
+      documentElement: { children: [] },
+      getElementById: () => null,
+    });
+    stub(globalThis, "location", { href: "https://preview.example/new-route" });
+    stub(TabPreview, "enabled", true);
+    stub(TabPreview, "waitStart", 100);
+    stub(TabPreview, "pending", null);
+    stub(globalThis, "requestAnimationFrame", (callback) => callback());
+    stub(globalThis, "requestIdleCallback", (callback) => callback());
+    stub(chrome.runtime, "sendMessage", (message) => {
+      captures.push(message.url);
+      return Promise.resolve({ captured: true });
+    });
+    TabPreview.start("route");
+    await TabPreview.pending;
+    assert.equal(["https://preview.example/new-route"], captures);
+  });
+
+  should("preserve a new route's early capture while the previous capture is pending", async () => {
+    const captures = [];
+    let complete;
+    stub(globalThis, "document", {
+      hidden: false,
+      documentElement: { children: [] },
+      getElementById: () => null,
+    });
+    stub(globalThis, "location", { href: "https://preview.example/" });
+    stub(TabPreview, "enabled", true);
+    stub(TabPreview, "pending", null);
+    stub(chrome.runtime, "sendMessage", (message) => {
+      captures.push(message.url);
+      return captures.length === 1
+        ? new Promise((resolve) => complete = resolve)
+        : Promise.resolve({ captured: true });
+    });
+    const previous = TabPreview.capture(true);
+    location.href = "https://preview.example/new-route";
+    const next = TabPreview.capture(true);
+    complete({});
+    await Promise.all([previous, next]);
+    assert.equal(["https://preview.example/", "https://preview.example/new-route"], captures);
+  });
+});
+
 context("Tab switcher previews and order", () => {
+  should(
+    "keep private previews out of local storage when session storage falls back to local",
+    async () => {
+      stub(chrome.storage, "session", chrome.storage.local);
+      const fallback = await import(
+        "../../background_scripts/thumbnails.js?local-session-fallback"
+      );
+      const normalUrl = "https://fallback-preview.example/normal";
+      const privateUrl = "https://fallback-preview.example/private";
+      await fallback.storeThumbnail(normalUrl, false, "normal-preview");
+      await fallback.storeThumbnail(privateUrl, true, "private-preview");
+      const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
+      assert.equal("normal-preview", stored[normalUrl]);
+      assert.equal(undefined, stored[privateUrl]);
+      assert.equal(
+        ["normal-preview", null],
+        await fallback.findThumbnails([normalUrl, privateUrl], false),
+      );
+      assert.equal(
+        [null, "private-preview"],
+        await fallback.findThumbnails([normalUrl, privateUrl], true),
+      );
+    },
+  );
+
+  should("reject background preview requests while the page's Brovim UI is visible", async () => {
+    const url = "https://visible-ui-preview.example/";
+    stub(chrome.tabs, "get", () => Promise.resolve({ active: true, status: "complete", url }));
+    stub(chrome.tabs, "sendMessage", () => Promise.resolve({ allowed: false }));
+    stub(chrome.tabs, "captureVisibleTab", () => {
+      throw new Error("A visible dialog must not be captured");
+    });
+    assert.equal({}, await captureThumbnail(1, url));
+  });
+
+  should("allow an explicit first-paint capture before the tab has finished loading", async () => {
+    const url = "https://loading-preview.example/";
+    stub(chrome.tabs, "get", () => Promise.resolve({ active: true, status: "loading", url }));
+    stub(chrome.tabs, "captureVisibleTab", () => {
+      throw new Error("MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND");
+    });
+    assert.equal({}, await captureThumbnail(1, url));
+    assert.equal({ retry: true }, await captureThumbnail(1, url, true));
+  });
+
+  should("use the latest capture across tracking variants of the same page", async () => {
+    const url = "https://fresh-preview.example/page";
+    await storeThumbnail(url, false, "older");
+    await storeThumbnail(`${url}?utm_source=mail#top`, false, "newer");
+    assert.equal(["newer", "newer"], await findThumbnails([url, `${url}#section`], false));
+  });
+
+  should("return cached previews immediately and keep private previews separate", async () => {
+    const url = "https://immediate-preview.example/page";
+    await storeThumbnail(url, false, "normal");
+    await storeThumbnail(url, true, "private");
+    assert.equal(["normal"], Thumbnails.getCachedThumbnails([url], false));
+    assert.equal(["private"], Thumbnails.getCachedThumbnails([url], true));
+  });
+
+  should("return placeholders immediately while a cold cache is still loading", async () => {
+    stub(chrome.storage.local, "get", () => new Promise(() => {}));
+    const cold = await import("../../background_scripts/thumbnails.js?cold-cache");
+    assert.equal([null], cold.getCachedThumbnails(["https://cold.example/"], false));
+  });
+
   for (
     const { order, activeId, expectedId } of [
       { order: "mru", activeId: 301, expectedId: 303 },

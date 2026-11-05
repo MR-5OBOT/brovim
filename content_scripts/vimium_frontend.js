@@ -2,8 +2,10 @@
 // This content script must be run prior to domReady so that we perform some operations very early.
 //
 
-let isEnabledForUrl = true;
+let isEnabledForUrl = false;
 let normalMode = null;
+let pendingEnabledCheck = null;
+let enabledCheckRevision = 0;
 
 // This is set by initializeFrame. We can only get this frame's ID from the background page.
 globalThis.frameId = null;
@@ -308,6 +310,9 @@ function focusThisFrame(request) {
   if (!request.forceFocusThisFrame && !isWindowFocusable()) return;
 
   Utils.nextTick(function () {
+    // A previous dialog's delayed focus restoration must not dismiss a newly opened one.
+    const focusedUi = document.activeElement?.shadowRoot?.activeElement;
+    if (request.restoreFocus && focusedUi?.matches("iframe.vimium-ui-component-visible")) return;
     globalThis.focus();
     // On Firefox, window.focus doesn't always draw focus back from a child frame (bug 554039). We
     // blur the active element if it is an iframe, which gives the window back focus as intended.
@@ -347,13 +352,13 @@ const messageHandlers = {
   },
   setScrollPosition,
   checkEnabledAfterURLChange,
-  async openTabSwitcher({ requestId }) {
+  async openTabSwitcher({ requestId, ...options }) {
     if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
       return { opened: false };
     }
     try {
       const result = await Utils.promiseWithTimeout(
-        TabSwitcher.activateFromBrowserShortcut(requestId),
+        TabSwitcher.activateFromBrowserShortcut(requestId, options),
         800,
       );
       if (!result.opened || TabSwitcher.currentRequestId !== requestId) return { opened: false };
@@ -379,9 +384,15 @@ const messageHandlers = {
   cancelTabSwitcher({ requestId }) {
     TabSwitcher.cancel(requestId);
   },
+  rememberTabSwitcherCycle({ cycle, shortcut }) {
+    TabSwitcher.rememberCycle(cycle, shortcut);
+  },
   // The tab became active. Also tells the background that this page captures its own preview.
   startTabPreview() {
     TabPreview.start("visible");
+  },
+  canCaptureTabPreview({ url }) {
+    return { allowed: location.href === url && !document.hidden && !isBrovimUiVisible() };
   },
   runInTopFrame({ sourceFrameId, registryEntry }) {
     // TODO(philc): it seems to me that we should be able to get rid of this runInTopFrame
@@ -421,7 +432,9 @@ async function handleMessage(request, sender) {
         "runInTopFrame",
         "openTabSwitcher",
         "cancelTabSwitcher",
+        "rememberTabSwitcherCycle",
         "startTabPreview",
+        "canCaptureTabPreview",
       ].includes(request.handler));
   if (shouldHandleMessage) {
     const result = await messageHandlers[request.handler](request, sender);
@@ -438,6 +451,7 @@ async function initializePreDomReady() {
   // NOTE(philc): I'm blocking further Vimium initialization on this, for simplicity. If necessary
   // we could allow other tasks to run concurrently.
   await checkIfEnabledForUrl();
+  if (extensionHasBeenUnloaded()) return onUnload();
 
   Utils.addChromeRuntimeOnMessageListener(
     Object.keys(messageHandlers),
@@ -446,21 +460,56 @@ async function initializePreDomReady() {
 }
 
 // Check if Vimium should be enabled or not based on the top frame's URL.
-async function checkIfEnabledForUrl() {
+function checkIfEnabledForUrl() {
+  // Coalesce simultaneous checks, retaining any focus/navigation invalidation received in flight.
+  enabledCheckRevision++;
+  pendingEnabledCheck ??= (async () => {
+    let revision;
+    do {
+      revision = enabledCheckRevision;
+      await updateEnabledState(revision);
+    } while (revision !== enabledCheckRevision && !extensionHasBeenUnloaded());
+  })().finally(() => pendingEnabledCheck = null);
+  return pendingEnabledCheck;
+}
+
+async function updateEnabledState(revision) {
   // A content script left in an open tab by an extension reload or update can no longer reach the
   // background page. Shut it down instead of throwing "Extension context invalidated".
   if (extensionHasBeenUnloaded()) return onUnload();
+  const checkedUrl = location.href;
   let response;
-  try {
-    const promises = [chrome.runtime.sendMessage({ handler: "initializeFrame" })];
-    if (!Settings.isLoaded()) promises.push(Settings.onLoaded());
-    [response] = await Promise.all(promises);
-  } catch (error) {
-    // An update can invalidate this context while the request is in flight, after the guard above.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const promises = [chrome.runtime.sendMessage({ handler: "initializeFrame" })];
+      if (!Settings.isLoaded()) promises.push(Settings.onLoaded());
+      [response] = await Promise.all(promises);
+      if (typeof response?.isEnabledForUrl === "boolean") break;
+    } catch (error) {
+      // An update can invalidate this context while the request is in flight.
+      if (extensionHasBeenUnloaded() || /Extension context invalidated/i.test(error?.message)) {
+        return onUnload();
+      }
+      // A background worker starting or stopping can temporarily leave no receiver/response.
+      if (
+        !/Receiving end does not exist|Could not establish connection|message (?:port|channel) closed|message channel closed before a response/i
+          .test(error?.message)
+      ) throw error;
+    }
+    if (revision !== enabledCheckRevision) return;
+    if (attempt < 4) await new Promise((resolve) => Utils.setTimeout(150 * (attempt + 1), resolve));
     if (extensionHasBeenUnloaded()) return onUnload();
-    throw error;
   }
   if (extensionHasBeenUnloaded()) return onUnload();
+  if (revision !== enabledCheckRevision) return;
+  // A route can change before the initial message listener is ready to receive invalidations.
+  if (checkedUrl !== location.href) {
+    enabledCheckRevision++;
+    return;
+  }
+  // A tab can outlive its background connection. Leave its state alone and retry on the next
+  // focus/navigation rather than crashing or installing modes from missing state.
+  if (typeof response?.isEnabledForUrl !== "boolean") return;
 
   isEnabledForUrl = response.isEnabledForUrl;
 

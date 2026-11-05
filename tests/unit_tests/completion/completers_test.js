@@ -483,12 +483,7 @@ context("Suggestion.pushMatchingRanges", () => {
     const [one, two, three] = ["one", "two", "three"];
     const suggestion = new Suggestion([], "", "", "", returns(1));
     suggestion.pushMatchingRanges(`${one}${two}${three}${two}${one}`, two, ranges);
-    assert.equal(
-      2,
-      Utils.zip([ranges, [[3, 6], [11, 14]]]).filter((pair) =>
-        (pair[0][0] === pair[1][0]) && (pair[0][1] === pair[1][1])
-      ).length,
-    );
+    assert.equal([[3, 6], [11, 14]], ranges);
   });
 
   should("extract ranges matching term (two matches, one at start of string)", () => {
@@ -496,12 +491,7 @@ context("Suggestion.pushMatchingRanges", () => {
     const [one, two, three] = ["one", "two", "three"];
     const suggestion = new Suggestion([], "", "", "", returns(1));
     suggestion.pushMatchingRanges(`${two}${three}${two}${one}`, two, ranges);
-    assert.equal(
-      2,
-      Utils.zip([ranges, [[0, 3], [8, 11]]]).filter((pair) =>
-        (pair[0][0] === pair[1][0]) && (pair[0][1] === pair[1][1])
-      ).length,
-    );
+    assert.equal([[0, 3], [8, 11]], ranges);
   });
 
   should("extract ranges matching term (two matches, one at end of string)", () => {
@@ -509,12 +499,7 @@ context("Suggestion.pushMatchingRanges", () => {
     const [one, two, three] = ["one", "two", "three"];
     const suggestion = new Suggestion([], "", "", "", returns(1));
     suggestion.pushMatchingRanges(`${one}${two}${three}${two}`, two, ranges);
-    assert.equal(
-      2,
-      Utils.zip([ranges, [[3, 6], [11, 14]]]).filter((pair) =>
-        (pair[0][0] === pair[1][0]) && (pair[0][1] === pair[1][1])
-      ).length,
-    );
+    assert.equal([[3, 6], [11, 14]], ranges);
   });
 
   should("extract ranges matching term (no matches)", () => {
