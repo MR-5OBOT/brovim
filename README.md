@@ -33,8 +33,6 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `d` `u`         | Scroll half a page down / up                                    |
 | `zH` `zL`       | Scroll all the way left / right                                 |
 | `f` `F`         | Open a link in this tab / a new tab (hold Shift to flip)        |
-| `<a-f>`         | Open several links in new tabs                                  |
-| `yf`            | Copy a link's URL                                               |
 | `/` `n` `N`     | Find (plain text, smartcase), next match, previous match        |
 | `o` `O`         | Vomnibar: open URL, history, or web search (this tab / new tab) |
 | `b` `B`         | Vomnibar: bookmarks (this tab / new tab)                        |
@@ -45,11 +43,10 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `<a-p>` `<a-m>` | Pin / mute the tab                                              |
 | `H` `L`         | History back / forward                                          |
 | `r` `R`         | Reload / hard reload                                            |
-| `yy` `p` `P`    | Copy the URL, open the clipboard URL here / in a new tab        |
+| `yy`            | Copy the current URL                                            |
 | `i` `gi`        | Insert mode, focus the first text input                         |
 | `Alt+Z`         | Return focus to the page and recover scrolling                  |
 | `zi` `zo` `z0`  | Zoom in / out / reset                                           |
-| `gs`            | View source                                                     |
 
 Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
 example `map J scrollDown count=5`.

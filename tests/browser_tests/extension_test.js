@@ -179,6 +179,19 @@ try {
     await page.bringToFront();
     await pause();
   };
+  const runCommand = async (command) => {
+    await worker.evaluate(
+      (id, command) =>
+        chrome.scripting.executeScript({
+          target: { tabId: id },
+          func: (command) => normalMode.commandHandler({ command: { command, options: {} } }),
+          args: [command],
+        }),
+      await tabId(),
+      command,
+    );
+    await pause();
+  };
   const openSwitcher = async (targetPage = page) => {
     const id = await tabId(targetPage);
     await worker.evaluate(
@@ -475,11 +488,6 @@ try {
     const down = await page.evaluate(() => scrollY);
     await key(["k"]);
     await page.waitForFunction((y) => scrollY < y, {}, down);
-    await key(["Control+e"]);
-    await page.waitForFunction(() => scrollY > 0);
-    const ctrlDown = await page.evaluate(() => scrollY);
-    await key(["Control+y"]);
-    await page.waitForFunction((y) => scrollY < y, {}, ctrlDown);
     await key(["l"]);
     await page.waitForFunction(() => scrollX > 0);
     await key(["h"]);
@@ -903,7 +911,6 @@ try {
         shown: getComputedStyle(row).display !== "none",
       })));
     assert(rows.every((row) => row.shown), "Some commands are hidden by default");
-    assert(rows.some((row) => row.text.includes("View page source")), "Missing source command");
     assert(rows.some((row) => row.text.includes("Zoom in")), "Missing zoom command");
     for (
       const text of [
@@ -911,6 +918,7 @@ try {
         "Go one tab left",
         "Go one tab right",
         "Go to previously-visited tab",
+        "View page source",
       ]
     ) {
       assert(
@@ -1004,7 +1012,7 @@ try {
     await key(["Escape"]);
   });
 
-  await check("F opens a background link and Alt+f queues multiple links", async () => {
+  await check("F opens a background link and the queue command opens multiple links", async () => {
     await fresh();
     const count = (await browser.pages()).length;
     await key(["F"]);
@@ -1019,7 +1027,7 @@ try {
       if (other.url().includes("/target?link=")) await other.close();
     }
     await fresh();
-    await key(["Alt+f"]);
+    await runCommand("LinkHints.activateModeWithQueue");
     await page.waitForSelector(".vimiumHintMarker");
     for (let i = 0; i < 2; i++) {
       await key([...(await hints())[2 + i].text.toLowerCase()]);
@@ -1032,7 +1040,7 @@ try {
     }
   });
 
-  await check("yy/yf copy URLs; p/P open the clipboard URL", async () => {
+  await check("yy and the link-copy command copy URLs; clipboard commands open them", async () => {
     await fresh();
     await browser.defaultBrowserContext().overridePermissions(origin, [
       "clipboard-read",
@@ -1043,14 +1051,14 @@ try {
       await page.evaluate(() => navigator.clipboard.readText()) === page.url(),
       "yy copied the wrong URL",
     );
-    await key(["y", "f"]);
+    await runCommand("LinkHints.activateModeToCopyLinkUrl");
     await page.waitForSelector(".vimiumHintMarker");
     await key([...(await hints())[2].text.toLowerCase()]);
     const copied = await page.evaluate(() => navigator.clipboard.readText());
-    assert(copied.includes("/target?link="), `yf copied ${copied}`);
-    await key(["p"]);
+    assert(copied.includes("/target?link="), `Link-copy command copied ${copied}`);
+    await runCommand("openCopiedUrlInCurrentTab");
     await page.waitForFunction((url) => location.href === url, {}, copied);
-    await key(["P"]);
+    await runCommand("openCopiedUrlInNewTab");
     const copiedTarget = await browser.waitForTarget(
       (target) =>
         target.type() === "page" && target.url() === copied &&
@@ -2007,9 +2015,9 @@ try {
     }
   });
 
-  await check("gs opens source in a separate tab", async () => {
+  await check("the source command opens source in a separate tab", async () => {
     await fresh();
-    await key(["g", "s"]);
+    await runCommand("toggleViewSource");
     const target = await browser.waitForTarget(
       (target) => target.url().startsWith("view-source:"),
       { timeout: 5000 },
@@ -2089,7 +2097,7 @@ try {
       await fresh();
       await browser.defaultBrowserContext().overridePermissions(origin, []);
       const originalUrl = page.url();
-      await key(["p"]);
+      await runCommand("openCopiedUrlInCurrentTab");
       const hud = page.frames().find((frame) => frame.url().includes("/pages/hud_page.html"));
       await hud.waitForFunction(() =>
         document.querySelector("#hud")?.textContent.includes("clipboard access was blocked")

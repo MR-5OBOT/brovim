@@ -383,23 +383,17 @@ const defaultKeyMappings = {
   "G": "scrollToBottom",
   "zH": "scrollToLeft",
   "zL": "scrollToRight",
-  "<c-e>": "scrollDown",
-  "<c-y>": "scrollUp",
   "d": "scrollPageDown",
   "u": "scrollPageUp",
   "r": "reload",
   "R": "reload hard",
   "yy": "copyCurrentUrl",
-  "p": "openCopiedUrlInCurrentTab",
-  "P": "openCopiedUrlInNewTab",
   "gi": "focusInput",
   "i": "enterInsertMode",
 
   // Link hints
   "f": "LinkHints.activateMode",
   "F": "LinkHints.activateModeToOpenInNewTab",
-  "<a-f>": "LinkHints.activateModeWithQueue",
-  "yf": "LinkHints.activateModeToCopyLinkUrl",
 
   // Using find
   "/": "enterFindMode",
@@ -430,7 +424,6 @@ const defaultKeyMappings = {
 
   // Misc
   "?": "showHelp",
-  "gs": "toggleViewSource",
 };
 
 export {
