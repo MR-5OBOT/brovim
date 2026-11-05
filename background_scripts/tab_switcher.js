@@ -1,4 +1,5 @@
 import { ensureContentScripts } from "./content_script_bootstrap.js";
+import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import {
   getRecentTabs,
   getSwitcherTabs,
@@ -8,6 +9,13 @@ import {
 
 let pendingOpen = Promise.resolve();
 const cycles = new Map();
+const overlays = new Map();
+
+export function setTabSwitcherOverlay(tab, id, showing) {
+  if (!id) return;
+  if (showing && tab.active) overlays.set(tab.windowId, { tabId: tab.id, id });
+  else if (overlays.get(tab.windowId)?.id === id) overlays.delete(tab.windowId);
+}
 // Protected browser pages cannot report modifier releases. Expire abandoned fallback gestures;
 // web pages end them explicitly on release. Visible overlays own their own focus/release handling.
 const fallbackIdleMs = 3000;
@@ -30,20 +38,39 @@ export async function commitTabSwitcherCycle(tab, selection) {
 }
 
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
+  if (overlays.get(windowId)?.tabId !== tabId) overlays.delete(windowId);
   const cycle = cycles.get(windowId);
   if (cycle && cycle.currentId !== tabId) endTabSwitcherCycle(windowId);
 });
 chrome.windows.onFocusChanged.addListener((windowId) => {
+  for (const id of overlays.keys()) if (id !== windowId) overlays.delete(id);
   for (const id of cycles.keys()) if (id !== windowId) endTabSwitcherCycle(id);
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  for (const [windowId, overlay] of overlays) {
+    if (overlay.tabId === tabId) overlays.delete(windowId);
+  }
+});
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.status !== "loading") return;
+  for (const [windowId, overlay] of overlays) {
+    if (overlay.tabId === tabId) overlays.delete(windowId);
+  }
 });
 
 export function openTabSwitcher(tab) {
-  const opening = pendingOpen.then(() => showTabSwitcher(tab));
+  const overlay = tab && overlays.get(tab.windowId);
+  const opening = pendingOpen.then(() => {
+    // Commands already queued for a grid belong to that gesture. A release or Escape must not
+    // let them open a new grid (or quick-swap again) on the newly active tab.
+    if (overlay && overlays.get(tab.windowId)?.id !== overlay.id) return;
+    return showTabSwitcher(tab, overlay?.id);
+  });
   pendingOpen = opening.catch(() => {});
   return opening;
 }
 
-async function showTabSwitcher(tab) {
+async function showTabSwitcher(tab, expectedOverlayId) {
   // Commands queued during a protected-page hop can carry an obsolete tab snapshot.
   tab = (await chrome.tabs.query(
     tab ? { active: true, windowId: tab.windowId } : {
@@ -54,8 +81,12 @@ async function showTabSwitcher(tab) {
   if (!tab) return;
   await Settings.onLoaded();
   const tabs = await getSwitcherTabs(tab.windowId);
+  if (expectedOverlayId && overlays.get(tab.windowId)?.id !== expectedOverlayId) return;
   if (tabs.length < 2) return;
-  if (Settings.get("tabSwitcherTwoTabSwap") && tabs.length === 2) {
+  if (
+    Settings.get("tabSwitcherTwoTabSwap") && tabs.length === 2 &&
+    overlays.get(tab.windowId)?.tabId !== tab.id
+  ) {
     endTabSwitcherCycle(tab.windowId);
     await switchToPreviousRecentTab(tab);
     return;
@@ -76,9 +107,9 @@ async function showTabSwitcher(tab) {
   // those activations turn this held gesture into a swap between its first two tabs.
   let selection;
   if (cycle && !cycle.overlay) {
-    const awake = new Set(tabs.map((t) => t.id));
+    const eligible = new Set(tabs.map((t) => t.id));
     const next = [...cycle.tabIds.slice(cycle.index + 1), ...cycle.tabIds.slice(0, cycle.index + 1)]
-      .find((id) => awake.has(id));
+      .find((id) => eligible.has(id));
     if (next == null) {
       endTabSwitcherCycle(tab.windowId);
       cycle = null;
@@ -88,11 +119,11 @@ async function showTabSwitcher(tab) {
     }
   }
   const requestId = crypto.randomUUID();
-  const options = { shortcut, cycle: selection };
+  const options = { shortcut, cycle: selection, expectedOverlayId };
   let missingReceiver = false;
   if (/^(https?|file):/i.test(tab.url || "")) {
     try {
-      if (await askPageToOpen(tab.id, requestId, options)) {
+      if (await askPageToOpen(tab, requestId, options)) {
         if (cycle) {
           cycle.overlay = true;
           clearTimeout(cycle.timer);
@@ -109,7 +140,7 @@ async function showTabSwitcher(tab) {
       ]);
       if (repaired) {
         try {
-          if (await askPageToOpen(tab.id, requestId, options)) {
+          if (await askPageToOpen(tab, requestId, options)) {
             if (cycle) {
               cycle.overlay = true;
               clearTimeout(cycle.timer);
@@ -122,11 +153,17 @@ async function showTabSwitcher(tab) {
     chrome.tabs.sendMessage(tab.id, { handler: "cancelTabSwitcher", requestId }, { frameId: 0 })
       .catch(() => {});
   }
+  // A quick release or a manual tab change may have switched while the response was pending.
+  // Never apply the fallback from that old request to the newly active tab.
+  const current = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0];
+  if (current?.id !== tab.id) return;
   if (!cycle) {
+    const tabIds = selectTabSwitcherCards(tabs, getTabSwitcherLimit()).map((t) => t.id);
     cycle = {
       id: crypto.randomUUID(),
-      tabIds: tabs.slice(0, getTabSwitcherLimit()).map((t) => t.id),
-      index: 1,
+      tabIds,
+      // Pins come first, so the previous tab isn't necessarily the second card.
+      index: tabIds.indexOf(tabs[1].id),
       startedAt: Date.now(),
       overlay: false,
     };
@@ -160,16 +197,20 @@ function snapshot(cycle) {
   };
 }
 
-async function askPageToOpen(tabId, requestId, options) {
+async function askPageToOpen(tab, requestId, options) {
+  const wasVisible = !!options.expectedOverlayId || overlays.get(tab.windowId)?.tabId === tab.id;
   let timeout;
   try {
     const response = await Promise.race([
-      chrome.tabs.sendMessage(tabId, { handler: "openTabSwitcher", requestId, ...options }, {
+      chrome.tabs.sendMessage(tab.id, { handler: "openTabSwitcher", requestId, ...options }, {
         frameId: 0,
       }),
       new Promise((resolve) => timeout = setTimeout(() => resolve(null), 350)),
     ]);
-    return response?.opened === true;
+    // A slow acknowledgement of a repeat must not cancel a live grid and activate its MRU
+    // fallback. The page owns selection until release/Escape, even while its replies are late.
+    return wasVisible || response?.opened === true ||
+      (response == null && overlays.get(tab.windowId)?.tabId === tab.id);
   } finally {
     clearTimeout(timeout);
   }

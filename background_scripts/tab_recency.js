@@ -45,8 +45,7 @@ class TabRecency {
     });
 
     chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
-      this.queueAction("deregister", removedTabId);
-      this.queueAction("register", addedTabId);
+      this.queueAction("replace", { addedTabId, removedTabId });
     });
 
     chrome.windows.onFocusChanged.addListener(async (windowId) => {
@@ -97,6 +96,11 @@ class TabRecency {
 
     // Remove any tab IDs which aren't currently loaded.
     const tabIds = new Set(tabs.map((t) => t.id));
+    // The query may already contain a replacement ID while storage still uses its old ID.
+    // Retain that old rank until the queued replacement can transfer it below.
+    for (const [action, replacement] of this.queuedActions) {
+      if (action === "replace") tabIds.add(replacement.removedTabId);
+    }
     for (const id in this.tabIdToCounter) {
       if (!tabIds.has(parseInt(id))) {
         delete this.tabIdToCounter[id];
@@ -125,7 +129,7 @@ class TabRecency {
     await this.saveToStorage();
   }
 
-  // - action: "register" or "unregister".
+  // - tabId: a numeric ID, or { addedTabId, removedTabId } for a replacement.
   queueAction(action, tabId) {
     if (!this.loaded) {
       this.queuedActions.push([action, tabId]);
@@ -134,7 +138,7 @@ class TabRecency {
     }
   }
 
-  // - action: "register" or "unregister".
+  // Apply a visit, background creation, removal or ID replacement.
   handleAction(action, tabId) {
     if (action == "register") {
       this.register(tabId);
@@ -142,6 +146,8 @@ class TabRecency {
       this.registerBackground(tabId);
     } else if (action == "deregister") {
       this.deregister(tabId);
+    } else if (action == "replace") {
+      this.replace(tabId.addedTabId, tabId.removedTabId);
     } else {
       throw new Error(`Unexpected action type: ${action}`);
     }
@@ -164,6 +170,16 @@ class TabRecency {
 
   deregister(tabId) {
     delete this.tabIdToCounter[tabId];
+    this.saveToStorage();
+  }
+
+  // Discarding or prerendering can replace a tab's ID without a visit. Transfer its rank instead
+  // of promoting it ahead of the user's previous tab. Preserve any newer activation of the new ID.
+  replace(addedTabId, removedTabId) {
+    const oldRank = this.tabIdToCounter[removedTabId];
+    const newRank = this.tabIdToCounter[addedTabId];
+    delete this.tabIdToCounter[removedTabId];
+    if (oldRank != null) this.tabIdToCounter[addedTabId] = Math.max(oldRank, newRank ?? 0);
     this.saveToStorage();
   }
 

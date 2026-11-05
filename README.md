@@ -71,19 +71,24 @@ reassigned) to switch directly to the previous tab. Hold its modifier to see the
 letter to move through the same list; release the modifier to switch. Adding Shift moves back unless
 Shift is already part of your assigned shortcut.
 
-The grid shows up to 10 recent eligible tabs (5 per row, 2 rows; both can be changed). Repeated
-shortcut presses wrap within those displayed cards; older tabs beyond this grid stay outside the
-cycle. Closing a card brings in the next eligible tab. Arrow keys, `h` `j` `k` `l` and Tab also
-move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse
-movement, clicks, middle clicks, touch and wheel input do not operate the switcher; there are no
-close buttons.
+The grid shows up to 18 eligible tabs (6 columns and up to 3 rows), reserving space for pinned tabs
+even if they are sleeping or have not been visited recently. The current and previous tabs stay
+included; other recent tabs fill the remaining places. All rows fit in the frame without scrolling.
+Only when pins plus the current/previous pair exceed the grid's capacity does keyboard navigation
+advance to another page; a page indicator shows where you are. Pinned tabs always fill the first
+cells, sleeping or not, and never displace your previous tab for quick swapping. Repeated shortcut
+presses wrap within those displayed cards; older unpinned tabs stay outside the cycle. Closing a
+card brings in the next eligible tab. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter`
+switches, `x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse movement,
+clicks, middle clicks, touch and wheel input do not operate the switcher; there are no close
+buttons.
 
-The current tab comes first, then tabs used this session (new background tabs come right after the
-current tab, including tabs created without an opener), then the rest by when they were last used.
-This is also how TabGlance's cycling grid places the current tab. Options › Tab switcher offers tab
-bar order instead, the number of cards per row and rows, a liquid glass panel (off by default),
-direct swapping with two tabs (on by default), and the preview settings below. Change the shortcut
-at `chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
+After the pins, the current tab comes first, then tabs used this session (new background tabs come
+right after the current tab, including tabs created without an opener), then the rest by when they
+were last used. This is also how TabGlance's cycling grid places the current tab. Options › Tab
+switcher offers tab bar order instead, fewer rows, a liquid glass panel (off by default), direct
+swapping with two tabs (on by default), and the preview settings below. Change the shortcut at
+`chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
 
 Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
 after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the

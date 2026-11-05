@@ -1,5 +1,6 @@
 import "../lib/utils.js";
 import "../lib/settings.js";
+import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
 // Keyboard-only tab switcher: a fixed MRU list for each gesture, with one grid of cards at a
@@ -9,18 +10,19 @@ import * as UIComponentMessenger from "./ui_component_messenger.js";
 
 const panel = document.getElementById("panel");
 const grid = document.getElementById("tab-switcher");
-const scrollHint = document.getElementById("scroll-hint");
-const reducedMotion = globalThis.matchMedia("(prefers-reduced-motion: reduce)");
+const pageIndicator = document.getElementById("page-indicator");
 // Letter tile colors.
 const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
-let allTabs = []; // Awake tabs in this window, in switcher order: the current tab first.
-let tabs = []; // The tabs shown as cards.
+let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
+let tabs = []; // The tabs shown as cards, in shortcut order.
 let selectedIndex = 0;
 let selectedCard = null;
+let visiblePage = -1;
 let isAltCycling = false;
 let shortcut = Utils.parseBrowserShortcut();
 let cycleId = null;
+let overlayId = null;
 let shiftIsDown = false;
 let visible = false;
 let activation = 0;
@@ -59,7 +61,7 @@ async function fetchTabs(options = {}) {
     list = await sendRequest({
       handler: "getOpenTabsWithScreenshots",
       includeScreenshots: "cached",
-      screenshotLimit: columnSetting() * layoutSetting("tabSwitcherRows", 1, 3),
+      screenshotLimit: pageSize(),
     }) || [];
   } catch (err) {
     console.error("Failed to load tabs:", err);
@@ -90,10 +92,11 @@ async function fetchTabs(options = {}) {
     ? Math.max(0, tabs.findIndex((tab) => tab.id === options.cycle.selectedId))
     : options.reverse
     ? tabs.length - 1
-    : 1;
+    : Math.max(0, tabs.findIndex((tab) => tab.id === allTabs[1].id));
   render();
   // Show usable cards immediately; cached previews arrive without delaying keys or painting.
   panel.classList.add("ready");
+  sendRequest({ handler: "setTabSwitcherOverlay", id: overlayId, showing: true }).catch(() => {});
   postPanel();
   guardFocus();
   loadScreenshots(currentActivation, tabs);
@@ -102,7 +105,7 @@ async function fetchTabs(options = {}) {
 const pageSize = () => columnSetting() * layoutSetting("tabSwitcherRows", 1, 3);
 
 function chooseTabs() {
-  tabs = allTabs.slice(0, pageSize());
+  tabs = selectTabSwitcherCards(allTabs, pageSize());
 }
 
 async function loadScreenshots(currentActivation, tabsToLoad) {
@@ -132,8 +135,33 @@ function render() {
   grid.style.setProperty("--columns", Math.min(columns, tabs.length));
   grid.replaceChildren(...tabs.map(createCard));
   selectedCard = null;
-  updateSelection(false);
+  visiblePage = -1;
+  updateSelection();
   postPanel();
+}
+
+// Fit every row into the viewport. Measure only on render, resize or a change of page, never
+// on an ordinary step. Decoded card images are retained when moving between overflow pages.
+function sizePanel() {
+  const card = grid.querySelector(".tab-card:not([hidden])");
+  if (!card) return;
+  const style = getComputedStyle(panel);
+  const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) +
+    parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+  const gap = parseFloat(getComputedStyle(grid).rowGap);
+  const columns = Math.min(columnSetting(), tabs.length);
+  const count = Math.min(pageSize(), tabs.length - visiblePage * pageSize());
+  const rows = Math.ceil(count / columns);
+  const title = card.querySelector(".card-title");
+  const titleStyle = getComputedStyle(title);
+  const captionHeight = title.offsetHeight + parseFloat(titleStyle.marginTop) +
+    parseFloat(titleStyle.marginBottom) + card.querySelector(".card-host").offsetHeight + 4;
+  const available = innerHeight * 0.9 - padding - (pageIndicator.hidden ? 0 : 24);
+  const height = Math.min(
+    card.clientWidth * 0.75 + captionHeight,
+    (available - gap * (rows - 1)) / rows,
+  );
+  grid.style.setProperty("--card-height", `${Math.max(1, Math.floor(height))}px`);
 }
 
 function createCard(tab, index) {
@@ -200,7 +228,20 @@ function select(index) {
   updateSelection();
 }
 
-function updateSelection(animate = true) {
+function updateSelection() {
+  const nextPage = Math.floor(selectedIndex / pageSize());
+  if (visiblePage !== nextPage) {
+    visiblePage = nextPage;
+    const start = visiblePage * pageSize();
+    for (let i = 0; i < grid.children.length; i++) {
+      grid.children[i].hidden = i < start || i >= start + pageSize();
+    }
+    const pages = Math.ceil(tabs.length / pageSize());
+    pageIndicator.hidden = pages <= 1;
+    pageIndicator.textContent = `${visiblePage + 1} / ${pages}`;
+    sizePanel();
+    postPanel();
+  }
   const nextCard = grid.children[selectedIndex];
   if (selectedCard !== nextCard) {
     selectedCard?.classList.remove("selected");
@@ -211,19 +252,6 @@ function updateSelection(animate = true) {
   }
   // Names the selected card for screen readers.
   if (nextCard) grid.setAttribute("aria-activedescendant", nextCard.id);
-  nextCard?.scrollIntoView({
-    block: "nearest",
-    inline: "nearest",
-    behavior: animate && !reducedMotion.matches ? "smooth" : "instant",
-  });
-  updateScrollHint();
-}
-
-function updateScrollHint() {
-  scrollHint.classList.toggle(
-    "show",
-    panel.scrollHeight - panel.clientHeight - panel.scrollTop > 12,
-  );
 }
 
 // Liquid glass blurs the page under the panel, which this frame can't do, so the content script
@@ -262,8 +290,10 @@ function whenTabsLoaded(action) {
 
 function commit() {
   whenTabsLoaded(async () => {
+    const currentActivation = activation;
     // Never switch to a tab that is being closed.
     await closing;
+    if (!visible || currentActivation !== activation) return;
     const tab = tabs[selectedIndex];
     hide();
     if (tab) {
@@ -280,9 +310,17 @@ async function closeTab(index) {
   const tab = tabs[index];
   if (!tab || closing) return;
   select(index);
-  closing = sendRequest({ handler: "closeSpecificTab", id: tab.id }).catch(() => {});
-  await closing;
-  closing = null;
+  const currentActivation = activation;
+  const pending = sendRequest({ handler: "closeSpecificTab", id: tab.id }).then(
+    (result) => result?.closed === true,
+    () => false,
+  );
+  closing = pending;
+  const closed = await pending;
+  if (closing === pending) closing = null;
+  // A failed close leaves the tab available. A late reply must not redraw a newer gesture.
+  if (!closed || !visible || currentActivation !== activation) return;
+  const selectedId = tabs[selectedIndex]?.id;
   allTabs = allTabs.filter((t) => t.id !== tab.id);
   // The next most recent tab takes the free place.
   chooseTabs();
@@ -290,8 +328,12 @@ async function closeTab(index) {
     hide();
     return;
   }
-  // Keep the selection in place, so pressing x repeatedly doesn't jump back to the current tab.
-  selectedIndex = Math.max(0, Math.min(index, tabs.length - 1));
+  // Keep any selection made while closing. Otherwise keep the vacated position, so repeated x
+  // presses don't jump back to the current tab.
+  const preferredIndex = tabs.findIndex((t) => t.id === selectedId);
+  selectedIndex = preferredIndex >= 0
+    ? preferredIndex
+    : Math.max(0, Math.min(index, tabs.length - 1));
   render();
   loadScreenshots(activation, tabs.filter((t) => !t.screenshot));
 }
@@ -307,6 +349,12 @@ function hide() {
 }
 
 function endCycle() {
+  if (overlayId) {
+    sendRequest({ handler: "setTabSwitcherOverlay", id: overlayId, showing: false }).catch(
+      () => {},
+    );
+  }
+  overlayId = null;
   if (cycleId) {
     sendRequest({ handler: "endTabSwitcherCycle", id: cycleId }).catch(() => {});
   }
@@ -389,19 +437,23 @@ UIComponentMessenger.registerHandler((event) => {
     }
     case "activate":
       visible = true;
+      closing = null;
       isAltCycling = event.data.isAltCycle ?? false;
       shortcut = event.data.shortcut ?? Utils.parseBrowserShortcut();
       cycleId = event.data.cycle?.id ?? null;
+      overlayId = event.data.overlayId ?? null;
       shiftIsDown = event.data.reverse === true;
       // Hide the previous list until the fresh one (in the new recency order) is rendered.
       panel.classList.remove("ready");
       tabsLoaded = fetchTabs(event.data);
       if (event.data.commitOnOpen) commit();
       break;
-    case "cycleNext":
+    case "cycleNext": {
       isAltCycling = true;
-      whenTabsLoaded(() => step(shiftIsDown && !shortcut.requiresShift ? -1 : 1));
+      const direction = shiftIsDown && !shortcut.requiresShift ? -1 : 1;
+      whenTabsLoaded(() => step(direction));
       break;
+    }
     case "commitSelection":
       commit();
       break;
@@ -422,10 +474,9 @@ globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
 globalThis.addEventListener("resize", () => {
   if (!visible) return;
-  updateScrollHint();
+  sizePanel();
   postPanel();
 });
-panel.addEventListener("scroll", updateScrollHint, { passive: true });
 // Keep focus and scrolling under keyboard control, including middle-click autoscroll, touch
 // panning and the context menu. The covering frame still consumes clicks above the web page.
 for (

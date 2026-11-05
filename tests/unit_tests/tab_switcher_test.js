@@ -14,9 +14,75 @@ import {
 } from "../../background_scripts/thumbnails.js";
 import * as Thumbnails from "../../background_scripts/thumbnails.js";
 import * as SwitcherCommands from "../../background_scripts/tab_switcher.js";
-import { getRecentTabs } from "../../background_scripts/recent_tabs.js";
+import { getRecentTabs, getSwitcherTabs } from "../../background_scripts/recent_tabs.js";
+import { selectTabSwitcherCards } from "../../lib/tab_switcher.js";
 
 context("configured switcher shortcut", () => {
+  should(
+    "reserve first-page space for old pinned tabs without changing the quick-swap pair",
+    () => {
+      const tabs = Array.from({ length: 24 }, (_, index) => ({
+        id: index,
+        index,
+        active: index === 0,
+        pinned: index >= 21,
+        discarded: index === 21,
+        frozen: index === 22,
+      }));
+      const cards = selectTabSwitcherCards(tabs, 18);
+      assert.equal(18, cards.length);
+      // Pins (even sleeping ones) take the first cells, then the current/previous pair.
+      assert.equal([21, 22, 23, 0, 1], cards.slice(0, 5).map((tab) => tab.id));
+    },
+  );
+  for (const order of ["mru", "tabstrip"]) {
+    should(`keep every pinned tab beyond the card limit in ${order} order`, async () => {
+      await Settings.onLoaded();
+      const previousOrder = Settings.get("tabSwitcherOrder");
+      const tabs = Array.from({ length: 9 }, (_, index) => ({
+        id: 7100 + index,
+        index,
+        windowId: 710,
+        active: index === 0,
+        pinned: [1, 4, 6, 7, 8].includes(index),
+        discarded: index === 6,
+        frozen: index === 7,
+      }));
+      stub(chrome.tabs, "query", () => Promise.resolve(tabs));
+      await bgUtils.tabRecency.init();
+      for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
+      try {
+        await Settings.set("tabSwitcherOrder", order);
+        const ordered = await getSwitcherTabs(710);
+        assert.equal(
+          [7101, 7104, 7106, 7107, 7108, 7100],
+          selectTabSwitcherCards(ordered, 3).map((tab) => tab.id),
+        );
+      } finally {
+        await Settings.set("tabSwitcherOrder", previousOrder);
+      }
+    });
+  }
+  should("attach cached previews to pinned cards beyond the recent-card limit", async () => {
+    const tabs = Array.from({ length: 6 }, (_, index) => ({
+      id: 7200 + index,
+      index,
+      active: index === 0,
+      pinned: index === 5,
+      url: `https://pinned-preview.example/${index}`,
+    }));
+    stub(chrome.tabs, "query", () => Promise.resolve(tabs));
+    await bgUtils.tabRecency.init();
+    for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
+    await storeThumbnail(tabs[5].url, false, "pinned-preview");
+    const list = await sendRequestHandlers.getOpenTabsWithScreenshots({
+      tab: { windowId: 720 },
+      includeScreenshots: "cached",
+      screenshotLimit: 3,
+    });
+    assert.equal("pinned-preview", list.find((tab) => tab.id === 7205).screenshot);
+    assert.equal(null, list.find((tab) => tab.id === 7203).screenshot);
+  });
   should(
     "include sleeping pinned tabs without exposing sleeping unpinned or hidden tabs",
     async () => {
@@ -43,7 +109,7 @@ context("configured switcher shortcut", () => {
       assert.equal([702, 703], selected);
     },
   );
-  for (const [columns, rows] of [[3, 1], [4, 2], [5, 2]]) {
+  for (const [columns, rows] of [[3, 1], [4, 2], [6, 3]]) {
     should(`keep protected-page cycling within the ${columns * rows} recent cards`, async () => {
       await Settings.onLoaded();
       const oldColumns = Settings.get("tabSwitcherColumns");
@@ -88,6 +154,50 @@ context("configured switcher shortcut", () => {
       }
     });
   }
+  should(
+    "include sleeping and inactive pinned tabs in protected-page cycling past the limit",
+    async () => {
+      await Settings.onLoaded();
+      const oldColumns = Settings.get("tabSwitcherColumns");
+      const oldRows = Settings.get("tabSwitcherRows");
+      const tabs = Array.from({ length: 8 }, (_, index) => ({
+        id: 7300 + index,
+        index,
+        windowId: 730,
+        active: index === 0,
+        pinned: index >= 5,
+        discarded: index === 5,
+        frozen: index === 6,
+        url: "chrome://extensions/",
+      }));
+      stub(chrome.tabs, "query", (query) =>
+        Promise.resolve(
+          tabs.filter((tab) => !query.active || tab.active),
+        ));
+      stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+      const selected = [];
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        bgUtils.tabRecency.register(id);
+        selected.push(id);
+        return Promise.resolve(tabs.find((tab) => tab.id === id));
+      });
+      await bgUtils.tabRecency.init();
+      for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
+      try {
+        await Settings.set("tabSwitcherColumns", 3);
+        await Settings.set("tabSwitcherRows", 1);
+        for (let i = 0; i < 7; i++) {
+          await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
+        }
+        assert.equal([7301, 7305, 7306, 7307, 7300, 7301, 7305], selected);
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(730);
+        await Settings.set("tabSwitcherColumns", oldColumns);
+        await Settings.set("tabSwitcherRows", oldRows);
+      }
+    },
+  );
   should("start a fresh gesture on a new modifier press after a protected-page hop", () => {
     const messages = [];
     stub(TabSwitcher, "cycle", { id: "old-hop", startedAt: 100 });

@@ -32,6 +32,35 @@ context("TabRecency", () => {
     assert.equal([3, 2, 1], tabRecency.getTabsByRecency());
   });
 
+  should("preserve the quick-swap pair when a sleeping tab's ID is replaced", async () => {
+    let replaced;
+    stub(chrome.tabs.onReplaced, "addListener", (fn) => replaced = fn);
+    stub(chrome.tabs, "query", () => Promise.resolve([]));
+    await tabRecency.init();
+    for (const id of [1, 2, 3]) tabRecency.register(id);
+    replaced(4, 1);
+    assert.equal([3, 2, 4], tabRecency.getTabsByRecency());
+    // Replacing an unvisited restored tab must not fabricate a visit.
+    replaced(6, 5);
+    assert.equal([3, 2, 4], tabRecency.getTabsByRecency());
+    // An activation that arrives before onReplaced is newer than the transferred rank.
+    tabRecency.register(7);
+    replaced(7, 4);
+    assert.equal([7, 3, 2], tabRecency.getTabsByRecency());
+  });
+
+  should("preserve a replacement's stored rank while the worker is loading", async () => {
+    let replaced, resolveStorage;
+    stub(chrome.tabs.onReplaced, "addListener", (fn) => replaced = fn);
+    stub(chrome.tabs, "query", () => Promise.resolve([{ id: 2 }, { id: 3 }, { id: 4 }]));
+    stub(chrome.storage.session, "get", () => new Promise((resolve) => resolveStorage = resolve));
+    const loading = tabRecency.init();
+    replaced(4, 1);
+    resolveStorage({ tabRecency: { 1: 10, 2: 20, 3: 30 } });
+    await loading;
+    assert.equal([3, 2, 4], tabRecency.getTabsByRecency());
+  });
+
   should("preserve activations received after startup while storage is loading", async () => {
     let activated, startup, resolveStorage;
     stub(chrome.tabs.onActivated, "addListener", (fn) => activated = fn);

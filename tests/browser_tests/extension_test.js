@@ -1498,6 +1498,82 @@ try {
     },
   );
 
+  await check("delayed repeat replies cannot switch tabs while the grid is open", async () => {
+    await fresh();
+    const peers = [];
+    try {
+      for (let i = 0; i < 5; i++) {
+        const peer = await browser.newPage();
+        peers.push(peer);
+        await peer.goto(`${origin}/delayed-repeat-${i}`);
+      }
+      await page.bringToFront();
+      const sourceId = await tabId();
+      await page.keyboard.down("Alt");
+      await openBrowserSwitcher();
+      const frame = await ui("tab-switcher-frame");
+      await frame.waitForSelector("#panel.ready .selected");
+      const ids = await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id));
+      await worker.evaluate(() => {
+        globalThis.repeatActivations = [];
+        globalThis.repeatActivationListener = (event) => repeatActivations.push(event.tabId);
+        chrome.tabs.onActivated.addListener(repeatActivationListener);
+        globalThis.repeatOriginalSendMessage = chrome.tabs.sendMessage;
+        chrome.tabs.sendMessage = (...args) => {
+          const response = repeatOriginalSendMessage(...args);
+          return args[1]?.handler === "openTabSwitcher"
+            ? response.then((value) =>
+              new Promise((resolve) => setTimeout(() => resolve(value), 600))
+            )
+            : response;
+        };
+      });
+      await worker.evaluate(async (id) => {
+        const tab = await chrome.tabs.get(id);
+        await Promise.all(Array.from({ length: 4 }, () => openTabSwitcher(tab)));
+      }, sourceId);
+      assert(
+        await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, sourceId),
+        "A delayed repeat activated a tab before Alt release",
+      );
+      await frame.waitForFunction(
+        (id) => document.querySelector(".selected")?.dataset.id === id,
+        {},
+        ids[5],
+      );
+      assert(
+        await worker.evaluate(() => repeatActivations.length === 0),
+        "A delayed repeat briefly switched to another tab",
+      );
+      assert(await frame.$("#panel.ready"), "A delayed repeat cancelled the grid");
+      await worker.evaluate(async (id) => {
+        const tab = await chrome.tabs.get(id);
+        globalThis.pendingRepeatCommands = Promise.all(
+          Array.from({ length: 4 }, () => openTabSwitcher(tab)),
+        );
+      }, sourceId);
+      await key(["Escape"]);
+      await worker.evaluate(() => pendingRepeatCommands);
+      await noUi("tab-switcher-frame");
+      assert(
+        await worker.evaluate(() => repeatActivations.length === 0),
+        "Queued repeats switched after Escape cancelled the gesture",
+      );
+    } finally {
+      await worker.evaluate(() => {
+        if (globalThis.repeatOriginalSendMessage) {
+          chrome.tabs.sendMessage = repeatOriginalSendMessage;
+        }
+        if (globalThis.repeatActivationListener) {
+          chrome.tabs.onActivated.removeListener(repeatActivationListener);
+        }
+      });
+      await page.keyboard.up("Alt");
+      for (const peer of peers) if (!peer.isClosed()) await peer.close();
+      await page.bringToFront();
+    }
+  });
+
   await check("a loading page gets an early thumbnail and a settled refresh", async () => {
     await page.bringToFront();
     const url = `${origin}/slow-preview`;
@@ -2169,73 +2245,339 @@ try {
     },
   );
 
-  await check("sleeping pinned tabs stay in the grid and wake only when selected", async () => {
-    await fresh();
-    const urls = [
-      `${origin}/pinned-sleeper?title=PinnedSleeper`,
-      `${origin}/unpinned-sleeper?title=UnpinnedSleeper`,
-    ];
-    try {
-      await worker.evaluate(async (urls) => {
-        await chrome.tabs.create({ url: urls[0], active: false, pinned: true });
-        await chrome.tabs.create({ url: urls[1], active: false });
-        for (let i = 0; i < 100; i++) {
-          const tabs = (await chrome.tabs.query({})).filter((tab) => urls.includes(tab.url));
-          if (tabs.length === 2 && tabs.every((tab) => tab.status === "complete")) {
-            for (const tab of tabs) await chrome.tabs.discard(tab.id);
-            return;
+  await check(
+    "sleeping pinned tabs beyond the card limit stay in the grid and wake only when selected",
+    async () => {
+      await fresh();
+      const urls = [
+        `${origin}/pinned-sleeper?title=PinnedSleeper`,
+        `${origin}/unpinned-sleeper?title=UnpinnedSleeper`,
+      ];
+      try {
+        await worker.evaluate(async (urls) => {
+          await chrome.tabs.create({ url: urls[0], active: false, pinned: true });
+          await chrome.tabs.create({ url: urls[1], active: false });
+          for (let i = 0; i < 100; i++) {
+            const tabs = (await chrome.tabs.query({})).filter((tab) => urls.includes(tab.url));
+            if (tabs.length === 2 && tabs.every((tab) => tab.status === "complete")) {
+              for (const tab of tabs) await chrome.tabs.discard(tab.id);
+              return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
           }
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          throw new Error("Sleeper fixtures did not load");
+        }, urls);
+        const pinned = await worker.evaluate(
+          async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url),
+          urls[0],
+        );
+        assert(pinned.pinned && pinned.discarded, "Pinned fixture did not enter sleep");
+        await worker.evaluate(async (origin) => {
+          await Settings.set("tabSwitcherColumns", 3);
+          await Settings.set("tabSwitcherRows", 1);
+          // Push the pinned sleeper out of the recent-card limit, as happens after a long sleep.
+          for (let i = 0; i < 4; i++) {
+            await chrome.tabs.create({
+              url: `${origin}/pin-limit-inactive-${i}?title=InactivePin${i}`,
+              active: false,
+              pinned: true,
+            });
+          }
+          for (let i = 0; i < 4; i++) {
+            await chrome.tabs.create({ url: `${origin}/pin-limit-${i}`, active: false });
+          }
+        }, origin);
+        await openSwitcher();
+        const switcher = await ui("tab-switcher-frame");
+        await switcher.waitForSelector("#panel.ready .tab-card.selected");
+        const titles = await switcher.$$eval(
+          ".card-title",
+          (els) => els.map((el) => el.textContent),
+        );
+        assert(titles.includes("PinnedSleeper"), "Sleeping pinned tab was missing");
+        const isPin = (title) => title === "PinnedSleeper" || title.startsWith("InactivePin");
+        const firstRegular = titles.findIndex((title) => !isPin(title));
+        assert(
+          titles[firstRegular] === "Brovim browser fixture" &&
+            titles.slice(firstRegular).every((title) => !isPin(title)),
+          `Pins did not fill the first cells ahead of the current tab: ${titles}`,
+        );
+        assert(!titles.includes("UnpinnedSleeper"), "Sleeping unpinned tab was exposed");
+        for (let i = 0; i < 4; i++) {
+          assert(titles.includes(`InactivePin${i}`), `Inactive pinned tab ${i} was missing`);
         }
-        throw new Error("Sleeper fixtures did not load");
-      }, urls);
-      const pinned = await worker.evaluate(
-        async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url),
-        urls[0],
-      );
-      assert(pinned.pinned && pinned.discarded, "Pinned fixture did not enter sleep");
-      await openSwitcher();
-      const switcher = await ui("tab-switcher-frame");
-      const titles = await switcher.$$eval(".card-title", (els) => els.map((el) => el.textContent));
-      assert(titles.includes("PinnedSleeper"), "Sleeping pinned tab was missing");
-      assert(!titles.includes("UnpinnedSleeper"), "Sleeping unpinned tab was exposed");
-      assert(
-        (await worker.evaluate((id) => chrome.tabs.get(id), pinned.id)).discarded,
-        "Opening the grid woke a pinned tab",
-      );
-      for (let i = 0; i < 10; i++) {
-        if (await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id)) break;
-        await key(["ArrowRight"]);
+        const cardIds = await switcher.$$eval(".tab-card", (els) => els.map((el) => el.dataset.id));
+        assert(cardIds.length === 7, `Expected the quick-swap pair plus 5 pins: ${cardIds}`);
+        assert(new Set(cardIds).size === cardIds.length, "Pinned cards were duplicated");
+        assert(
+          await switcher.$$eval(".tab-card:not([hidden])", (cards) => cards.length) <= 3,
+          "Pinned overflow exceeded the one-page grid",
+        );
+        assert(
+          (await worker.evaluate((id) => chrome.tabs.get(id), pinned.id)).discarded,
+          "Opening the grid woke a pinned tab",
+        );
+        for (let i = 0; i < 10; i++) {
+          if (await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id)) break;
+          await key(["ArrowRight"]);
+        }
+        assert(
+          await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id),
+          "Could not select the pinned card",
+        );
+        assert(
+          await switcher.$eval(".selected", (el) => !el.hidden),
+          "The pinned selection was not visible on its overflow page",
+        );
+        assert(
+          await switcher.$eval("#panel", (el) => el.scrollHeight <= el.clientHeight + 1),
+          "Pinned overflow required scrolling",
+        );
+        await key(["Enter"]);
+        await worker.evaluate(async (id) => {
+          for (let i = 0; i < 100; i++) {
+            const tab = await chrome.tabs.get(id);
+            if (tab.active && !tab.discarded) return;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          throw new Error("Selecting the pinned tab did not wake it");
+        }, pinned.id);
+      } finally {
+        await worker.evaluate(
+          async (urls, origin) => {
+            await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+            await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
+            const ids = (await chrome.tabs.query({})).filter((tab) =>
+              urls.includes(tab.url) || tab.url.startsWith(`${origin}/pin-limit-`)
+            ).map((
+              tab,
+            ) => tab.id);
+            if (ids.length) await chrome.tabs.remove(ids);
+          },
+          urls,
+          origin,
+        );
+        await page.bringToFront();
       }
-      assert(
-        await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id),
-        "Could not select the pinned card",
+    },
+  );
+
+  await check(
+    "old sleeping pins on excluded sites stay on the first page and preserve quick swaps",
+    async () => {
+      await fresh();
+      const prefix = `${origin}/reserved-pin-`;
+      const sourceId = await tabId();
+      const previousRules = await worker.evaluate(() => Settings.get("exclusionRules"));
+      try {
+        const fixtures = await worker.evaluate(async ({ prefix, previousRules }) => {
+          await Settings.set("exclusionRules", [...previousRules, {
+            pattern: `${prefix}app*`,
+            passKeys: "",
+          }]);
+          const pins = [];
+          for (const name of ["WhatsApp", "Gmail", "OtherPin"]) {
+            pins.push(
+              await chrome.tabs.create({
+                url: `${prefix}app-${name}?title=${name}`,
+                active: false,
+                pinned: true,
+              }),
+            );
+          }
+          const peers = [];
+          for (let i = 0; i < 20; i++) {
+            peers.push(
+              await chrome.tabs.create({
+                url: `${prefix}recent-${i}?title=Recent${i}`,
+                active: false,
+              }),
+            );
+          }
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const tabs = (await chrome.tabs.query({})).filter((tab) => tab.url.startsWith(prefix));
+            if (tabs.length === 23 && tabs.every((tab) => tab.status === "complete")) {
+              for (const pin of pins) await chrome.tabs.discard(pin.id);
+              return { peerId: peers.at(-1).id, peerUrl: `${prefix}recent-19?title=Recent19` };
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+          throw new Error("Reserved pinned fixtures did not load");
+        }, { prefix, previousRules });
+        await openSwitcher();
+        const frame = await ui("tab-switcher-frame");
+        await frame.waitForSelector("#panel.ready .selected");
+        const visibleTitles = await frame.$$eval(
+          ".tab-card:not([hidden]) .card-title",
+          (els) => els.map((el) => el.textContent),
+        );
+        assert(visibleTitles.length === 18, `Unexpected first-page count: ${visibleTitles}`);
+        assert(
+          ["WhatsApp", "Gmail", "OtherPin"].every((name) =>
+            visibleTitles.slice(0, 3).includes(name)
+          ),
+          `Pins did not fill the first cells: ${visibleTitles}`,
+        );
+        assert(
+          await frame.$eval(".selected", (el) => Number(el.dataset.id)) === fixtures.peerId,
+          "Reserving pins changed the previous-tab selection",
+        );
+        assert(
+          await frame.$eval("#page-indicator", (el) => el.hidden),
+          "Old pins were pushed to page two",
+        );
+        assert(
+          await frame.$eval("#panel", (el) => el.scrollHeight <= el.clientHeight + 1),
+          "Pins caused scrolling",
+        );
+        await key(["Escape", "Alt"]);
+        await openBrowserSwitcher();
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, fixtures.peerId),
+          "Quick swap did not select the previous unpinned tab",
+        );
+        const peerPage = (await browser.pages()).find((peer) => peer.url() === fixtures.peerUrl);
+        assert(peerPage, "Could not find the quick-swap peer page");
+        await key(["Alt"], peerPage);
+        await openBrowserSwitcher(fixtures.peerId);
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, sourceId),
+          "Quick swap did not return to the source tab",
+        );
+        assert(
+          await worker.evaluate(
+            async (prefix) =>
+              (await chrome.tabs.query({ pinned: true })).filter((tab) =>
+                tab.url.startsWith(prefix)
+              )
+                .every((tab) => tab.discarded && !tab.active),
+            prefix,
+          ),
+          "Showing the pins or swapping regular tabs woke a pinned tab",
+        );
+      } finally {
+        await worker.evaluate(async ({ prefix, previousRules }) => {
+          await Settings.set("exclusionRules", previousRules);
+          const ids = (await chrome.tabs.query({})).filter((tab) => tab.url.startsWith(prefix)).map(
+            (tab) => tab.id,
+          );
+          if (ids.length) await chrome.tabs.remove(ids);
+        }, { prefix, previousRules });
+        await page.bringToFront();
+      }
+    },
+  );
+
+  await check("switcher keeps cards when closing a tab fails", async () => {
+    await fresh();
+    const peer = await browser.newPage();
+    await peer.goto(`${origin}/close-failure`);
+    await page.bringToFront();
+    try {
+      await worker.evaluate(() => {
+        globalThis.originalRemoveTab = chrome.tabs.remove;
+        chrome.tabs.remove = () => Promise.reject(new Error("Close rejected"));
+      });
+      await openSwitcher();
+      const frame = await ui("tab-switcher-frame");
+      await frame.waitForSelector("#panel.ready .selected");
+      const before = await frame.$$eval(".tab-card", (els) => els.map((el) => el.dataset.id));
+      await key(["x"]);
+      await pause(200);
+      const after = await frame.$$eval(".tab-card", (els) => els.map((el) => el.dataset.id));
+      assert(JSON.stringify(before) === JSON.stringify(after), "Failed close removed a card");
+      await worker.evaluate(() => chrome.tabs.remove = globalThis.originalRemoveTab);
+      const selectedId = await frame.$eval(".selected", (el) => el.dataset.id);
+      await key(["x"]);
+      await frame.waitForFunction(
+        (id) => ![...document.querySelectorAll(".tab-card")].some((card) => card.dataset.id === id),
+        {},
+        selectedId,
       );
-      await key(["Enter"]);
-      await worker.evaluate(async (id) => {
-        for (let i = 0; i < 100; i++) {
-          const tab = await chrome.tabs.get(id);
-          if (tab.active && !tab.discarded) return;
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-        throw new Error("Selecting the pinned tab did not wake it");
-      }, pinned.id);
+      await key(["Escape"]);
     } finally {
-      await worker.evaluate(async (urls) => {
-        const ids = (await chrome.tabs.query({})).filter((tab) => urls.includes(tab.url)).map((
-          tab,
-        ) => tab.id);
-        if (ids.length) await chrome.tabs.remove(ids);
-      }, urls);
+      await worker.evaluate(() => {
+        chrome.tabs.remove = globalThis.originalRemoveTab;
+      });
+      if (!peer.isClosed()) await peer.close();
       await page.bringToFront();
     }
   });
+
+  for (const action of ["cancel", "reopen", "move"]) {
+    await check(
+      action === "move"
+        ? "switcher preserves navigation while closing a tab"
+        : `switcher cancels a pending commit after Escape${
+          action === "reopen" ? " and reopening" : ""
+        }`,
+      async () => {
+        await fresh();
+        const peer = await browser.newPage();
+        await peer.goto(`${origin}/delayed-close`);
+        await page.bringToFront();
+        const sourceId = await tabId();
+        try {
+          await worker.evaluate(() => {
+            globalThis.originalCloseTab = sendRequestHandlers.closeSpecificTab;
+            globalThis.finishCloseTab = null;
+            sendRequestHandlers.closeSpecificTab = (request) =>
+              new Promise((resolve, reject) => {
+                globalThis.finishCloseTab = () => originalCloseTab(request).then(resolve, reject);
+              });
+          });
+          await openSwitcher();
+          const frame = await ui("tab-switcher-frame");
+          await frame.waitForSelector("#panel.ready .selected");
+          await key(["x"]);
+          assert(await worker.evaluate(() => !!globalThis.finishCloseTab), "Close was not pending");
+          if (action === "move") {
+            // Move past the vacated position to catch a close reply resetting the selection.
+            await key(["ArrowRight", "ArrowRight"]);
+            const selectedId = Number(await frame.$eval(".selected", (el) => el.dataset.id));
+            await key(["Enter"]);
+            await worker.evaluate(() => finishCloseTab());
+            await pause(300);
+            assert(
+              await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, selectedId),
+              "Close completion replaced the user's newer selection",
+            );
+            return;
+          }
+          const reopen = action === "reopen";
+          await key(["Enter", "Escape"]);
+          await noUi("tab-switcher-frame");
+          if (reopen) {
+            await openSwitcher();
+            await frame.waitForSelector("#panel.ready .selected");
+          }
+          await worker.evaluate(() => finishCloseTab());
+          await pause(300);
+          assert(
+            await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, sourceId),
+            "Cancelled commit switched tabs after the close completed",
+          );
+          assert(
+            !!await frame.$("#panel.ready") === reopen,
+            "Late close changed the visibility of the newer gesture",
+          );
+          if (reopen) await key(["Escape"]);
+        } finally {
+          await worker.evaluate(() => {
+            sendRequestHandlers.closeSpecificTab = globalThis.originalCloseTab;
+          });
+          if (!peer.isClosed()) await peer.close();
+          await page.bringToFront();
+        }
+      },
+    );
+  }
 
   await check(
     "Ctrl+Q wraps inside the displayed recent tabs without reaching older tabs",
     async () => {
       await fresh();
-      const urls = Array.from({ length: 11 }, (_, i) => `${origin}/extra${i}?title=Extra${i}`);
+      const urls = Array.from({ length: 19 }, (_, i) => `${origin}/extra${i}?title=Extra${i}`);
       await worker.evaluate(() => {
         globalThis.boundedOriginalCommands = chrome.commands.getAll;
         chrome.commands.getAll = () =>
@@ -2269,9 +2611,31 @@ try {
           ".card-title",
           (els) => els.map((el) => el.textContent),
         );
-        assert(titles.length === 10, JSON.stringify(titles));
+        assert(titles.length === 18, JSON.stringify(titles));
+        for (const [width, height] of [[1280, 900], [900, 700], [640, 480]]) {
+          await page.setViewport({ width, height });
+          await switcher.waitForFunction((width) => innerWidth === width, {}, width);
+          await switcher.waitForFunction(() => {
+            const panel = document.querySelector("#panel");
+            const rect = panel.getBoundingClientRect();
+            const cards = [...document.querySelectorAll(".tab-card:not([hidden])")];
+            return cards.length === 18 &&
+              getComputedStyle(document.querySelector("#tab-switcher")).gridTemplateColumns.split(
+                  " ",
+                ).length === 6 &&
+              panel.scrollHeight <= panel.clientHeight + 1 &&
+              rect.top >= 0 && rect.bottom <= innerHeight &&
+              cards.every((card) => {
+                const box = card.getBoundingClientRect();
+                return box.top >= rect.top && box.bottom <= rect.bottom &&
+                  box.left >= rect.left && box.right <= rect.right;
+              });
+          });
+          if (width === 1280) await page.screenshot({ path: "/tmp/brovim-6x3.png" });
+        }
+        await page.setViewport({ width: 1280, height: 900 });
         assert(
-          titles[0] === "Brovim browser fixture" && titles[1] === "Extra10",
+          titles[0] === "Brovim browser fixture" && titles[1] === "Extra18",
           JSON.stringify(titles),
         );
         assert(!titles.includes("Extra0"), "Oldest tab was shown past the cap");
@@ -2280,7 +2644,7 @@ try {
           (cards) => cards.map((card) => card.dataset.id),
         );
         // Keep pressing the actual assigned letter while the primary modifier is held.
-        for (let i = 0; i < 39; i++) await page.keyboard.press("q");
+        for (let i = 0; i < 71; i++) await page.keyboard.press("q");
         await switcher.waitForFunction(() =>
           document.querySelector(".selected .card-title").textContent === "Brovim browser fixture"
         );
@@ -2293,9 +2657,9 @@ try {
         );
         await page.keyboard.press("q");
         await switcher.waitForFunction(() =>
-          document.querySelector(".selected .card-title").textContent === "Extra10"
+          document.querySelector(".selected .card-title").textContent === "Extra18"
         );
-        // Closing the selected card (Extra10) refills the grid with the next hidden tab.
+        // Closing the selected card (Extra18) refills the grid with the next hidden tab.
         await key(["x"]);
         await switcher.waitForFunction(() =>
           [...document.querySelectorAll(".card-title")].some((el) => el.textContent === "Extra1")
@@ -2304,6 +2668,7 @@ try {
       } finally {
         await page.keyboard.up("Control");
         await worker.evaluate(() => chrome.commands.getAll = globalThis.boundedOriginalCommands);
+        await page.setViewport({ width: 1280, height: 900 });
         await worker.evaluate(async (urls) => {
           const ids = (await chrome.tabs.query({})).filter((t) => urls.includes(t.url)).map((t) =>
             t.id
@@ -2429,8 +2794,8 @@ try {
       for (const peer of peers) if (!peer.isClosed()) await peer.close();
       await worker.evaluate(async () => {
         chrome.commands.getAll = globalThis.refillOriginalCommands;
-        await Settings.set("tabSwitcherColumns", 5);
-        await Settings.set("tabSwitcherRows", 2);
+        await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
       await page.bringToFront();
     }
@@ -2485,8 +2850,8 @@ try {
     } finally {
       if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
       await worker.evaluate(async () => {
-        await Settings.set("tabSwitcherColumns", 5);
-        await Settings.set("tabSwitcherRows", 2);
+        await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
       await page.bringToFront();
     }
@@ -2518,8 +2883,8 @@ try {
       await key(["Escape"]);
     } finally {
       await worker.evaluate(async () => {
-        await Settings.set("tabSwitcherColumns", 5);
-        await Settings.set("tabSwitcherRows", 2);
+        await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
       for (const extra of extras) await extra.close();
       await page.bringToFront();

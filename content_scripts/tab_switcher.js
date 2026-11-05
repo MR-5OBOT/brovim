@@ -7,6 +7,7 @@ const TabSwitcher = {
   shortcut: Utils.parseBrowserShortcut(),
   cycle: null,
   currentRequestId: null,
+  overlayId: null,
   cancelledPreviewRequest: null,
   shortcutRequest: null,
   pendingCommit: false,
@@ -33,6 +34,12 @@ const TabSwitcher = {
 
   async activateFromBrowserShortcut(requestId, options = {}) {
     if (this.isUnavailable) return { opened: false };
+    if (
+      options.expectedOverlayId &&
+      (options.expectedOverlayId !== this.overlayId || !this.tabSwitcherUI?.showing)
+    ) {
+      return { opened: true, cancelled: true };
+    }
     this.shortcut = options.shortcut ?? Utils.parseBrowserShortcut();
     if (options.cycle || !this.tabSwitcherUI?.showing) this.cycle = options.cycle ?? null;
     this.currentRequestId = requestId;
@@ -74,6 +81,7 @@ const TabSwitcher = {
     this.isAltCycling = options?.altCycle !== false;
     this.isOpening = true;
     this.pendingCommit = false;
+    this.overlayId = crypto.randomUUID();
     const ui = this.tabSwitcherUI;
     const requestId = options?.requestId ?? null;
     // Let an early Alt release switch directly while the hidden frame warms up. Do not send its
@@ -86,6 +94,7 @@ const TabSwitcher = {
       await ui.show(
         {
           name: "activate",
+          overlayId: this.overlayId,
           isAltCycle: this.isAltCycling,
           shortcut: options?.shortcut ?? Utils.parseBrowserShortcut(),
           cycle: options?.cycle,
@@ -121,6 +130,7 @@ const TabSwitcher = {
       "selectSpecificTab",
       "closeSpecificTab",
       "endTabSwitcherCycle",
+      "setTabSwitcherOverlay",
     ];
     if (!allowed.includes(data.message?.handler)) return;
     let result, error;

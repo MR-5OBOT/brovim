@@ -1,6 +1,6 @@
 import * as bgUtils from "./bg_utils.js";
 
-// Fallback cycling must stop at the same recent-card boundary as the visible grid.
+// The recent-card limit; pinned tabs beyond it are included separately.
 export function getTabSwitcherLimit() {
   const value = (key, min, max) => {
     const stored = Number(Settings.get(key));

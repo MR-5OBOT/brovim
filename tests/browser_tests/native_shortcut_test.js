@@ -141,7 +141,7 @@ try {
   const source = await browser.newPage();
   source.setDefaultTimeout(5000);
   await source.goto(`${origin}/source?title=Brovim%20Native%20Source`);
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
     const peer = await browser.newPage();
     await peer.goto(`${origin}/peer-${i}?title=Native${i}`);
   }
@@ -182,10 +182,10 @@ try {
     "No actual browser command was delivered",
   );
   const ids = await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id));
-  assert(ids.length === 10, "Native opening exceeded the recent grid limit");
+  assert(ids.length === 18, "Native opening exceeded the recent grid limit");
   pass("Native Alt+Q opens the recent grid through the browser accelerator");
   const started = performance.now();
-  await keys(...Array(39).fill("tap:q"));
+  await keys(...Array(ids.length * 4 - 1).fill("tap:q"));
   await frame.waitForFunction(() =>
     document.querySelector(".selected").dataset.id ===
       document.querySelector(".tab-card").dataset.id
@@ -196,7 +196,9 @@ try {
     ) === JSON.stringify(ids),
     "Native cycling left the first recent grid",
   );
-  console.log(`39 native repeats: ${Math.round(performance.now() - started)} ms`);
+  console.log(
+    `${ids.length * 4 - 1} native repeats: ${Math.round(performance.now() - started)} ms`,
+  );
   pass("Rapid native repeats wrap in one fixed grid");
   await keys("tap:q", "down:Shift_L", "tap:q", "up:Shift_L");
   await frame.waitForFunction(() =>

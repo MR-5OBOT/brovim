@@ -388,6 +388,7 @@ const messageHandlers = {
         TabSwitcher.activateFromBrowserShortcut(requestId, options),
         800,
       );
+      if (result.cancelled) return result;
       if (!result.opened || TabSwitcher.currentRequestId !== requestId) return { opened: false };
       if (result.quickSwitch) return { opened: true };
       const ui = TabSwitcher.tabSwitcherUI;

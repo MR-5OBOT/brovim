@@ -10,10 +10,16 @@ import "../background_scripts/completion/search_engines.js";
 import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
-import { commitTabSwitcherCycle, endTabSwitcherCycle, openTabSwitcher } from "./tab_switcher.js";
+import {
+  commitTabSwitcherCycle,
+  endTabSwitcherCycle,
+  openTabSwitcher,
+  setTabSwitcherOverlay,
+} from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { initializeInternalPages } from "./internal_pages.js";
 import { getSwitcherTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
+import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import {
   captureThumbnail,
   findThumbnails,
@@ -525,7 +531,10 @@ const sendRequestHandlers = {
   endTabSwitcherCycle({ tab, id }) {
     endTabSwitcherCycle(tab.windowId, id);
   },
-  // Awake tabs in the window, in the switcher's order (the active tab first).
+  setTabSwitcherOverlay({ tab, id, showing }) {
+    setTabSwitcherOverlay(tab, id, showing);
+  },
+  // Eligible tabs in the window, in the switcher's order (the active tab first).
   async getOpenTabsWithScreenshots({
     tab,
     windowId,
@@ -533,13 +542,15 @@ const sendRequestHandlers = {
     screenshotLimit = 18,
   }) {
     const tabs = await getSwitcherTabs(windowId ?? tab.windowId);
-    const urls = tabs.slice(0, Math.max(0, Math.min(18, screenshotLimit))).map((t) => t.url);
+    const cards = selectTabSwitcherCards(tabs, Math.max(0, Math.min(18, screenshotLimit)));
+    const urls = cards.map((t) => t.url);
     const screenshots = includeScreenshots === "cached"
       ? getCachedThumbnails(urls, tab?.incognito)
       : includeScreenshots
       ? await findThumbnails(urls, tab?.incognito)
       : [];
-    return tabs.map((t, i) => ({
+    const screenshotsById = new Map(cards.map((t, i) => [t.id, screenshots[i]]));
+    return tabs.map((t) => ({
       id: t.id,
       index: t.index,
       title: t.title || "Untitled",
@@ -547,7 +558,7 @@ const sendRequestHandlers = {
       favIconUrl: t.favIconUrl || "",
       active: t.active,
       pinned: t.pinned,
-      screenshot: screenshots[i] ?? null,
+      screenshot: screenshotsById.get(t.id) ?? null,
     }));
   },
   // The stored preview for each URL, or null.
@@ -559,7 +570,13 @@ const sendRequestHandlers = {
     return captureThumbnail(tab.id, url, allowLoading);
   },
   async closeSpecificTab({ id }) {
-    await chrome.tabs.remove(id);
+    try {
+      await chrome.tabs.remove(id);
+      return { closed: true };
+    } catch {
+      // Always reply: a rejected runtime handler leaves the grid waiting indefinitely.
+      return { closed: false };
+    }
   },
   // Send a message to all frames in the current tab. If request.frameId is provided, then send
   // messages to only the frame with that ID.
