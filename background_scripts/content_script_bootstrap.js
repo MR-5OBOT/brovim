@@ -17,14 +17,18 @@ async function injectIfMissing(tabId) {
     const [state] = await chrome.scripting.executeScript({
       target: { tabId },
       func: () => ({
+        url: location.href,
         ready: !!globalThis.brovimContentScriptsLoaded,
         started: !!globalThis.Utils,
       }),
     });
+    await Settings.onLoaded();
+    if (state?.result.url?.startsWith("chrome://") && !Settings.get("enableInternalPages")) {
+      return false;
+    }
     if (state?.result.ready || state?.result.started) return true;
     const scripts = chrome.runtime.getManifest().content_scripts[0];
     const target = { tabId, allFrames: true };
-    await Settings.onLoaded();
     await chrome.scripting.insertCSS({ target, files: scripts.css });
     await chrome.scripting.insertCSS({ target, css: Settings.userCss() });
     await chrome.scripting.executeScript({ target, files: scripts.js });

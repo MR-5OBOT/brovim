@@ -53,6 +53,9 @@ function getRule(url, rules) {
 }
 
 export function isEnabledForUrl(url) {
+  if (url?.startsWith("chrome://") && !Settings.get("enableInternalPages")) {
+    return { isEnabledForUrl: false, passKeys: "" };
+  }
   const rule = getRule(url);
   return {
     isEnabledForUrl: !rule || (rule.passKeys.length > 0),

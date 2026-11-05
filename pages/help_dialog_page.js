@@ -113,6 +113,14 @@ const HelpDialogPage = {
       switcher[""] = [...(switcher[""] ?? []), shortcut];
     }
     const rowsByGroup = this.getRowsForDialog(commandToOptionsToKeys);
+    const focusShortcut = shortcuts.find((command) => command.name === "focus_page")?.shortcut;
+    if (focusShortcut) {
+      rowsByGroup.misc.push([
+        { name: "focus_page", desc: "Return focus to the page and recover scrolling" },
+        "",
+        [focusShortcut],
+      ]);
+    }
 
     for (const [group, rows] of Object.entries(rowsByGroup)) {
       const container = this.dialogElement.querySelector(`[data-group="${group}"]`);

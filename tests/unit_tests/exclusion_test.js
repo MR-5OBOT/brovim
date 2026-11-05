@@ -69,4 +69,16 @@ context("Excluded URLs and pass keys", () => {
     const rule = isEnabledForUrl({ url: "http://www.bad-regexp.com/pages" });
     assert.isTrue(rule.isEnabledForUrl);
   });
+
+  should("enable internal pages by default and respect the internal-page switch", async () => {
+    assert.isTrue(exclusions.isEnabledForUrl("chrome://settings/").isEnabledForUrl);
+    await Settings.set("enableInternalPages", false);
+    assert.equal(
+      { isEnabledForUrl: false, passKeys: "" },
+      exclusions.isEnabledForUrl("chrome://settings/"),
+    );
+    assert.isTrue(exclusions.isEnabledForUrl("https://example.org/").isEnabledForUrl);
+    await Settings.set("enableInternalPages", true);
+    assert.isTrue(exclusions.isEnabledForUrl("chrome://settings/").isEnabledForUrl);
+  });
 });

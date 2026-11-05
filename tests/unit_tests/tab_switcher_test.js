@@ -10,11 +10,39 @@ import {
   findThumbnails,
   pageKey,
   storeThumbnail,
+  trimThumbnailCaches,
 } from "../../background_scripts/thumbnails.js";
 import * as Thumbnails from "../../background_scripts/thumbnails.js";
 import * as SwitcherCommands from "../../background_scripts/tab_switcher.js";
+import { getRecentTabs } from "../../background_scripts/recent_tabs.js";
 
 context("configured switcher shortcut", () => {
+  should(
+    "include sleeping pinned tabs without exposing sleeping unpinned or hidden tabs",
+    async () => {
+      const tabs = [
+        { id: 701, index: 0, windowId: 7, active: true },
+        { id: 702, index: 1, windowId: 7, pinned: true, discarded: true },
+        { id: 703, index: 2, windowId: 7, pinned: true, frozen: true },
+        { id: 704, index: 3, windowId: 7, discarded: true },
+        { id: 705, index: 4, windowId: 7, frozen: true },
+        { id: 706, index: 5, windowId: 7, pinned: true, hidden: true },
+      ];
+      stub(chrome.tabs, "query", () => Promise.resolve(tabs));
+      const visible = await getRecentTabs(7);
+      assert.equal([701, 702, 703], visible.map((tab) => tab.id));
+      stub(chrome.tabs, "get", (id) => Promise.resolve(tabs.find((tab) => tab.id === id)));
+      stub(chrome.windows, "update", () => Promise.resolve());
+      const selected = [];
+      stub(chrome.tabs, "update", (id) => {
+        selected.push(id);
+        return Promise.resolve();
+      });
+      await sendRequestHandlers.selectSpecificTab({ id: 702, awakeOnly: true, tab: tabs[0] });
+      await sendRequestHandlers.selectSpecificTab({ id: 703, awakeOnly: true, tab: tabs[0] });
+      assert.equal([702, 703], selected);
+    },
+  );
   for (const [columns, rows] of [[3, 1], [4, 2], [5, 2]]) {
     should(`keep protected-page cycling within the ${columns * rows} recent cards`, async () => {
       await Settings.onLoaded();
@@ -615,9 +643,33 @@ context("Tab switcher previews and order", () => {
         Object.keys((await chrome.storage.local.get("tabThumbnails")).tabThumbnails),
       );
     } finally {
-      await Settings.set("tabSwitcherMaxThumbnails", 60);
+      await Settings.set(
+        "tabSwitcherMaxThumbnails",
+        Settings.defaultOptions.tabSwitcherMaxThumbnails,
+      );
     }
   });
+
+  should(
+    "cap imported preview limits at ten and trim immediately when lowered to five",
+    async () => {
+      await Settings.onLoaded();
+      await Settings.set("tabSwitcherMaxThumbnails", 240);
+      const urls = Array.from({ length: 12 }, (_, i) => `https://preview-cap.example/${i}`);
+      try {
+        for (const url of urls) await storeThumbnail(url, false, url);
+        assert.equal(10, (await findThumbnails(urls, false)).filter(Boolean).length);
+        await Settings.set("tabSwitcherMaxThumbnails", 5);
+        await trimThumbnailCaches();
+        assert.equal(urls.slice(-5), (await findThumbnails(urls, false)).filter(Boolean));
+      } finally {
+        await Settings.set(
+          "tabSwitcherMaxThumbnails",
+          Settings.defaultOptions.tabSwitcherMaxThumbnails,
+        );
+      }
+    },
+  );
 
   should("list tabs in tab bar order from the current tab when chosen", async () => {
     stub(chrome.tabs, "query", () =>

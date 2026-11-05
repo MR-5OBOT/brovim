@@ -20,6 +20,29 @@ context("options page", () => {
     assert.equal(settings.keyMappings, field.value);
   });
 
+  should("default glass off and offer five or ten saved screenshots", async () => {
+    assert.isFalse(optionsPage.getOptionEl("tabSwitcherGlass").checked);
+    assert.equal("5", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
+    assert.equal(
+      ["5", "10"],
+      [...optionsPage.getOptionEl("tabSwitcherMaxThumbnails").options].map((option) =>
+        option.value
+      ),
+    );
+    await Settings.set("tabSwitcherMaxThumbnails", 240);
+    await optionsPage.init();
+    assert.equal("10", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
+  });
+
+  should("save the browser-page switch and include it in a settings backup", async () => {
+    const field = optionsPage.getOptionEl("enableInternalPages");
+    assert.isTrue(field.checked);
+    field.checked = false;
+    await optionsPage.saveOptions();
+    assert.isFalse(Settings.get("enableInternalPages"));
+    assert.isFalse(JSON.parse(optionsPage.prepareBackupSettings()).enableInternalPages);
+  });
+
   should("recover an invalid imported tab order so settings remain editable", async () => {
     await Settings.set("tabSwitcherOrder", 'unknown"]');
     await optionsPage.init();

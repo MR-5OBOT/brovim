@@ -45,6 +45,19 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
       { headers: { "content-type": "text/html" } },
     );
   }
+  if (url.pathname === "/scroll-recovery") {
+    return new Response(
+      `<!doctype html><title>Conversation scrolling fixture</title>
+      <style>html,body{margin:0;height:100%;overflow:hidden}#layout{height:100%;display:flex}
+      aside{width:160px}#pane{flex:1;overflow:auto;height:100%}.messages{height:5000px}
+      #editor{position:fixed;bottom:10px;left:200px;background:white;border:1px solid;width:400px}</style>
+      <div id="layout"><aside>Sidebar</aside><main id="pane"><div class="messages">Conversation</div></main></div>
+      <div id="editor" contenteditable="true" role="textbox" aria-label="Message">Draft</div>`,
+      {
+        headers: { "content-type": "text/html" },
+      },
+    );
+  }
   const title = url.searchParams.get("title") || "Brovim browser fixture";
   return new Response(
     `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
@@ -485,6 +498,175 @@ try {
     await page.waitForFunction(() => scrollY > 300);
     await key(["Shift+Space"]);
     await page.waitForFunction(() => scrollY < 100);
+  });
+
+  for (const change of ["replaced", "no longer scrollable"]) {
+    await check(`scrolling recovers when the active conversation pane is ${change}`, async () => {
+      await navigate(`${origin}/scroll-recovery`);
+      await pause(150);
+      await key(["j"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 0);
+      await page.evaluate((change) => {
+        const pane = document.querySelector("#pane");
+        const replacement = pane.cloneNode(true);
+        if (change === "replaced") pane.replaceWith(replacement);
+        else {
+          pane.id = "old-pane";
+          pane.style.cssText = "position:absolute;width:1px;height:1px;overflow:hidden";
+          pane.after(replacement);
+        }
+      }, change);
+      await key(["j"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 0);
+      await key(["d"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 300);
+      await key(["u"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop < 150);
+      await key(["G"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 3500);
+      await key(["g", "g"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop === 0);
+      await fresh();
+    });
+  }
+
+  for (const layout of ["display:contents", "zero-height wrapper"]) {
+    await check(`scrolling discovers the conversation through a ${layout}`, async () => {
+      await navigate(`${origin}/scroll-recovery`);
+      await pause(150);
+      await page.evaluate((layout) => {
+        const pane = document.querySelector("#pane");
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText = layout === "display:contents"
+          ? "display:contents"
+          : "height:0;width:0";
+        pane.replaceWith(wrapper);
+        wrapper.append(pane);
+        if (layout !== "display:contents") {
+          pane.style.cssText = "position:fixed;left:160px;right:0;top:0;bottom:0";
+        }
+        const button = document.createElement("button");
+        button.id = "conversation-button";
+        button.textContent = "Conversation action";
+        pane.firstElementChild.prepend(button);
+      }, layout);
+      await key(["f"]);
+      await page.waitForSelector(".vimiumHintMarker");
+      await key(["Escape", "j"]);
+      const beforeClick = await page.$eval("#pane", (pane) => pane.scrollTop);
+      if (!beforeClick) {
+        await page.click("#conversation-button");
+        await key(["j"]);
+        const afterClick = await page.$eval("#pane", (pane) => pane.scrollTop);
+        throw new Error(
+          `Keyboard labels worked but scrolling needed a click: before=${beforeClick}, after=${afterClick}`,
+        );
+      }
+      await key(["d"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 300);
+      await key(["u"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop < 150);
+      await fresh();
+    });
+  }
+
+  await check("scrolling discovers an open shadow-root pane without clicking it", async () => {
+    await navigate(`${origin}/scroll-recovery`);
+    await pause(150);
+    await page.evaluate(() => {
+      const pane = document.querySelector("#pane");
+      const host = document.createElement("div");
+      host.id = "pane-host";
+      host.style.cssText = "height:100%;flex:1";
+      pane.replaceWith(host);
+      const root = host.attachShadow({ mode: "open" });
+      const style = document.createElement("style");
+      style.textContent = "main{height:100%;overflow:auto}.messages{height:5000px}";
+      root.append(style, pane);
+    });
+    await key(["j"]);
+    await page.waitForFunction(() =>
+      document.querySelector("#pane-host").shadowRoot.querySelector("main").scrollTop > 0
+    );
+    await key(["d"]);
+    await page.waitForFunction(() =>
+      document.querySelector("#pane-host").shadowRoot.querySelector("main").scrollTop > 300
+    );
+    await fresh();
+  });
+
+  await check(
+    "focus recovery leaves refocusing editors and resumes conversation scrolling",
+    async () => {
+      await navigate(`${origin}/scroll-recovery`);
+      await pause(150);
+      await page.evaluate(() => {
+        const editor = document.querySelector("#editor");
+        editor.addEventListener("blur", () => editor.focus());
+        editor.focus();
+      });
+      await page.keyboard.type("j");
+      assert(
+        await page.$eval("#editor", (el) => el.textContent.includes("j")),
+        "Editor typing was intercepted",
+      );
+      assert(
+        await page.$eval("#pane", (el) => el.scrollTop === 0),
+        "Typing scrolled the conversation",
+      );
+      const command = await worker.evaluate(async () =>
+        (await chrome.commands.getAll()).find((command) => command.name === "focus_page")
+      );
+      assert(command?.shortcut === "Alt+Z", "The default browser recovery shortcut is missing");
+      const id = await tabId();
+      await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+      await page.waitForFunction(() => document.activeElement === document.documentElement);
+      assert(
+        await page.evaluate(() => document.documentElement.tabIndex === -1),
+        "Recovery entered the page's tab order",
+      );
+      await key(["d"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 300);
+      await fresh();
+    },
+  );
+
+  await check(
+    "Escape leaves a refocusing composer and restores scrolling without another shortcut",
+    async () => {
+      await navigate(`${origin}/scroll-recovery`);
+      await pause(150);
+      await page.evaluate(() => {
+        const editor = document.querySelector("#editor");
+        editor.addEventListener("blur", () => editor.focus());
+        editor.focus();
+      });
+      await key(["Escape"]);
+      await page.waitForFunction(() => !document.activeElement.isContentEditable);
+      await key(["j"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 0);
+      await key(["d"]);
+      await page.waitForFunction(() => document.querySelector("#pane").scrollTop > 300);
+      await page.focus("#editor");
+      await page.waitForFunction(() => !document.documentElement.hasAttribute("tabindex"));
+      await fresh();
+    },
+  );
+
+  await check("focus recovery exits global insert mode and closes the Vomnibar", async () => {
+    await fresh();
+    const id = await tabId();
+    await key(["i"]);
+    await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+    await key(["j"]);
+    await page.waitForFunction(() => scrollY > 0);
+    await key(["o"]);
+    await ui("vomnibar-frame");
+    await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+    await noUi("vomnibar-frame");
+    await key(["d"]);
+    await page.waitForFunction(() => scrollY > 300);
+    await fresh();
   });
 
   await check("settings navigation, live color preview and save status work together", async () => {
@@ -1837,18 +2019,17 @@ try {
 
   await check("hints reach links inside an embedded frame", async () => {
     await fresh();
+    const loadedFrame = page.waitForFrame((frame) => frame.url() === `${origin}/embedded`);
     await page.evaluate((url) => {
       const iframe = document.createElement("iframe");
       iframe.src = url;
       iframe.style.cssText = "position:fixed;bottom:10px;right:10px;width:500px;height:250px";
       document.body.append(iframe);
     }, `${origin}/embedded`);
-    await page.waitForFunction(() =>
-      document.querySelector("iframe").contentDocument?.readyState === "complete"
-    );
+    const embedded = await loadedFrame;
+    await embedded.waitForFunction(() => document.readyState === "complete");
     await pause(200);
     await key(["f"]);
-    const embedded = page.frames().find((frame) => frame.url() === `${origin}/embedded`);
     await embedded.waitForSelector(".vimiumHintMarker");
     const label = await embedded.evaluate(() => {
       const link = document.querySelector("a").getBoundingClientRect();
@@ -1979,6 +2160,68 @@ try {
       }
     },
   );
+
+  await check("sleeping pinned tabs stay in the grid and wake only when selected", async () => {
+    await fresh();
+    const urls = [
+      `${origin}/pinned-sleeper?title=PinnedSleeper`,
+      `${origin}/unpinned-sleeper?title=UnpinnedSleeper`,
+    ];
+    try {
+      await worker.evaluate(async (urls) => {
+        await chrome.tabs.create({ url: urls[0], active: false, pinned: true });
+        await chrome.tabs.create({ url: urls[1], active: false });
+        for (let i = 0; i < 100; i++) {
+          const tabs = (await chrome.tabs.query({})).filter((tab) => urls.includes(tab.url));
+          if (tabs.length === 2 && tabs.every((tab) => tab.status === "complete")) {
+            for (const tab of tabs) await chrome.tabs.discard(tab.id);
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error("Sleeper fixtures did not load");
+      }, urls);
+      const pinned = await worker.evaluate(
+        async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url),
+        urls[0],
+      );
+      assert(pinned.pinned && pinned.discarded, "Pinned fixture did not enter sleep");
+      await openSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      const titles = await switcher.$$eval(".card-title", (els) => els.map((el) => el.textContent));
+      assert(titles.includes("PinnedSleeper"), "Sleeping pinned tab was missing");
+      assert(!titles.includes("UnpinnedSleeper"), "Sleeping unpinned tab was exposed");
+      assert(
+        (await worker.evaluate((id) => chrome.tabs.get(id), pinned.id)).discarded,
+        "Opening the grid woke a pinned tab",
+      );
+      for (let i = 0; i < 10; i++) {
+        if (await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id)) break;
+        await key(["ArrowRight"]);
+      }
+      assert(
+        await switcher.$eval(".selected", (el) => el.dataset.id) === String(pinned.id),
+        "Could not select the pinned card",
+      );
+      await key(["Enter"]);
+      await worker.evaluate(async (id) => {
+        for (let i = 0; i < 100; i++) {
+          const tab = await chrome.tabs.get(id);
+          if (tab.active && !tab.discarded) return;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        throw new Error("Selecting the pinned tab did not wake it");
+      }, pinned.id);
+    } finally {
+      await worker.evaluate(async (urls) => {
+        const ids = (await chrome.tabs.query({})).filter((tab) => urls.includes(tab.url)).map((
+          tab,
+        ) => tab.id);
+        if (ids.length) await chrome.tabs.remove(ids);
+      }, urls);
+      await page.bringToFront();
+    }
+  });
 
   await check(
     "Ctrl+Q wraps inside the displayed recent tabs without reaching older tabs",

@@ -342,6 +342,21 @@ globalThis.lastFocusedInput = (function () {
 })();
 
 const messageHandlers = {
+  async recoverPageFocus() {
+    HintCoordinator.exit({ isSuccess: false });
+    const visibleUi = [HelpDialog.helpUI, Vomnibar.vomnibarUI, TabSwitcher.tabSwitcherUI]
+      .filter((ui) => ui?.showing);
+    TabSwitcher.cancel(TabSwitcher.currentRequestId);
+    await Promise.all(visibleUi.map((ui) => ui.hide(false)));
+    for (const mode of Mode.modes.slice().reverse()) {
+      if (mode !== normalMode && mode !== InsertMode.permanentInstance) mode.exit();
+    }
+    DomUtils.focusPage();
+    normalMode?.reset();
+    Scroller.reset();
+    HUD.hide(true, false);
+    return true;
+  },
   focusFrame(request) {
     focusThisFrame(request);
   },
@@ -352,7 +367,19 @@ const messageHandlers = {
   },
   setScrollPosition,
   checkEnabledAfterURLChange,
+  async refreshEnabledState() {
+    await checkIfEnabledForUrl();
+    if (!isEnabledForUrl) {
+      HintCoordinator.exit({ isSuccess: false });
+      HelpDialog.abort();
+      Vomnibar.vomnibarUI?.hide(false);
+      TabSwitcher.cancel(TabSwitcher.currentRequestId);
+    }
+  },
   async openTabSwitcher({ requestId, ...options }) {
+    if (location.protocol === "chrome:" && !Settings.get("enableInternalPages")) {
+      return { opened: false };
+    }
     if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
       return { opened: false };
     }
@@ -429,6 +456,8 @@ async function handleMessage(request, sender) {
     (isEnabledForUrl ||
       [
         "checkEnabledAfterURLChange",
+        "refreshEnabledState",
+        "recoverPageFocus",
         "runInTopFrame",
         "openTabSwitcher",
         "cancelTabSwitcher",

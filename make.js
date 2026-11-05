@@ -36,6 +36,9 @@ async function shell(procName, argsArray = []) {
 // Clones and augments the manifest.json that we use for Chrome with the keys needed for Firefox.
 function createFirefoxManifest(manifest) {
   manifest = JSON.parse(JSON.stringify(manifest)); // Deep clone.
+  manifest.host_permissions = manifest.host_permissions.filter((origin) =>
+    !origin.startsWith("chrome:")
+  );
 
   manifest.permissions = manifest.permissions
     // The favicon permission is not yet supported by Firefox.
@@ -69,21 +72,7 @@ function createFirefoxManifest(manifest) {
     },
   });
 
-  // Firefox supports SVG icons.
-  Object.assign(manifest, {
-    "icons": {
-      "16": "icons/icon.svg",
-      "32": "icons/icon.svg",
-      "48": "icons/icon.svg",
-      "64": "icons/icon.svg",
-      "96": "icons/icon.svg",
-      "128": "icons/icon.svg",
-    },
-  });
-
-  Object.assign(manifest.action, {
-    "default_icon": "icons/action_disabled.svg",
-  });
+  // Keep the same PNG artwork and toolbar states in both browsers.
 
   return manifest;
 }
@@ -198,9 +187,14 @@ async function buildStorePackage() {
     "deno.lock",
     "test_harnesses",
     "tests",
+    "new-icon.png", // Full-resolution source; the browser uses the derived icon sizes.
   ];
 
   const chromeManifest = await parseManifestFile();
+  // Store builds target browsers that do not support the local Chromium developer override.
+  chromeManifest.host_permissions = chromeManifest.host_permissions.filter((origin) =>
+    !origin.startsWith("chrome:")
+  );
   const excludedNames = excludeList.map((pattern) => path.globToRegExp(pattern));
   const copyFiles = async (source, destination) => {
     await fs.ensureDir(destination);
@@ -237,8 +231,7 @@ async function buildStorePackage() {
   // Build the Firefox / Mozilla Addons store package.
   const firefoxManifest = createFirefoxManifest(chromeManifest);
   await writeDistManifest(firefoxManifest);
-  // Keep shared PNG assets: the settings logo and upgrade notification still reference them,
-  // even though Firefox's manifest uses SVG toolbar icons.
+  // Keep the shared PNG assets used by the settings logo, notifications and browser icons.
   await shell("bash", [
     "-c",
     `${zipCommand} ../firefox/brovim-firefox-${version}.zip .`,
@@ -450,6 +443,11 @@ task("test-native", [], async () => {
 desc("Test incognito/worker recovery, or Firefox when BROVIM_TEST_BROWSER=firefox");
 task("test-lifecycle", [], async () => {
   await shell("deno", ["run", "-A", "tests/browser_tests/lifecycle_test.js"]);
+});
+
+desc("Test internal pages from the source extension, with and without the Chromium developer flag");
+task("test-internal-pages", [], async () => {
+  await shell("deno", ["run", "-A", "tests/browser_tests/internal_pages_test.js"]);
 });
 
 desc("Check code formatting and lint issues");

@@ -25,8 +25,9 @@ class InsertMode extends Mode {
       }
 
       if ((event.type === "keydown") && KeyboardUtils.isEscape(event)) {
+        globalThis.Scroller?.reset();
         if (DomUtils.isFocusable(activeElement)) {
-          activeElement.blur();
+          DomUtils.focusPage();
         }
 
         if (!this.permanent) {

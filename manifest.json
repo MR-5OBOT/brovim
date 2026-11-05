@@ -21,7 +21,9 @@
     "open_in_tab": true
   },
   "host_permissions": [
-    "<all_urls>"
+    "<all_urls>",
+    // Used when Helium/Chromium permits internal pages with --extensions-on-chrome-urls.
+    "chrome://*/*"
   ],
   "permissions": [
     "tabs",
@@ -103,6 +105,13 @@
     "default_popup": "pages/action.html"
   },
   "commands": {
+    "focus_page": {
+      "suggested_key": {
+        "default": "Alt+Z",
+        "mac": "Alt+Z"
+      },
+      "description": "Return focus to the page and recover scrolling"
+    },
     "open_tab_switcher": {
       "suggested_key": {
         "default": "Alt+Q",

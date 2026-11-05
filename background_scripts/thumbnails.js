@@ -27,8 +27,35 @@ function cacheFor(area) {
   return cacheLoads[area];
 }
 
-export function warmThumbnailCaches() {
-  return Promise.all([cacheFor("local"), cacheFor("session")]);
+export async function warmThumbnailCaches() {
+  await Settings.onLoaded();
+  await trimThumbnailCaches();
+}
+
+function trimCache(cache) {
+  const limit = Math.min(
+    10,
+    Math.max(1, Math.round(Number(Settings.get("tabSwitcherMaxThumbnails"))) || 5),
+  );
+  let bytes = 0;
+  for (const preview of cache.values()) bytes += preview.length;
+  const previousSize = cache.size;
+  for (const [url, preview] of cache) {
+    if (cache.size <= limit && bytes <= maxBytes) break;
+    cache.delete(url);
+    bytes -= preview.length;
+  }
+  return previousSize !== cache.size;
+}
+
+export async function trimThumbnailCaches() {
+  await Settings.onLoaded();
+  await Promise.all(["local", "session"].map(async (area) => {
+    const cache = await cacheFor(area);
+    if (trimCache(cache)) {
+      await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
+    }
+  }));
 }
 
 // Tracking parameters change a page's URL without changing what it shows.
@@ -78,14 +105,7 @@ export async function storeThumbnail(url, incognito, dataUrl) {
     if (pageKey(oldUrl) === key) cache.delete(oldUrl);
   }
   cache.set(url, dataUrl);
-  const limit = Math.max(1, Math.round(Settings.get("tabSwitcherMaxThumbnails")) || 60);
-  let bytes = 0;
-  for (const preview of cache.values()) bytes += preview.length;
-  for (const [oldUrl, preview] of cache) {
-    if (cache.size <= limit && bytes <= maxBytes) break;
-    cache.delete(oldUrl);
-    bytes -= preview.length;
-  }
+  trimCache(cache);
   // ponytail: rewrites every preview (at most 6 MB) on each capture, as TabGlance does. Store one key
   // per URL plus an order list if these writes ever show up in profiles.
   await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });

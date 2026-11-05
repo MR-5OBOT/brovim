@@ -894,10 +894,13 @@ context("PostFindMode", () => {
     assert.isFalse(postFindMode.modeIsActive);
   });
 
-  should("not enter insert mode on subsequent escapes", () => {
+  should("return to normal browsing on subsequent escapes", () => {
     sendKeyboardEvent("a");
     sendKeyboardEvent("Escape", "keydown");
-    assert.isTrue(postFindMode.modeIsActive);
+    assert.isFalse(postFindMode.modeIsActive);
+    assert.isFalse(InsertMode.permanentInstance.isActive());
+    sendKeyboardEvent("m");
+    assert.equal("m", commandName);
   });
 });
 

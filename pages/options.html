@@ -50,13 +50,15 @@
             <label class="setting-row" for="smooth-scroll"><span class="field-copy"><strong>Smooth scrolling</strong><span>Animate keyboard scrolling between positions.</span></span><input id="smooth-scroll" name="smoothScroll" type="checkbox" class="switch" role="switch"></label>
             <label class="setting-row" for="grab-focus"><span class="field-copy"><strong>Keep focus on the page</strong><span>Prevent sites from automatically focusing a text field on load.</span></span><input id="grab-focus" name="grabBackFocus" type="checkbox" class="switch" role="switch"></label>
             <label class="setting-row" for="hide-updates"><span class="field-copy"><strong>Hide update notifications</strong><span>Turn off notices when Brovim has been updated.</span></span><input id="hide-updates" name="hideUpdateNotifications" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="internal-pages"><span class="field-copy"><strong>Use Brovim on browser pages</strong><span>Use hints and page shortcuts on Settings, History and Downloads when the browser permits access.</span><span id="internal-pages-status" role="status">Checking browser permission…</span></span><input id="internal-pages" name="enableInternalPages" type="checkbox" class="switch" role="switch"></label>
           </div>
         </section>
 
         <section id="keyboard" class="settings-section" aria-labelledby="keyboard-title">
           <header class="section-heading"><h2 id="keyboard-title">Keyboard</h2><p>Manage the tab-switcher shortcut and your own key mappings.</p></header>
           <div class="settings-card row-card">
-            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Visual tab switcher</strong><span id="tab-switcher-description">Switch between awake tabs in this window, most recently used first.</span></div><div class="shortcut-controls"><kbd id="tab-switcher-shortcut">Alt+Q</kbd><button id="manage-shortcuts" class="secondary-button" type="button">Manage shortcut <span aria-hidden="true">↗</span></button></div></div>
+            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Visual tab switcher</strong><span id="tab-switcher-description">Switch between tabs in this window, most recently used first. Pinned tabs stay available while sleeping.</span></div><div class="shortcut-controls"><kbd id="tab-switcher-shortcut">Alt+Q</kbd><button id="manage-shortcuts" class="secondary-button" type="button">Manage shortcut <span aria-hidden="true">↗</span></button></div></div>
+            <div class="setting-row shortcut-row"><div class="field-copy"><strong>Recover page focus</strong><span>Leave text fields and Brovim overlays, return focus to the page, and recover keyboard scrolling.</span></div><kbd id="focus-page-shortcut">Alt+Z</kbd></div>
             <label class="setting-row" for="keyboard-layout"><span class="field-copy"><strong>Use the US keyboard layout</strong><span>Interpret command keys as QWERTY, regardless of your keyboard layout.</span></span><input id="keyboard-layout" name="ignoreKeyboardLayout" type="checkbox" class="switch" role="switch"></label>
           </div>
           <div class="settings-card editor-card">
@@ -78,7 +80,7 @@ unmapAll
               <legend>Tab order</legend>
               <label class="choice-row" for="tab-order-mru">
                 <input id="tab-order-mru" type="radio" name="tabSwitcherOrder" value="mru">
-                <span><strong>Most recently used</strong><small>The tab you used last comes right after the current one. Sleeping tabs are hidden.</small></span>
+                <span><strong>Most recently used</strong><small>The tab you used last comes right after the current one. Sleeping unpinned tabs are hidden.</small></span>
               </label>
               <label class="choice-row" for="tab-order-tabstrip">
                 <input id="tab-order-tabstrip" type="radio" name="tabSwitcherOrder" value="tabstrip">
@@ -87,14 +89,14 @@ unmapAll
             </fieldset>
           </div>
           <div class="settings-card row-card">
-            <label class="setting-row" for="two-tab-swap"><span class="field-copy"><strong>Swap directly with two tabs</strong><span>With only two awake tabs in the window, <kbd>Alt+Q</kbd> switches without showing the switcher.</span></span><input id="two-tab-swap" name="tabSwitcherTwoTabSwap" type="checkbox" class="switch" role="switch"></label>
+            <label class="setting-row" for="two-tab-swap"><span class="field-copy"><strong>Swap directly with two tabs</strong><span>With only two eligible tabs in the window, <kbd>Alt+Q</kbd> switches without showing the switcher.</span></span><input id="two-tab-swap" name="tabSwitcherTwoTabSwap" type="checkbox" class="switch" role="switch"></label>
             <label class="setting-row" for="switcher-glass"><span class="field-copy"><strong>Liquid glass</strong><span>A see-through panel that blurs and bends the page behind it. Turn off for a lighter, faster look.</span></span><input id="switcher-glass" name="tabSwitcherGlass" type="checkbox" class="switch" role="switch"></label>
             <label class="setting-row" for="switcher-columns"><span class="field-copy"><strong>Cards per row</strong><span>How many tabs fit side by side.</span></span><select id="switcher-columns" name="tabSwitcherColumns"><option>3</option><option>4</option><option>5</option><option>6</option></select></label>
             <label class="setting-row" for="switcher-rows"><span class="field-copy"><strong>Rows</strong><span>How many rows of recent tabs <kbd>Alt+Q</kbd> shows.</span></span><select id="switcher-rows" name="tabSwitcherRows"><option>1</option><option>2</option><option>3</option></select></label>
           </div>
           <div class="settings-card row-card">
             <label class="setting-row" for="auto-capture"><span class="field-copy"><strong>Capture previews automatically</strong><span>When off, no new previews are taken. Saved ones are kept; other tabs show their site’s first letter.</span></span><input id="auto-capture" name="tabSwitcherAutoCapture" type="checkbox" class="switch" role="switch"></label>
-            <label class="setting-row" for="max-previews"><span class="field-copy"><strong>Previews to keep</strong><span>Previews are saved on this device only. Incognito previews are never saved to disk.</span></span><select id="max-previews" name="tabSwitcherMaxThumbnails"><option>30</option><option>60</option><option>120</option><option>240</option></select></label>
+            <label class="setting-row" for="max-previews"><span class="field-copy"><strong>Previews to keep</strong><span>Keep 5 or 10 tab screenshots on this device. This does not limit tabs or browsing history. Incognito previews stay in memory.</span></span><select id="max-previews" name="tabSwitcherMaxThumbnails"><option>5</option><option>10</option></select></label>
           </div>
         </section>
 

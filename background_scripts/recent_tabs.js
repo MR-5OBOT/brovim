@@ -11,9 +11,9 @@ export function getTabSwitcherLimit() {
   return value("tabSwitcherColumns", 3, 6) * value("tabSwitcherRows", 1, 3);
 }
 
-// Awake tabs in this window: the active tab first, then tabs used this session (most recent
-// first), then other awake tabs by lastAccessed. Sleeping and hidden tabs never enter the grid
-// or the quick-switch path.
+// Eligible tabs in this window: the active tab first, then tabs used this session (most recent
+// first), then other tabs by lastAccessed. Pinned tabs remain available while sleeping; hidden
+// tabs and sleeping unpinned tabs stay out of both the grid and quick-switch path.
 export async function getRecentTabs(windowId) {
   const [tabs] = await Promise.all([
     chrome.tabs.query({ windowId }),
@@ -21,7 +21,10 @@ export async function getRecentTabs(windowId) {
   ]);
   const rank = new Map(bgUtils.tabRecency.getTabsByRecency().map((id, index) => [id, index]));
   // Firefox tab-group extensions hide tabs; those aren't part of the visible window.
-  return tabs.filter((tab) => !tab.hidden && !tab.discarded && !tab.frozen).sort((a, b) =>
+  return tabs.filter((tab) => !tab.hidden && (tab.pinned || (!tab.discarded && !tab.frozen))).sort((
+    a,
+    b,
+  ) =>
     Number(!!b.active) - Number(!!a.active) ||
     (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
     (b.lastAccessed ?? 0) - (a.lastAccessed ?? 0) || a.index - b.index

@@ -12,11 +12,13 @@ import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
 import { commitTabSwitcherCycle, endTabSwitcherCycle, openTabSwitcher } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
+import { initializeInternalPages } from "./internal_pages.js";
 import { getSwitcherTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
 import {
   captureThumbnail,
   findThumbnails,
   getCachedThumbnails,
+  trimThumbnailCaches,
   warmThumbnailCaches,
 } from "./thumbnails.js";
 
@@ -91,7 +93,9 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onURLChange); // history.
 chrome.webNavigation.onReferenceFragmentUpdated.addListener(onURLChange); // Hash changed.
 
 if (!globalThis.isUnitTests) {
+  if (!bgUtils.isFirefox()) initializeInternalPages();
   warmThumbnailCaches();
+  Settings.addEventListener("change", () => trimThumbnailCaches().catch(() => {}));
   // Cache "content_scripts/vimium.css" in chrome.storage.session for UI components.
   (function () {
     const url = chrome.runtime.getURL("content_scripts/vimium.css");
@@ -117,8 +121,18 @@ if (!globalThis.isUnitTests) {
   chrome.commands?.onCommand?.addListener((command, tab) => {
     if (command === "open_tab_switcher") {
       openTabSwitcher(tab).catch((error) => console.warn("Could not open tab switcher:", error));
+    } else if (command === "focus_page") {
+      focusPage(tab).catch((error) => console.warn("Could not focus page:", error));
     }
   });
+}
+
+async function focusPage(tab) {
+  tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (!tab) return false;
+  await chrome.tabs.update(tab.id, { active: true });
+  if (!await ensureContentScripts(tab.id)) return false;
+  return await chrome.tabs.sendMessage(tab.id, { handler: "recoverPageFocus" }, { frameId: 0 });
 }
 
 // Pages with Brovim's content script capture their own previews once they look settled. Others
@@ -204,10 +218,10 @@ async function selectSpecificTab(request) {
     if (!request.awakeOnly) throw error;
     return null;
   });
-  // A tab can close, move or go to sleep while the fixed grid is open. Do not wake a tab
-  // that became unavailable after rendering its card.
+  // A tab can close, move or go to sleep while the fixed grid is open. Pinned sleepers remain
+  // eligible and are woken only when selected; other unavailable tabs stay asleep.
   if (
-    request.awakeOnly && (!tab || tab.discarded || tab.frozen || tab.hidden ||
+    request.awakeOnly && (!tab || (!tab.pinned && (tab.discarded || tab.frozen)) || tab.hidden ||
       (request.tab && request.tab.windowId !== tab.windowId))
   ) return false;
   // Focus the tab's window. TODO(philc): Why are we null-checking chrome.windows here?
@@ -578,7 +592,7 @@ const sendRequestHandlers = {
         whichIcon = "enabled";
       }
 
-      let iconSet = {
+      const iconSet = {
         "enabled": {
           "16": "../icons/action_enabled_16.png",
           "32": "../icons/action_enabled_32.png",
@@ -592,15 +606,6 @@ const sendRequestHandlers = {
           "32": "../icons/action_disabled_32.png",
         },
       };
-
-      if (bgUtils.isFirefox()) {
-        // Only Firefox supports SVG icons.
-        iconSet = {
-          "enabled": "../icons/action_enabled.svg",
-          "partial": "../icons/action_partial.svg",
-          "disabled": "../icons/action_disabled.svg",
-        };
-      }
 
       chrome.action.setIcon({ path: iconSet[whichIcon], tabId: sender.tab.id });
     }
@@ -796,6 +801,7 @@ Object.assign(globalThis, {
   TabOperations,
   // Exported for tests:
   openTabSwitcher,
+  focusPage,
   HintCoordinator,
   BackgroundCommands,
   sendRequestHandlers,

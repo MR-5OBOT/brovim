@@ -120,10 +120,23 @@ const isScrollableElement = function (element, direction, amount, factor) {
 
 // From element and its parents, find the first which we should scroll and which does scroll.
 const findScrollableElement = function (element, direction, amount, factor) {
+  const original = element;
   while (
     (element !== getScrollingElement()) && !isScrollableElement(element, direction, amount, factor)
   ) {
-    element = DomUtils.getContainingElement(element) || getScrollingElement();
+    element = DomUtils.getContainingElement(element) || element.getRootNode?.().host ||
+      getScrollingElement();
+  }
+  // Single-page apps can replace a scroll pane without changing the URL. The remembered element
+  // then leads to a non-scrolling document; find the current pane instead of waiting for a click.
+  if (
+    element === getScrollingElement() && !isScrollableElement(element, direction, amount, factor)
+  ) {
+    const replacement = firstScrollableElement();
+    if (replacement && replacement !== original) {
+      activatedElement = replacement;
+      return findScrollableElement(replacement, direction, amount, factor);
+    }
   }
   return element;
 };
@@ -131,25 +144,44 @@ const findScrollableElement = function (element, direction, amount, factor) {
 // On some pages, the scrolling element is not actually scrollable. Here, we search the document for
 // the largest visible element which does scroll vertically. This is used to initialize
 // activatedElement. See #1358.
+const visibleScrollChildren = function (element) {
+  const childrenOf = (node) => [...node.children, ...(node.shadowRoot?.children ?? [])];
+  const pending = childrenOf(element).reverse();
+  const visible = [];
+  while (pending.length) {
+    const child = pending.pop();
+    // display:contents and zero-size wrappers can contain visible scrolling panes. A missing
+    // rectangle belongs to the wrapper, not necessarily to its descendants. display:none is the
+    // exception: the whole subtree is absent from layout.
+    if (getComputedStyle(child).display === "none") continue;
+    const rect = DomUtils.getVisibleClientRect(child);
+    if (rect) visible.push({ element: child, rect, area: rect.width * rect.height });
+    else pending.push(...childrenOf(child).reverse());
+  }
+  return visible;
+};
+
 const firstScrollableElement = function (element = null) {
   let child;
   if (!element) {
     const scrollingElement = getScrollingElement();
-    if (doesScroll(scrollingElement, "y", 1, 1) || doesScroll(scrollingElement, "y", -1, 1)) {
+    if (
+      shouldScroll(scrollingElement, "y") &&
+      (doesScroll(scrollingElement, "y", 1, 1) || doesScroll(scrollingElement, "y", -1, 1))
+    ) {
       return scrollingElement;
     } else {
       element = document.body || getScrollingElement();
     }
   }
 
-  if (doesScroll(element, "y", 1, 1) || doesScroll(element, "y", -1, 1)) {
+  if (
+    shouldScroll(element, "y") &&
+    (doesScroll(element, "y", 1, 1) || doesScroll(element, "y", -1, 1))
+  ) {
     return element;
   } else {
-    // children = children.filter (c) -> c.rect # Filter out non-visible elements.
-    const children = Array.from(element.children)
-      .map((c) => ({ "element": c, "rect": DomUtils.getVisibleClientRect(c) }))
-      .filter((child) => child.rect); // Filter out non-visible elements.
-    children.map((child) => child.area = child.rect.width * child.rect.height);
+    const children = visibleScrollChildren(element);
     for (child of children.sort((a, b) => b.area - a.area)) { // Largest to smallest by visible area.
       const el = firstScrollableElement(child.element);
       if (el) {
@@ -161,6 +193,11 @@ const firstScrollableElement = function (element = null) {
 };
 
 const checkVisibility = function (element) {
+  if (!activatedElement) return;
+  if (!activatedElement.isConnected) {
+    activatedElement = null;
+    return;
+  }
   // If the activated element has been scrolled completely offscreen, then subsequent changes in its
   // scroll position will not provide any more visual feedback to the user. Therefore, we deactivate
   // it so that subsequent scrolls affect the parent element.
@@ -356,7 +393,7 @@ const Scroller = {
         // event.target) can be found as its first element.
         // NOTE(mrmr1993): event.path has been renamed to event.deepPath in the spec, but this
         // change is not yet implemented by Chrome.
-        const path = event.deepPath || event.path;
+        const path = event.composedPath?.() || event.deepPath || event.path;
         return activatedElement = path ? path[0] : event.target;
       });
     handlerStack.push(handler);
@@ -366,6 +403,8 @@ const Scroller = {
 
   reset() {
     activatedElement = null;
+    CoreScroller.time++;
+    CoreScroller.keyDownKey = CoreScroller.lastEvent = null;
   },
 
   // scroll the active element in :direction by :amount * :factor.

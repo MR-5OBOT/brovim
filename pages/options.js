@@ -4,6 +4,7 @@ import { Commands, KeyMappingsParser } from "../background_scripts/commands.js";
 import * as userSearchEngines from "../background_scripts/user_search_engines.js";
 
 const options = {
+  enableInternalPages: "boolean",
   filterLinkHints: "boolean",
   grabBackFocus: "boolean",
   hideHud: "boolean",
@@ -108,6 +109,19 @@ export async function init() {
   setFormFromSettings(settings);
   initSettingsNavigation();
   await initBrowserShortcut();
+  await initInternalPagesStatus();
+}
+
+async function initInternalPagesStatus() {
+  let available = false;
+  try {
+    available = await chrome.permissions?.contains({ origins: ["chrome://*/*"] });
+  } catch {
+    // Firefox and browsers without the internal-page override cannot grant this origin.
+  }
+  document.querySelector("#internal-pages-status").textContent = available
+    ? "Browser permission is available. Changes apply to open browser pages when saved."
+    : "Helium/Chromium: restart with --extensions-on-chrome-urls to use this. Other browsers may block access.";
 }
 
 function initSettingsNavigation() {
@@ -148,6 +162,9 @@ async function initBrowserShortcut() {
   try {
     const commands = await chrome.commands.getAll();
     const shortcut = commands.find((command) => command.name === "open_tab_switcher")?.shortcut;
+    document.querySelector("#focus-page-shortcut").textContent = commands.find((command) =>
+      command.name === "focus_page"
+    )?.shortcut || "Not assigned";
     document.querySelector("#tab-switcher-shortcut").textContent = shortcut || "Not assigned";
     if (!shortcut) {
       document.querySelector("#tab-switcher-description").textContent =
@@ -203,7 +220,9 @@ function setFormFromSettings(settings) {
         el.value = value;
         break;
       case "select":
-        el.value = String(value);
+        el.value = optionName === "tabSwitcherMaxThumbnails" && Number(value) > 10
+          ? "10"
+          : String(value);
         if (el.selectedIndex < 0) el.value = String(Settings.defaultOptions[optionName]);
         break;
       case "option": {

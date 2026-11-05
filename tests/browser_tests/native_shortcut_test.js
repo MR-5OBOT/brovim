@@ -99,9 +99,12 @@ async function switcher(page) {
 }
 const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (request) => {
   const title = new URL(request.url).searchParams.get("title") || "Native peer";
-  return new Response(`<!doctype html><title>${title}</title><h1>${title}</h1>`, {
-    headers: { "content-type": "text/html" },
-  });
+  return new Response(
+    `<!doctype html><title>${title}</title><h1>${title}</h1><input id="editor"><main style="height:5000px">Scrollable page</main>`,
+    {
+      headers: { "content-type": "text/html" },
+    },
+  );
 });
 const origin = `http://127.0.0.1:${server.addr.port}`;
 const errors = [];
@@ -129,8 +132,10 @@ try {
     .worker();
   await worker.evaluate(() => {
     globalThis.nativeCommands = 0;
+    globalThis.nativeFocusCommands = 0;
     chrome.commands.onCommand.addListener((command) => {
       if (command === "open_tab_switcher") nativeCommands++;
+      if (command === "focus_page") nativeFocusCommands++;
     });
   });
   const source = await browser.newPage();
@@ -143,6 +148,32 @@ try {
   await source.bringToFront();
   await keys("focus:Brovim Native Source");
   await until(() => source.evaluate(() => document.hasFocus()), "Native source did not gain focus");
+  await source.evaluate(() => document.querySelector("#editor").focus());
+  await keys("tap:Escape");
+  await until(
+    () =>
+      source.evaluate(() =>
+        !document.activeElement.matches("input,textarea,[contenteditable=true]")
+      ),
+    "Escape did not leave the text editor",
+  );
+  await keys("tap:j");
+  await until(
+    () => source.evaluate(() => scrollY > 0),
+    "Scrolling did not resume after Escape",
+  );
+  pass("Native Escape leaves the editor and resumes scrolling without a click");
+  await source.evaluate(() => document.querySelector("#editor").focus());
+  await keys("down:Alt_L", "tap:z", "up:Alt_L");
+  await until(
+    () => source.evaluate(() => document.activeElement === document.documentElement),
+    "Alt+Z did not leave the text editor",
+  );
+  assert(
+    await worker.evaluate(() => nativeFocusCommands) >= 1,
+    "Recovery did not use the actual browser command",
+  );
+  pass("Native Alt+Z leaves text inputs without a custom page mapping");
   await keys("down:Alt_L", "tap:q");
   const frame = await switcher(source);
 
