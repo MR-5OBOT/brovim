@@ -99,8 +99,8 @@ explicit custom CSS is preserved, including any colors it overrides.
    to close. Previews are captured when a page has settled and kept by URL in local storage (session
    storage for incognito). TabGlance has no license, so this is Brovim's own code, not a copy.
 4. **Curated Search Engine Defaults:** Pre-configured ready-to-use search keywords in
-   `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, `g` for
-   Google, and `ddg` for DuckDuckGo).
+   `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, and
+   `ddg` for DuckDuckGo). No Google keyword.
 
 ---
 
@@ -264,7 +264,6 @@ Previously maintained in `TODOS.md`; this report is now the canonical project re
   - `gh`: GitHub search (`https://github.com/search?q=%s`)
   - `w`: Wikipedia search (`https://www.wikipedia.org/w/index.php?title=Special:Search&search=%s`)
   - `r`: Reddit search (`https://www.reddit.com/search/?q=%s`)
-  - `g`: Google search (`https://www.google.com/search?q=%s`)
   - `ddg`: DuckDuckGo search (`https://duckduckgo.com/?q=%s`)
 
 ---
@@ -440,8 +439,7 @@ for core keyboard behavior. The 19 intentional feature removals remain in place.
 
 ### Fixes and requested changes
 
-- **Default exclusions:** Gmail and WhatsApp Web disable Brovim by default. WhatsApp Web uses the
-  pattern `https?://web.whatsapp.com/*` with no pass keys.
+- **Default exclusions:** none. Brovim runs on every site, Gmail and WhatsApp Web included.
 - **Saved hint colors:** open pages now use the latest box, text and typed-letter colors on the next
   `f`; Reset and CSS overrides are verified in the browser. Each hint container appends the current
   theme and custom stylesheet after the base styles. A regression check deliberately inserts the

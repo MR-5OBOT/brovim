@@ -57,8 +57,7 @@ return focus to the page, leave temporary Brovim modes and rediscover the scroll
 browser shortcut with no custom mapping required; change it in the browser's extension-shortcut
 settings. Typing keeps its normal focus until you leave the editor.
 
-Gmail and WhatsApp Web are disabled by default. Change excluded sites in Options or the toolbar
-popup.
+Brovim runs on every site by default. Add excluded sites in Options or the toolbar popup.
 
 ### Tab switcher
 
@@ -134,8 +133,9 @@ website tabs recover their Brovim controls automatically after an extension upda
 
 ### Search engines
 
-In the Vomnibar, type a keyword and a query: `g` Google, `ddg` DuckDuckGo, `w` Wikipedia, `yt`
-YouTube, `gh` GitHub, `r` Reddit. Edit them under "Custom search engines" in the options.
+In the Vomnibar, type a keyword and a query: `ddg` DuckDuckGo, `w` Wikipedia, `yt` YouTube, `gh`
+GitHub, `r` Reddit. Edit them under "Custom search engines" in the options. A query without a
+keyword uses your browser's default search engine.
 
 ### Hint colors
 
