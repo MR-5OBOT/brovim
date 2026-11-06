@@ -242,6 +242,68 @@ try {
     }, { url, previous });
 
   await fresh();
+  await check("switcher resize waits for cold settings and renders the saved layout", async () => {
+    const previousErrors = errors.length;
+    let frame;
+    try {
+      await worker.evaluate(async () => {
+        await Settings.set("tabSwitcherColumns", 3);
+        await Settings.set("tabSwitcherRows", 1);
+      });
+      // The modifier preloads the iframe, whose own settings stay cold until activation.
+      await key(["Alt"]);
+      const element = await page.waitForSelector(":root >>> iframe.tab-switcher-frame");
+      frame = await element.contentFrame();
+      await frame.waitForFunction(() => !!globalThis.Settings);
+      assert(await frame.evaluate(() => !Settings.isLoaded()), "Frame settings already loaded");
+      await frame.evaluate(() => {
+        globalThis.switcherStartupErrors = [];
+        globalThis.addEventListener("error", (event) => {
+          globalThis.switcherStartupErrors.push(event.message);
+        });
+        const originalLoad = Settings.load;
+        Settings.load = async function () {
+          await new Promise((resolve) => globalThis.releaseSwitcherSettings = resolve);
+          return originalLoad.call(this);
+        };
+        globalThis.restoreSwitcherSettings = () => {
+          Settings.load = originalLoad;
+          globalThis.releaseSwitcherSettings?.();
+        };
+      });
+      await openSwitcher();
+      await frame.waitForFunction(() => !!globalThis.releaseSwitcherSettings);
+      // Showing the initially zero-size frame can itself deliver a resize; also resize the
+      // viewport to make the race deterministic while sync storage remains pending.
+      await page.setViewport({ width: 1100, height: 800 });
+      await frame.evaluate(() => globalThis.dispatchEvent(new Event("resize")));
+      await pause();
+      const startupErrors = await frame.evaluate(() => globalThis.switcherStartupErrors);
+      assert(startupErrors.length === 0, startupErrors.join("\n"));
+      assert(errors.length === previousErrors, errors.slice(previousErrors).join("\n"));
+      assert(!await frame.$("#panel.ready"), "Grid rendered before its settings loaded");
+      await frame.evaluate(() => globalThis.restoreSwitcherSettings());
+      await frame.waitForSelector("#panel.ready .tab-card.selected");
+      const columns = await frame.$eval(
+        "#tab-switcher",
+        (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+      );
+      assert(columns === 3, `Saved three-column layout was lost: ${columns}`);
+      await page.setViewport({ width: 1280, height: 900 });
+      await key(["l", "Escape"]);
+      await noUi("tab-switcher-frame");
+      assert(errors.length === previousErrors, errors.slice(previousErrors).join("\n"));
+    } finally {
+      if (frame) await frame.evaluate(() => globalThis.restoreSwitcherSettings?.()).catch(() => {});
+      await page.setViewport({ width: 1280, height: 900 });
+      await key(["Escape"]);
+      await worker.evaluate(async () => {
+        await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
+      });
+    }
+  });
+
   await check(
     "initialization recovers from empty responses without crashing or losing controls",
     async () => {

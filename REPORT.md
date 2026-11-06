@@ -999,3 +999,20 @@ Verification: formatting/lint and diff whitespace passed; 324 unit tests, 101 DO
 installed Chromium browser tests and 10 internal-page tests passed. All three packages built
 successfully; archive CRCs and the changed runtime files were verified against the source. Firefox
 runtime and native X11 shortcut tests were not rerun for this change.
+
+## 19. Switcher Startup Resize Race (November 6, 2026)
+
+The reported `Getting the setting tabSwitcherColumns before settings have been loaded` error
+reproduced when the switcher iframe resized during its first activation while settings were still
+loading. Activation marks the switcher visible before awaiting settings; the resize handler had
+treated visibility as readiness and read the layout too early.
+
+Resize now waits until the panel is ready. The first render already reads the current viewport, so
+an early resize is applied once the saved settings and tab list arrive. A browser regression delays
+the frame's settings load, observes errors inside the iframe, resizes during startup, then verifies
+the saved three-column layout and keyboard controls after loading. It reproduced the exact reported
+error before the fix and passes with the fix.
+
+Verification: formatting/lint and diff whitespace passed; 324 unit tests and all 90
+installed-browser checks passed. All three packages built successfully, and their CRCs and updated
+switcher script were verified against the source.

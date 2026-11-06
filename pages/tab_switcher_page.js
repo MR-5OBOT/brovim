@@ -485,7 +485,9 @@ UIComponentMessenger.registerHandler((event) => {
 globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
 globalThis.addEventListener("resize", () => {
-  if (!visible) return;
+  // Showing the iframe can resize it while activation is still loading settings and tabs.
+  // The first render will use the current viewport once that load finishes.
+  if (!visible || !panel.classList.contains("ready")) return;
   // The screen's size limits how far the grid grows.
   const next = gridLayout(tabs.length);
   if (next.columns !== layout.columns || next.rows !== layout.rows) {
