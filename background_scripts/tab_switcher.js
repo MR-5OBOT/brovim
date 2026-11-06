@@ -1,8 +1,8 @@
 import { ensureContentScripts } from "./content_script_bootstrap.js";
-import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
+import { orderTabSwitcherCards, selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import {
   getRecentTabs,
-  getSwitcherTabs,
+  getTabSwitcherData,
   getTabSwitcherLimit,
   switchToPreviousRecentTab,
 } from "./recent_tabs.js";
@@ -80,7 +80,7 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   ))[0];
   if (!tab) return;
   await Settings.onLoaded();
-  const tabs = await getSwitcherTabs(tab.windowId);
+  const { tabs, previousId } = await getTabSwitcherData(tab.windowId);
   if (expectedOverlayId && overlays.get(tab.windowId)?.id !== expectedOverlayId) return;
   if (tabs.length < 2) return;
   if (
@@ -158,12 +158,16 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   const current = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0];
   if (current?.id !== tab.id) return;
   if (!cycle) {
-    const tabIds = selectTabSwitcherCards(tabs, getTabSwitcherLimit()).map((t) => t.id);
+    const tabIds = orderTabSwitcherCards(
+      selectTabSwitcherCards(tabs, getTabSwitcherLimit(), { previousId }),
+    )
+      .map((tab) => tab.id);
     cycle = {
       id: crypto.randomUUID(),
       tabIds,
-      // Pins come first, so the previous tab isn't necessarily the second card.
-      index: tabIds.indexOf(tabs[1].id),
+      sourceId: tab.id,
+      previousId,
+      index: Math.max(0, tabIds.indexOf(previousId)),
       startedAt: Date.now(),
       overlay: false,
     };
@@ -194,6 +198,8 @@ function snapshot(cycle) {
     tabIds: cycle.tabIds,
     selectedId: cycle.tabIds[cycle.index],
     startedAt: cycle.startedAt,
+    sourceId: cycle.sourceId,
+    previousId: cycle.previousId,
   };
 }
 

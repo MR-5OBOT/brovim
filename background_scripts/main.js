@@ -18,7 +18,7 @@ import {
 } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { initializeInternalPages } from "./internal_pages.js";
-import { getSwitcherTabs, switchToPreviousRecentTab } from "./recent_tabs.js";
+import { getTabSwitcherData, switchToPreviousRecentTab } from "./recent_tabs.js";
 import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import {
   captureThumbnail,
@@ -541,8 +541,10 @@ const sendRequestHandlers = {
     includeScreenshots = true,
     screenshotLimit = 18,
   }) {
-    const tabs = await getSwitcherTabs(windowId ?? tab.windowId);
-    const cards = selectTabSwitcherCards(tabs, Math.max(0, Math.min(18, screenshotLimit)));
+    const { tabs, previousId } = await getTabSwitcherData(windowId ?? tab.windowId);
+    const cards = selectTabSwitcherCards(tabs, Math.max(0, Math.min(18, screenshotLimit)), {
+      previousId,
+    });
     const urls = cards.map((t) => t.url);
     const screenshots = includeScreenshots === "cached"
       ? getCachedThumbnails(urls, tab?.incognito)
@@ -557,6 +559,7 @@ const sendRequestHandlers = {
       url: t.url || "",
       favIconUrl: t.favIconUrl || "",
       active: t.active,
+      lastUsed: t.id === previousId,
       pinned: t.pinned,
       screenshot: screenshotsById.get(t.id) ?? null,
     }));

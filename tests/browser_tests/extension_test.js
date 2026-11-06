@@ -2295,12 +2295,12 @@ try {
           (els) => els.map((el) => el.textContent),
         );
         assert(titles.includes("PinnedSleeper"), "Sleeping pinned tab was missing");
-        const isPin = (title) => title === "PinnedSleeper" || title.startsWith("InactivePin");
-        const firstRegular = titles.findIndex((title) => !isPin(title));
         assert(
-          titles[firstRegular] === "Brovim browser fixture" &&
-            titles.slice(firstRegular).every((title) => !isPin(title)),
-          `Pins did not fill the first cells ahead of the current tab: ${titles}`,
+          titles.slice(0, 5).join(",") ===
+            ["PinnedSleeper", "InactivePin0", "InactivePin1", "InactivePin2", "InactivePin3"].join(
+              ",",
+            ),
+          "Sleeping or inactive pins did not occupy the leading cells in tab-bar order",
         );
         assert(!titles.includes("UnpinnedSleeper"), "Sleeping unpinned tab was exposed");
         for (let i = 0; i < 4; i++) {
@@ -2310,7 +2310,10 @@ try {
         assert(cardIds.length === 7, `Expected the quick-swap pair plus 5 pins: ${cardIds}`);
         assert(new Set(cardIds).size === cardIds.length, "Pinned cards were duplicated");
         assert(
-          await switcher.$$eval(".tab-card:not([hidden])", (cards) => cards.length) <= 3,
+          await switcher.$$eval(
+            ".tab-card:not([hidden])",
+            (cards) => cards.length > 0 && cards.length <= 3,
+          ),
           "Pinned overflow exceeded the one-page grid",
         );
         assert(
@@ -2404,6 +2407,7 @@ try {
           }
           throw new Error("Reserved pinned fixtures did not load");
         }, { prefix, previousRules });
+        await page.keyboard.down("Alt");
         await openSwitcher();
         const frame = await ui("tab-switcher-frame");
         await frame.waitForSelector("#panel.ready .selected");
@@ -2412,11 +2416,12 @@ try {
           (els) => els.map((el) => el.textContent),
         );
         assert(visibleTitles.length === 18, `Unexpected first-page count: ${visibleTitles}`);
+        for (const name of ["WhatsApp", "Gmail", "OtherPin"]) {
+          assert(visibleTitles.includes(name), `${name} was missing from the visible first page`);
+        }
         assert(
-          ["WhatsApp", "Gmail", "OtherPin"].every((name) =>
-            visibleTitles.slice(0, 3).includes(name)
-          ),
-          `Pins did not fill the first cells: ${visibleTitles}`,
+          visibleTitles.slice(0, 3).join(",") === "WhatsApp,Gmail,OtherPin",
+          `Pinned tabs were not in the first cells: ${visibleTitles}`,
         );
         assert(
           await frame.$eval(".selected", (el) => Number(el.dataset.id)) === fixtures.peerId,
@@ -2430,6 +2435,31 @@ try {
           await frame.$eval("#panel", (el) => el.scrollHeight <= el.clientHeight + 1),
           "Pins caused scrolling",
         );
+        const cardIds = await frame.$$eval(
+          ".tab-card",
+          (cards) => cards.map((card) => card.dataset.id),
+        );
+        await page.keyboard.press("q");
+        await frame.waitForFunction(() =>
+          document.querySelector(".selected .card-title").textContent === "Recent18"
+        );
+        await page.keyboard.down("Shift");
+        await page.keyboard.press("q");
+        await page.keyboard.up("Shift");
+        await frame.waitForFunction(() =>
+          document.querySelector(".selected .card-title").textContent === "Recent19"
+        );
+        assert(
+          JSON.stringify(
+            await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id)),
+          ) === JSON.stringify(cardIds),
+          "Cycling moved pinned cards or rebuilt their order",
+        );
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, sourceId),
+          "Cycling with pins switched before Alt release",
+        );
+        await page.screenshot({ path: "/tmp/brovim-pinned-first.png" });
         await key(["Escape", "Alt"]);
         await openBrowserSwitcher();
         assert(
@@ -2455,7 +2485,29 @@ try {
           ),
           "Showing the pins or swapping regular tabs woke a pinned tab",
         );
+        const visitedPinId = await worker.evaluate(async ({ prefix, sourceId }) => {
+          const pin = (await chrome.tabs.query({ pinned: true })).find((tab) =>
+            tab.url.startsWith(`${prefix}app-OtherPin`)
+          );
+          await chrome.tabs.update(pin.id, { active: true });
+          await chrome.tabs.update(sourceId, { active: true });
+          return pin.id;
+        }, { prefix, sourceId });
+        await openSwitcher();
+        await frame.waitForSelector("#panel.ready .selected");
+        assert(
+          (await frame.$$eval(".card-title", (els) => els.slice(0, 3).map((el) => el.textContent)))
+            .join(",") === "WhatsApp,Gmail,OtherPin",
+          "Visiting a pinned tab changed the leading pinned positions",
+        );
+        assert(
+          await frame.$eval(".selected", (el) => Number(el.dataset.id)) === visitedPinId,
+          "Opening after visiting a pin lost the previous-tab selection",
+        );
+        await key(["Escape"]);
       } finally {
+        await page.keyboard.up("Alt");
+        await page.keyboard.up("Shift");
         await worker.evaluate(async ({ prefix, previousRules }) => {
           await Settings.set("exclusionRules", previousRules);
           const ids = (await chrome.tabs.query({})).filter((tab) => tab.url.startsWith(prefix)).map(
@@ -2463,6 +2515,88 @@ try {
           );
           if (ids.length) await chrome.tabs.remove(ids);
         }, { prefix, previousRules });
+        await page.bringToFront();
+      }
+    },
+  );
+
+  await check(
+    "held cycling starts at last-used index 6 then follows 7, 8, 0 while quick taps use history",
+    async () => {
+      const originalOrder = await worker.evaluate(() => Settings.get("tabSwitcherOrder"));
+      const urls = Array.from(
+        { length: 9 },
+        (_, index) => `${origin}/visual-cycle-${index}?title=Index${index}`,
+      );
+      let windowId, source;
+      try {
+        const fixture = await worker.evaluate(async (urls) => {
+          await Settings.set("tabSwitcherOrder", "tabstrip");
+          const window = await chrome.windows.create({ url: urls });
+          const tabs = await chrome.tabs.query({ windowId: window.id });
+          tabs.sort((a, b) => a.index - b.index);
+          for (const tab of tabs.slice(0, 3)) await chrome.tabs.update(tab.id, { pinned: true });
+          await chrome.tabs.update(tabs[6].id, { active: true });
+          await chrome.tabs.update(tabs[3].id, { active: true });
+          return { windowId: window.id, sourceId: tabs[3].id, lastId: tabs[8].id };
+        }, urls);
+        windowId = fixture.windowId;
+        source = await (await browser.waitForTarget((target) => target.url() === urls[3])).page();
+        await source.waitForFunction(() => document.readyState === "complete");
+        await source.bringToFront();
+        await source.keyboard.down("Alt");
+        await openBrowserSwitcher(fixture.sourceId);
+        const element = await source.waitForSelector(
+          ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
+        );
+        const frame = await element.contentFrame();
+        await frame.waitForSelector("#panel.ready .selected");
+        const initial = await frame.$$eval(
+          ".tab-card",
+          (cards) => cards.map((card) => card.dataset.id),
+        );
+        const selectedIndex = () =>
+          frame.$$eval(
+            ".tab-card",
+            (cards) => cards.findIndex((card) => card.classList.contains("selected")),
+          );
+        assert(await selectedIndex() === 6, "Opening did not select last-used cell 6");
+        for (let i = 0; i < 11; i++) {
+          await source.keyboard.press("q");
+          assert(await selectedIndex() === (7 + i) % 9, `Unexpected cell after repeat ${i + 1}`);
+        }
+        assert(
+          JSON.stringify(
+            await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id)),
+          ) === JSON.stringify(initial),
+          "Held cycling changed the visible order",
+        );
+        await source.keyboard.up("Alt");
+        await worker.evaluate(async (id) => {
+          for (let i = 0; i < 100; i++) {
+            if ((await chrome.tabs.get(id)).active) return;
+            await new Promise((resolve) => setTimeout(resolve, 20));
+          }
+          throw new Error("Releasing Alt did not select cell 8");
+        }, fixture.lastId);
+        const lastPage = await (await browser.waitForTarget((target) => target.url() === urls[8]))
+          .page();
+        await key(["Alt"], lastPage);
+        await openBrowserSwitcher(fixture.lastId);
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, fixture.sourceId),
+          "Quick Alt+Q followed grid order instead of returning to the last-used tab",
+        );
+        await key(["Alt"], source);
+        await openBrowserSwitcher(fixture.sourceId);
+        assert(
+          await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, fixture.lastId),
+          "The second quick tap did not swap back",
+        );
+      } finally {
+        await source?.keyboard.up("Alt").catch(() => {});
+        if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
+        await worker.evaluate((order) => Settings.set("tabSwitcherOrder", order), originalOrder);
         await page.bringToFront();
       }
     },

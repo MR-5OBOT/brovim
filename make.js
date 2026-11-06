@@ -185,7 +185,6 @@ async function buildStorePackage() {
     "make.js",
     "deno.json",
     "deno.lock",
-    "test_harnesses",
     "tests",
     "new-icon.png", // Full-resolution source; the browser uses the derived icon sizes.
   ];

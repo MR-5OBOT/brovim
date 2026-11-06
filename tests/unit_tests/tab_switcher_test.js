@@ -15,9 +15,65 @@ import {
 import * as Thumbnails from "../../background_scripts/thumbnails.js";
 import * as SwitcherCommands from "../../background_scripts/tab_switcher.js";
 import { getRecentTabs, getSwitcherTabs } from "../../background_scripts/recent_tabs.js";
-import { selectTabSwitcherCards } from "../../lib/tab_switcher.js";
+import { orderTabSwitcherCards, selectTabSwitcherCards } from "../../lib/tab_switcher.js";
 
 context("configured switcher shortcut", () => {
+  should(
+    "start at the last-used cell, then cycle adjacent visual cells across protected pages",
+    async () => {
+      await Settings.onLoaded();
+      const previousOrder = Settings.get("tabSwitcherOrder");
+      const tabs = Array.from({ length: 9 }, (_, index) => ({
+        id: 9100 + index,
+        index,
+        windowId: 910,
+        active: index === 3,
+        pinned: index < 3,
+        discarded: index === 0,
+        frozen: index === 1,
+        url: "chrome://extensions/",
+      }));
+      stub(
+        chrome.tabs,
+        "query",
+        (query) => Promise.resolve(tabs.filter((tab) => !query.active || tab.active)),
+      );
+      stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+      const selected = [];
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        bgUtils.tabRecency.register(id);
+        selected.push(id - 9100);
+        return Promise.resolve(tabs.find((tab) => tab.id === id));
+      });
+      await bgUtils.tabRecency.init();
+      for (const tab of tabs) bgUtils.tabRecency.register(tab.id);
+      bgUtils.tabRecency.register(9106);
+      bgUtils.tabRecency.register(9103);
+      try {
+        await Settings.set("tabSwitcherOrder", "tabstrip");
+        for (let i = 0; i < 10; i++) {
+          await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
+        }
+        assert.equal([6, 7, 8, 0, 1, 2, 3, 4, 5, 6], selected);
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(910);
+        await Settings.set("tabSwitcherOrder", previousOrder);
+      }
+    },
+  );
+  should("keep sleeping pins in the leading cells without changing the shortcut order", () => {
+    const firstPin = { id: 8010, index: 0, pinned: true, discarded: true };
+    const secondPin = { id: 8011, index: 1, pinned: true, frozen: true };
+    const current = { id: 8012, index: 2, active: true };
+    const previous = { id: 8013, index: 3 };
+    const recent = [current, previous, secondPin, firstPin];
+    const cards = selectTabSwitcherCards(recent, 18);
+    assert.equal([8010, 8011, 8012, 8013], orderTabSwitcherCards(cards).map((tab) => tab.id));
+    assert.equal([8012, 8013, 8011, 8010], cards.map((tab) => tab.id));
+    const afterVisit = [{ ...secondPin, frozen: false, active: true }, current, firstPin, previous];
+    assert.equal([8010, 8011, 8012, 8013], orderTabSwitcherCards(afterVisit).map((tab) => tab.id));
+  });
   should(
     "reserve first-page space for old pinned tabs without changing the quick-swap pair",
     () => {
@@ -31,8 +87,9 @@ context("configured switcher shortcut", () => {
       }));
       const cards = selectTabSwitcherCards(tabs, 18);
       assert.equal(18, cards.length);
-      // Pins (even sleeping ones) take the first cells, then the current/previous pair.
-      assert.equal([21, 22, 23, 0, 1], cards.slice(0, 5).map((tab) => tab.id));
+      assert.equal([0, 1], cards.slice(0, 2).map((tab) => tab.id));
+      assert.equal([21, 22, 23], cards.filter((tab) => tab.pinned).map((tab) => tab.id));
+      assert.equal([21, 22, 23], cards.slice(-3).map((tab) => tab.id));
     },
   );
   for (const order of ["mru", "tabstrip"]) {
@@ -55,7 +112,7 @@ context("configured switcher shortcut", () => {
         await Settings.set("tabSwitcherOrder", order);
         const ordered = await getSwitcherTabs(710);
         assert.equal(
-          [7101, 7104, 7106, 7107, 7108, 7100],
+          [7100, 7101, 7104, 7106, 7107, 7108],
           selectTabSwitcherCards(ordered, 3).map((tab) => tab.id),
         );
       } finally {
@@ -693,8 +750,8 @@ context("Tab switcher previews and order", () => {
   for (
     const { order, activeId, expectedId } of [
       { order: "mru", activeId: 301, expectedId: 303 },
-      { order: "tabstrip", activeId: 301, expectedId: 302 },
-      { order: "tabstrip", activeId: 302, expectedId: 303 },
+      { order: "tabstrip", activeId: 301, expectedId: 303 },
+      { order: "tabstrip", activeId: 302, expectedId: 301 },
       { order: "tabstrip", activeId: 303, expectedId: 301 },
     ]
   ) {

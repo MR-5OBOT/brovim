@@ -33,17 +33,22 @@ export async function getRecentTabs(windowId) {
 
 // The switcher's order: most recently used (TabGlance's default), or the tab bar's order from the
 // current tab, wrapping around.
-export async function getSwitcherTabs(windowId) {
+export async function getTabSwitcherData(windowId) {
   const [tabs] = await Promise.all([getRecentTabs(windowId), Settings.onLoaded()]);
-  if (Settings.get("tabSwitcherOrder") !== "tabstrip") return tabs;
+  const previousId = tabs[1]?.id;
+  if (Settings.get("tabSwitcherOrder") !== "tabstrip") return { tabs, previousId };
   tabs.sort((a, b) => a.index - b.index);
   const current = Math.max(0, tabs.findIndex((tab) => tab.active));
-  return [...tabs.slice(current), ...tabs.slice(0, current)];
+  return { tabs: [...tabs.slice(current), ...tabs.slice(0, current)], previousId };
 }
 
-// Switch to the grid's initial selection in the configured order, without loading previews.
+export async function getSwitcherTabs(windowId) {
+  return (await getTabSwitcherData(windowId)).tabs;
+}
+
+// Quick taps always use visit history, independently of the grid's display order.
 export async function switchToPreviousRecentTab(tab) {
-  const tabs = await getSwitcherTabs(tab.windowId);
+  const tabs = await getRecentTabs(tab.windowId);
   const previous = tabs.find((candidate) => candidate.id !== tab.id);
   if (!previous) return null;
   await chrome.tabs.update(previous.id, { active: true });

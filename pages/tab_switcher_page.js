@@ -1,6 +1,6 @@
 import "../lib/utils.js";
 import "../lib/settings.js";
-import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
+import { orderTabSwitcherCards, selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
 // Keyboard-only tab switcher: a fixed MRU list for each gesture, with one grid of cards at a
@@ -15,7 +15,8 @@ const pageIndicator = document.getElementById("page-indicator");
 const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
 let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
-let tabs = []; // The tabs shown as cards, in shortcut order.
+let tabs = []; // Frozen visual order for this gesture, with pins in the leading cells.
+let selectionAnchors = {}; // Preserve the original current/last-used pair across fallback hops.
 let selectedIndex = 0;
 let selectedCard = null;
 let visiblePage = -1;
@@ -67,6 +68,10 @@ async function fetchTabs(options = {}) {
     console.error("Failed to load tabs:", err);
   }
   if (currentActivation !== activation) return;
+  selectionAnchors = {
+    sourceId: options.cycle?.sourceId ?? list.find((tab) => tab.active)?.id,
+    previousId: options.cycle?.previousId ?? list.find((tab) => tab.lastUsed)?.id ?? list[1]?.id,
+  };
   if (options.cycle) {
     const byId = new Map(list.map((tab) => [tab.id, tab]));
     const cycleIds = new Set(options.cycle.tabIds);
@@ -88,11 +93,9 @@ async function fetchTabs(options = {}) {
     hide();
     return;
   }
-  selectedIndex = options.cycle
-    ? Math.max(0, tabs.findIndex((tab) => tab.id === options.cycle.selectedId))
-    : options.reverse
-    ? tabs.length - 1
-    : Math.max(0, tabs.findIndex((tab) => tab.id === allTabs[1].id));
+  const selectedId = options.cycle?.selectedId ??
+    (options.reverse ? tabs.at(-1)?.id : selectionAnchors.previousId);
+  selectedIndex = Math.max(0, tabs.findIndex((tab) => tab.id === selectedId));
   render();
   // Show usable cards immediately; cached previews arrive without delaying keys or painting.
   panel.classList.add("ready");
@@ -105,7 +108,7 @@ async function fetchTabs(options = {}) {
 const pageSize = () => columnSetting() * layoutSetting("tabSwitcherRows", 1, 3);
 
 function chooseTabs() {
-  tabs = selectTabSwitcherCards(allTabs, pageSize());
+  tabs = orderTabSwitcherCards(selectTabSwitcherCards(allTabs, pageSize(), selectionAnchors));
 }
 
 async function loadScreenshots(currentActivation, tabsToLoad) {
