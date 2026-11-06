@@ -157,6 +157,18 @@ try {
     await page.bringToFront();
     await navigate(`${origin}/`);
     await page.waitForFunction(() => document.readyState === "complete");
+    // The page answers Brovim's messages only once Brovim has started there, which can take
+    // longer than the page's own load.
+    const id = await tabId();
+    for (let i = 0; i < 100; i++) {
+      const started = await worker.evaluate((id) =>
+        chrome.scripting.executeScript({
+          target: { tabId: id },
+          func: () => typeof normalMode !== "undefined" && !!normalMode,
+        }).then(([state]) => state?.result, () => false), id);
+      if (started) break;
+      await pause(20);
+    }
     await pause(150);
   };
   // Puppeteer pierces open shadow roots with its >>> selector.

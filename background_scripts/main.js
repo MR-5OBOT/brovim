@@ -19,7 +19,7 @@ import {
 } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { initializeInternalPages } from "./internal_pages.js";
-import { getTabSwitcherData, switchToPreviousRecentTab } from "./recent_tabs.js";
+import { getTabSwitcherData, isSleeping, switchToPreviousRecentTab } from "./recent_tabs.js";
 import {
   captureThumbnail,
   findThumbnails,
@@ -225,10 +225,9 @@ async function selectSpecificTab(request) {
     return null;
   });
   // A tab can close, move or go to sleep while the fixed grid is open. Pinned sleepers remain
-  // eligible and are woken only when selected; other unavailable tabs stay asleep. Frozen tabs are
-  // awake (see getRecentTabs).
+  // eligible and are woken only when selected; other unavailable tabs stay asleep.
   if (
-    request.awakeOnly && (!tab || (!tab.pinned && tab.discarded) || tab.hidden ||
+    request.awakeOnly && (!tab || (!tab.pinned && isSleeping(tab)) || tab.hidden ||
       (request.tab && request.tab.windowId !== tab.windowId))
   ) return false;
   // Focus the tab's window. TODO(philc): Why are we null-checking chrome.windows here?

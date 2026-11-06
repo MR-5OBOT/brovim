@@ -63,10 +63,9 @@ popup.
 ### Tab switcher
 
 The switcher works like TabGlance's: a grid of tab previews, most recently used first. Sleeping
-(discarded) unpinned tabs and hidden tabs are excluded. Frozen tabs are listed: the browser pauses
-background tabs (Helium does it within seconds), but they stay loaded and resume when selected.
-Pinned tabs stay eligible while sleeping and wake only when selected; awake background tabs remain
-available.
+unpinned tabs (discarded, frozen, or not loaded since the browser restarted) and hidden tabs are
+excluded. Pinned tabs stay eligible while sleeping and wake only when selected; awake background
+tabs remain available.
 
 The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
 reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its
@@ -106,7 +105,9 @@ shortcut switches directly using your chosen order. Further presses while held c
 list instead of bouncing between two tabs; the grid resumes on the next page that supports it.
 Protected pages cannot report key releases, so abandoned fallback gestures expire after three
 seconds of inactivity. The switcher never opens a separate window. The shortcut also works on
-excluded sites and while an input is focused. Unresponsive pages fall back to direct switching.
+excluded sites and while an input is focused. Unresponsive pages fall back to direct switching, as
+do sandboxed pages (raw.githubusercontent.com, for example): a page served in a sandbox passes it on
+to Brovim's frames, so the grid, Vomnibar, HUD and help can't open there.
 
 `Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
 active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`
@@ -196,9 +197,9 @@ BROVIM_NATIVE_DISPLAY=:91 ./make.js test-native
 kill "$brovim_xvfb_pid"
 ```
 
-This checks accelerator delivery, rapid cycling inside the recent grid, reverse cycling, modifier
-release and protected-page handoff. It refuses the desktop display, including equivalent screen
-aliases, so its keyboard events stay off your normal browser session.
+This checks accelerator delivery, rapid cycling through the grid, reverse cycling, modifier release
+and protected-page handoff. It refuses the desktop display, including equivalent screen aliases, so
+its keyboard events stay off your normal browser session.
 
 See [REPORT.md](REPORT.md) for the consolidated roadmap, implementation history, and verification
 results.

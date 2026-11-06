@@ -1,10 +1,15 @@
 import * as bgUtils from "./bg_utils.js";
 
+// Sleeping as the browser shows it: discarded, frozen, or not loaded since the browser started
+// (restored tabs that were never opened again are "unloaded" without being marked discarded).
+export function isSleeping(tab) {
+  return tab.discarded || tab.frozen || tab.status === "unloaded";
+}
+
 // Eligible tabs in this window: the active tab first, then tabs used this session (most recent
-// first), then other tabs by lastAccessed. Sleeping (discarded, so unloaded) unpinned tabs and
-// hidden tabs stay out of both the grid and the quick-switch path; pinned sleepers remain. Frozen
-// tabs are awake: the browser pauses background tabs (Helium within seconds), but they stay loaded
-// and resume as soon as they're selected.
+// first), then other tabs by lastAccessed. Sleeping unpinned tabs and hidden tabs stay out of both
+// the grid and the quick-switch path; pinned sleepers remain. (Headless Chromium freezes background
+// tabs within seconds, so tests must open the grid soon after creating background fixtures.)
 export async function getRecentTabs(windowId) {
   const [tabs] = await Promise.all([
     chrome.tabs.query({ windowId }),
@@ -12,7 +17,7 @@ export async function getRecentTabs(windowId) {
   ]);
   const rank = new Map(bgUtils.tabRecency.getTabsByRecency().map((id, index) => [id, index]));
   // Firefox tab-group extensions hide tabs; those aren't part of the visible window.
-  return tabs.filter((tab) => !tab.hidden && (tab.pinned || !tab.discarded)).sort((
+  return tabs.filter((tab) => !tab.hidden && (tab.pinned || !isSleeping(tab))).sort((
     a,
     b,
   ) =>
@@ -31,10 +36,6 @@ export async function getTabSwitcherData(windowId) {
   tabs.sort((a, b) => a.index - b.index);
   const current = Math.max(0, tabs.findIndex((tab) => tab.active));
   return { tabs: [...tabs.slice(current), ...tabs.slice(0, current)], previousId };
-}
-
-export async function getSwitcherTabs(windowId) {
-  return (await getTabSwitcherData(windowId)).tabs;
 }
 
 // Quick taps always use visit history, independently of the grid's display order.

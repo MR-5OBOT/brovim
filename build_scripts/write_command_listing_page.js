@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
-// Write a static version of the command_listing.html page to dist, to be hosted on vimium.github.io
-// as an online reference.
+// Write a static version of the command_listing.html page to dist/command_listing_page, a command
+// reference that works without the extension.
 
 import * as testHelper from "../tests/unit_tests/test_helper.js";
 import "../tests/unit_tests/test_chrome_stubs.js";

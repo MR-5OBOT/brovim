@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write --allow-env --allow-net --allow-run --allow-sys
 // Usage: ./make.js command. Use -l to list commands.
-// This is a set of tasks for building and testing Vimium in development.
+// This is a set of tasks for building and testing Brovim in development.
 import * as fs from "@std/fs";
 import * as path from "@std/path";
 import { abort, desc, run, task } from "drake";
@@ -459,7 +459,7 @@ task("package", ["write-command-listing"], async () => {
   await buildStorePackage();
 });
 
-desc("Build a static version of command_listing.html, to be hosted on vimium.gihub.io");
+desc("Write a static command reference page to dist/command_listing_page");
 task("write-command-listing", [], async () => {
   // Run this script in a separate shell so it doesn't pollute our JS environment.
   await shell("./build_scripts/write_command_listing_page.js", []);

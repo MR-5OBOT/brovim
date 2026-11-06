@@ -182,8 +182,18 @@ try {
     "No actual browser command was delivered",
   );
   const ids = await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id));
-  assert(ids.length === 18, "Native opening exceeded the recent grid limit");
-  pass("Native Alt+Q opens the recent grid through the browser accelerator");
+  // Every awake tab is listed, so the count depends on which background tabs the browser has
+  // frozen by now. The newest tabs are awake, and these few cards fit without paging.
+  const titles = await frame.$$eval(".card-title", (els) => els.map((el) => el.textContent));
+  assert(
+    titles.includes("Native19") && titles.includes("Native18"),
+    `The grid left out recent tabs: ${titles}`,
+  );
+  assert(
+    await frame.$$eval(".tab-card[hidden]", (cards) => cards.length === 0),
+    "Native opening paged instead of growing the grid",
+  );
+  pass("Native Alt+Q opens the grid through the browser accelerator");
   const started = performance.now();
   await keys(...Array(ids.length * 4 - 1).fill("tap:q"));
   await frame.waitForFunction(() =>
@@ -194,7 +204,7 @@ try {
     JSON.stringify(
       await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id)),
     ) === JSON.stringify(ids),
-    "Native cycling left the first recent grid",
+    "Native cycling changed the grid",
   );
   console.log(
     `${ids.length * 4 - 1} native repeats: ${Math.round(performance.now() - started)} ms`,

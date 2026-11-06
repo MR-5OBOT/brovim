@@ -14,7 +14,7 @@ import {
 } from "../../background_scripts/thumbnails.js";
 import * as Thumbnails from "../../background_scripts/thumbnails.js";
 import * as SwitcherCommands from "../../background_scripts/tab_switcher.js";
-import { getRecentTabs, getSwitcherTabs } from "../../background_scripts/recent_tabs.js";
+import { getRecentTabs, getTabSwitcherData } from "../../background_scripts/recent_tabs.js";
 import { orderTabSwitcherCards, tabSwitcherGrid } from "../../lib/tab_switcher.js";
 
 context("cancelled switcher openings", () => {
@@ -57,6 +57,15 @@ context("cancelled switcher openings", () => {
       assert.isFalse(TabSwitcher.tabSwitcherUI.showing);
     },
   );
+
+  should("keep the assigned shortcut when a key mapping opens the grid", async () => {
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Ctrl+Q"));
+    const opening = TabSwitcher.activate(0, { altCycle: true });
+    assert.equal(["ctrlKey"], TabSwitcher.shortcut.modifiers);
+    finishLoading();
+    assert.isTrue(await opening);
+    assert.equal(["ctrlKey"], messages[0].shortcut.modifiers);
+  });
 
   should("not show old previews after multiple quick switches during startup", async () => {
     stub(chrome.runtime, "sendMessage", () => Promise.resolve({ switched: true }));
@@ -191,7 +200,7 @@ context("configured switcher shortcut", () => {
       for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
       try {
         await Settings.set("tabSwitcherOrder", order);
-        const cards = orderTabSwitcherCards(await getSwitcherTabs(710));
+        const cards = orderTabSwitcherCards((await getTabSwitcherData(710)).tabs);
         assert.equal(
           [7101, 7104, 7106, 7107, 7108, 7100, 7102, 7103, 7105],
           cards.map((tab) => tab.id),
@@ -221,7 +230,7 @@ context("configured switcher shortcut", () => {
     assert.equal(null, list.find((tab) => tab.id === 7203).screenshot);
   });
   should(
-    "include sleeping pins and frozen tabs without exposing discarded unpinned or hidden tabs",
+    "include sleeping pinned tabs without exposing sleeping unpinned or hidden tabs",
     async () => {
       const tabs = [
         { id: 701, index: 0, windowId: 7, active: true },
@@ -230,10 +239,13 @@ context("configured switcher shortcut", () => {
         { id: 704, index: 3, windowId: 7, discarded: true },
         { id: 705, index: 4, windowId: 7, frozen: true },
         { id: 706, index: 5, windowId: 7, pinned: true, hidden: true },
+        // Restored after a browser restart and never opened again: unloaded, not "discarded".
+        { id: 707, index: 6, windowId: 7, status: "unloaded" },
+        { id: 708, index: 7, windowId: 7, pinned: true, status: "unloaded" },
       ];
       stub(chrome.tabs, "query", () => Promise.resolve(tabs));
       const visible = await getRecentTabs(7);
-      assert.equal([701, 702, 703, 705], visible.map((tab) => tab.id));
+      assert.equal([701, 702, 703, 708], visible.map((tab) => tab.id));
       stub(chrome.tabs, "get", (id) => Promise.resolve(tabs.find((tab) => tab.id === id)));
       stub(chrome.windows, "update", () => Promise.resolve());
       const selected = [];
@@ -409,7 +421,9 @@ context("configured switcher shortcut", () => {
     assert.equal([912, 915], selected);
     SwitcherCommands.endTabSwitcherCycle(889);
   });
-  for (const state of [{ discarded: true }, { hidden: true }]) {
+  for (
+    const state of [{ discarded: true }, { frozen: true }, { status: "unloaded" }, { hidden: true }]
+  ) {
     should(`not wake an unavailable grid selection: ${JSON.stringify(state)}`, async () => {
       stub(chrome.tabs, "get", () => Promise.resolve({ id: 901, windowId: 1, ...state }));
       stub(chrome.tabs, "update", () => {
@@ -421,17 +435,6 @@ context("configured switcher shortcut", () => {
       assert.isFalse(await sendRequestHandlers.selectSpecificTab({ id: 901, awakeOnly: true }));
     });
   }
-  should("select a frozen tab: it is still loaded and resumes when activated", async () => {
-    stub(chrome.tabs, "get", () => Promise.resolve({ id: 902, windowId: 1, frozen: true }));
-    stub(chrome.windows, "update", () => Promise.resolve());
-    const selected = [];
-    stub(chrome.tabs, "update", (id, change) => {
-      selected.push({ id, ...change });
-      return Promise.resolve();
-    });
-    await sendRequestHandlers.selectSpecificTab({ id: 902, awakeOnly: true });
-    assert.equal([{ id: 902, active: true }], selected);
-  });
   should("end a carried gesture if Control was released before its message arrived", () => {
     const messages = [];
     stub(TabSwitcher, "keyboardEventAt", 101);
@@ -552,7 +555,7 @@ context("TabSwitcher", () => {
     }
   });
 
-  should("quick switching skips discarded tabs, not frozen ones, in its window", async () => {
+  should("quick switching skips sleeping tabs and stays in the source window", async () => {
     stub(chrome.tabs, "query", (query) => {
       assert.equal({ windowId: 7 }, query);
       return Promise.resolve([
@@ -569,7 +572,7 @@ context("TabSwitcher", () => {
     });
     const result = await sendRequestHandlers.quickSwitchTab({ tab: { id: 201, windowId: 7 } });
     assert.isTrue(result.switched);
-    assert.equal({ id: 203, active: true }, selected);
+    assert.equal({ id: 204, active: true }, selected);
   });
 
   should("fetch open tabs with screenshot placeholders from background", async () => {
@@ -637,14 +640,13 @@ context("TabSwitcher", () => {
   );
 
   should(
-    "keep the active tab first and omit discarded tabs without limiting the eligible list",
+    "keep the active tab first and omit sleeping tabs without limiting the eligible list",
     async () => {
       const windowTabs = Array.from({ length: 15 }, (_, i) => ({ id: 100 + i, index: i }));
       windowTabs[0].active = true;
       windowTabs[1].discarded = true;
       windowTabs[2].frozen = true;
-      // The frozen tab (102) is awake and stays listed.
-      const expected = [100, ...windowTabs.slice(2).reverse().map((t) => t.id)];
+      const expected = [100, ...windowTabs.slice(3).reverse().map((t) => t.id)];
       stub(chrome.tabs, "query", () => Promise.resolve(windowTabs));
       await bgUtils.tabRecency.init();
       // Deliberately omit the active tab from recency; it must still appear first.

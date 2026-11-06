@@ -3,11 +3,10 @@ import "../lib/settings.js";
 import { orderTabSwitcherCards, tabSwitcherGrid } from "../lib/tab_switcher.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-// Keyboard-only tab switcher: a fixed MRU list for each gesture, with one grid of cards at a
-// time. The grid lists every eligible tab, growing to fit them, and cycling wraps through all of
-// them. Hold the assigned modifier and
-// repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l and Tab also move, Enter
-// switches, x/Delete/Backspace close the selected tab, and Escape cancels.
+// Keyboard-only tab switcher: a fixed MRU list for each gesture, shown as one grid of cards. The
+// grid lists every eligible tab, growing to fit them, and cycling wraps through all of them. Hold
+// the assigned modifier and repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l
+// and Tab also move, Enter switches, x/Delete/Backspace close the selected tab, and Escape cancels.
 
 const panel = document.getElementById("panel");
 const grid = document.getElementById("tab-switcher");
@@ -16,7 +15,7 @@ const pageIndicator = document.getElementById("page-indicator");
 const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
 let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
-let tabs = []; // Frozen visual order for this gesture, with pins in the leading cells.
+let tabs = []; // The visual order, fixed for this gesture, with pins in the leading cells.
 let layout = { columns: 6, rows: 3 }; // The grid's size for these tabs; see gridLayout.
 let selectedIndex = 0;
 let selectedCard = null;

@@ -179,8 +179,6 @@ class VomnibarUI {
       return "ctrl-enter";
     } else if (event.key === "Enter") {
       return "enter";
-    } else if ((event.key === "Delete") && event.shiftKey && !event.ctrlKey && !event.altKey) {
-      return "remove";
     } else if (KeyboardUtils.isBackspace(event)) {
       return "delete";
     }
@@ -248,9 +246,6 @@ class VomnibarUI {
       } else {
         return; // Do not suppress event.
       }
-    } else if ((action === "remove") && (this.selection >= 0)) {
-      const completion = this.completions[this.selection];
-      console.log(completion);
     }
 
     event.stopImmediatePropagation();

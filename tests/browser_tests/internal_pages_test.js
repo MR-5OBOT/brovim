@@ -90,10 +90,10 @@ try {
         }
         throw new Error(`Brovim did not initialize on ${urlPrefix}`);
       };
-      // After this suite's settings changes, Helium sometimes reloads a reloaded Settings page a
-      // second time, up to ~300ms later (a "reload" navigation that neither Brovim nor Puppeteer
-      // requests). Keys typed before it would reach the discarded page, so wait for a full second
-      // without navigation.
+      // After this suite's settings changes, Helium reloads a freshly loaded Settings page once more
+      // by itself (a "reload" navigation that neither Brovim nor Puppeteer requests; an untouched
+      // Settings page doesn't do it). Helium 0.20 did it within ~300ms, 0.21 after ~2.7-3s. Keys or
+      // a navigation started before it are lost, so wait for four seconds without navigation.
       const settle = async (load) => {
         let lastNavigation = Date.now();
         const onNavigation = (frame) => {
@@ -102,7 +102,7 @@ try {
         page.on("framenavigated", onNavigation);
         try {
           await load();
-          while (Date.now() - lastNavigation < 1000) {
+          while (Date.now() - lastNavigation < 4000) {
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
         } finally {

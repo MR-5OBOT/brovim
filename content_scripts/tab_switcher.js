@@ -41,7 +41,7 @@ const TabSwitcher = {
     ) {
       return { opened: true, cancelled: true };
     }
-    this.shortcut = options.shortcut ?? Utils.parseBrowserShortcut();
+    this.shortcut = options.shortcut ?? this.shortcut;
     if (options.cycle || !this.tabSwitcherUI?.showing) this.cycle = options.cycle ?? null;
     this.currentRequestId = requestId;
     const focusedInFrame = ["IFRAME", "FRAME"].includes(document.activeElement?.tagName);
@@ -78,7 +78,8 @@ const TabSwitcher = {
 
   open(sourceFrameId, options) {
     this.init();
-    this.shortcut = options?.shortcut ?? Utils.parseBrowserShortcut();
+    // A key mapping passes no shortcut; keep the assigned one this page learned at startup.
+    this.shortcut = options?.shortcut ?? this.shortcut;
     if (!globalThis.isUnitTests) HelpDialog.abort();
     this.isAltCycling = options?.altCycle !== false;
     this.isOpening = true;
@@ -99,7 +100,7 @@ const TabSwitcher = {
           name: "activate",
           overlayId,
           isAltCycle: this.isAltCycling,
-          shortcut: options?.shortcut ?? Utils.parseBrowserShortcut(),
+          shortcut: this.shortcut,
           cycle: options?.cycle,
           reverse: options?.reverse,
           commitOnOpen: this.pendingCommit,

@@ -2,9 +2,9 @@
 
 **Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
 **Base:** Based on `philc/vimium` (full history kept; no longer a GitHub fork)\
-**Date:** November 4, 2026\
-**Status:** Startup, recency and browser-lifecycle fixes verified locally; changes remain
-uncommitted. See section 13.
+**Date:** November 6, 2026\
+**Status:** The switcher lists every awake tab in a grid that grows to fit, and the reported
+extension errors are fixed; verified. See section 17.
 
 ---
 
@@ -884,3 +884,93 @@ reopenings, 36 ms for a quick swap, and 32 ms total for nineteen queued command-
 Timing includes automation overhead and depends on the browser/device. Platform constraints remain
 as documented in README: Chrome captures only the active tab; protected pages cannot report key
 release; browser-reserved Ctrl+Tab needs browser-level shortcut configuration.
+
+## 17. Every Awake Tab, Reported Errors and a Code Review (November 6, 2026)
+
+The user asked whether the switcher lists all active tabs and supplied an extension-error
+screenshot. Both problems reproduced in Helium before the fixes. This section supersedes the card
+cap in sections 14–16.
+
+### Every awake tab
+
+- Sleeping unpinned tabs stay hidden, as section 11 set out, and "sleeping" now also covers tabs
+  restored after a browser restart that were never opened again: Chromium reports them as `unloaded`
+  without marking them discarded, so they had been listed as awake. An intermediate change listed
+  frozen tabs, because headless Helium freezes background tabs within seconds (27 of 33 in one
+  check). In normal use Helium shows frozen tabs as sleeping, and the user saw over 20 cards with
+  about 9 awake tabs, so that was reverted. Browser tests must therefore open the grid soon after
+  creating background fixtures.
+- The configured columns × rows is where the grid starts, not a cap. It adds columns and rows,
+  keeping about twice as wide as tall and widening the panel up to 90vw, until every tab has a cell,
+  while cards stay at least about 140 × 120 px (at most 10 × 6). Only past that does keyboard paging
+  begin. 33 tabs show as 9 × 4 at 1920 × 1080. Protected-page cycling uses the same list.
+
+### Reported errors
+
+- `Unchecked runtime.lastError: No tab with id` came from `chrome.action.setIcon` in
+  `initializeFrame`, for a tab that closed or was replaced before the call ran. setIcon reports this
+  only through `lastError`, which `.catch()` doesn't consume, so a callback now reads it.
+- `Blocked script execution … sandboxed` came from loading UI frames on pages served with a CSP
+  sandbox, such as raw.githubusercontent.com. The frames inherit the sandbox and never start. Brovim
+  no longer loads them on opaque-origin pages, and the shortcut switches tabs directly there. A
+  sandbox that keeps `allow-same-origin` without `allow-scripts` can't be detected from a content
+  script.
+
+### Speed
+
+The switcher frame now loads, and a stopped background worker wakes, when the shortcut's modifier
+goes down, before its letter. Pages learn the assigned shortcut when they initialize, so a
+reassigned Ctrl+Q warms up as well. With Alt pressed 80 ms before Q, the first grid on a page paints
+in 27–43 ms instead of 63–98 ms (timestamps inside the page and frame). Later openings (12–32 ms),
+steps (about 5 ms), commits (about 7 ms) and quick taps (7–22 ms) are unchanged. On a page busy with
+long tasks, a step can wait for the page's main thread: up to 85 ms with 80 ms tasks.
+
+### Review and cleanup
+
+- Synthetic key events no longer reach the switcher's modifier tracking, so a page can't fake an Alt
+  release to commit the grid. Escape while holding Alt still cancels and stays on the tab.
+- Opening the switcher from a key mapping keeps the page's assigned shortcut instead of resetting
+  release detection to Alt.
+- Find mode now matches across inline formatting and open shadow roots. Reading each computed style
+  once per element made it 16–17% faster per keystroke: about 38 ms on an 18,000-element page,
+  against about 23 ms for the earlier per-text-node search.
+- Removed the Vomnibar's undocumented Shift+Delete action, which only logged the selection and
+  blocked the input's normal Shift+Delete, and the test-only `getSwitcherTabs` wrapper.
+- Backups are validated before anything is written, the popup rejects invalid exclusion patterns,
+  private find history survives new tabs, the history cache's binary search handles an empty list,
+  and unit tests in subdirectories run again.
+
+### Test fixes
+
+- Lifecycle and frame lookups wait for the frame by URL: Puppeteer can list a just-shown extension
+  frame before it knows the URL.
+- The popup checks wait for its script: the static button is visible before its handler exists.
+- After the internal-pages suite's earlier steps, Helium reloads a freshly loaded Settings page once
+  more by itself: within about 300 ms on Helium 0.20, after 2.7–3 s on 0.21. Neither Brovim nor
+  Puppeteer requests it, and an untouched Settings page doesn't do it. Keys typed or a navigation
+  started before it are lost, so the test waits for four seconds without navigation first.
+- The main suite's `fresh()` waits until Brovim has started on the page before a test messages it;
+  the page's own load can finish first.
+- New checks cover Escape while holding Alt, grown grids at three screen sizes, sandboxed pages,
+  setIcon on a vanished tab (the suite now records logged worker lastErrors), the modifier warm-up,
+  a reassigned shortcut's warm-up, a key-mapped opening keeping that shortcut, and unloaded tabs.
+  The Escape, setIcon, sandbox, shortcut and sleeping-tab checks were each shown to fail on a copy
+  without the fix.
+
+### Verification
+
+Helium was upgraded from 0.20.3.1 to 0.21.1.1 (Chrome 157) during this work; the final runs used
+0.21.
+
+| Check                                                 | Result     |
+| ----------------------------------------------------- | ---------- |
+| Formatting, lint and diff whitespace                  | Pass       |
+| Unit tests                                            | 322/322    |
+| DOM tests                                             | 95/95      |
+| Installed source browser suite                        | 86/86      |
+| Extracted Chrome Web Store ZIP browser suite          | 86/86      |
+| Incognito and worker-restart lifecycle                | 7/7        |
+| Internal pages, 9 runs on 0.21 with the 4-second wait | 10/10 each |
+| Firefox 159.0.1 with the Firefox package              | 9/9        |
+| Native Alt+Q on Xvfb, source and Web Store ZIP        | 7/7 each   |
+| Chrome, Chrome Web Store and Firefox package builds   | Pass       |
