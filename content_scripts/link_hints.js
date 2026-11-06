@@ -821,12 +821,7 @@ class LinkHintsMode {
 // Use characters for hints, and do not filter links by their text.
 class AlphabetHints {
   constructor() {
-    this.linkHintCharacters = Settings.get("linkHintCharacters").toLowerCase();
-    // Ensure we have more than 1 character to generate hint strings. With 1 character, every hint
-    // will be another hint's prefix ("1", "11", ...).
-    if (this.linkHintCharacters.length <= 1) {
-      throw new Error("The linkHintCharacters setting must have more than 1 character.");
-    }
+    this.linkHintCharacters = Settings.getHintCharacters("linkHintCharacters");
     this.hintKeystrokeQueue = [];
   }
 
@@ -890,12 +885,7 @@ class AlphabetHints {
 // Use characters for hints, and also filter links by their text.
 class FilterHints {
   constructor() {
-    this.linkHintNumbers = Settings.get("linkHintNumbers").toUpperCase();
-    // Ensure we have more than 1 character to generate hint strings. With 1 character, every hint
-    // will be another hint's prefix ("1", "11", ...).
-    if (this.linkHintNumbers.length <= 1) {
-      throw new Error("The linkHintNumbers setting must have more than 1 character.");
-    }
+    this.linkHintNumbers = Settings.getHintCharacters("linkHintNumbers");
 
     this.hintKeystrokeQueue = [];
     this.linkTextKeystrokeQueue = [];

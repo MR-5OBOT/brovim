@@ -974,3 +974,28 @@ Helium was upgraded from 0.20.3.1 to 0.21.1.1 (Chrome 157) during this work; the
 | Firefox 159.0.1 with the Firefox package              | 9/9        |
 | Native Alt+Q on Xvfb, source and Web Store ZIP        | 7/7 each   |
 | Chrome, Chrome Web Store and Firefox package builds   | Pass       |
+
+## 18. Find and Hint Audit Fixes (November 6, 2026)
+
+Five bugs reproduced beyond the existing test suite: stale find results on live pages, matches
+remaining outside nested scrolling panes, phrases missed when HTML whitespace collapses on screen,
+case-equivalent hint letters producing duplicate labels, and repeat search failing after navigation.
+
+- `n` and `N` rebuild matches from current content and resume the saved query on newly loaded pages.
+  They keep the current selection as the starting point, wrap in either direction, and distinguish
+  an absent query from a query with no remaining matches.
+- Find scrolls each containing pane and then the viewport, horizontally and vertically, including
+  across open shadow roots. It uses the matched text's rectangle rather than its parent's size.
+- Search text collapses ordinary HTML whitespace across inline nodes while keeping source offsets
+  for selection. Preformatted whitespace remains literal.
+- Settings and backup validation check hint alphabets after case normalization. Previously saved
+  duplicate alphabets are deduplicated without changing character order; unusable alphabets fall
+  back to defaults so link hints remain available.
+
+The new DOM and settings regressions failed before the fixes. Additional installed-browser checks
+exercise actual search keys, reloads, dynamic content, scrolling panes and saved hint settings.
+
+Verification: formatting/lint and diff whitespace passed; 324 unit tests, 101 DOM tests, 89
+installed Chromium browser tests and 10 internal-page tests passed. All three packages built
+successfully; archive CRCs and the changed runtime files were verified against the source. Firefox
+runtime and native X11 shortcut tests were not rerun for this change.

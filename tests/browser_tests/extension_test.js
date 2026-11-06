@@ -1035,6 +1035,104 @@ try {
     await key(["Escape"]);
   });
 
+  await check("find repeats refresh live content and resume after reload", async () => {
+    await fresh();
+    await key(["/"]);
+    const hud = await ui("vimium-hud-frame");
+    await hud.waitForFunction(() => document.activeElement.id === "hud-find-input");
+    await page.keyboard.type("needle.*[x]");
+    await hud.waitForFunction(() =>
+      document.querySelector("#hud-match-count").textContent.includes("2")
+    );
+    await key(["Enter"]);
+    await page.evaluate(() => {
+      for (const p of document.querySelectorAll("p")) p.textContent = "replacement";
+      const p = document.createElement("p");
+      p.id = "new-match";
+      p.textContent = "needle.*[x] added";
+      document.body.prepend(p);
+    });
+    await key(["n"]);
+    assert(
+      await page.evaluate(() =>
+        getSelection().toString() === "needle.*[x]" &&
+        getSelection().anchorNode.parentElement.id === "new-match"
+      ),
+      "n did not find the new content",
+    );
+    await fresh();
+    await key(["n"]);
+    assert(
+      await page.evaluate(() =>
+        getSelection().anchorNode?.parentElement.textContent ===
+          "Literal needle.*[x] first"
+      ),
+      "n did not resume at the first match after reload",
+    );
+    await fresh();
+    await key(["N"]);
+    assert(
+      await page.evaluate(() =>
+        getSelection().anchorNode?.parentElement.textContent ===
+          "Literal needle.*[x] second"
+      ),
+      "N did not resume at the last match after reload",
+    );
+    await key(["Escape"]);
+  });
+
+  await check("find reveals rendered phrases inside a scrolling panel", async () => {
+    await fresh();
+    await page.evaluate(() => {
+      document.body.innerHTML = '<div id="pane" style="height:180px;overflow:auto">' +
+        '<div style="height:2000px"></div><p>hello\n    <b>world</b></p></div>';
+    });
+    await key(["/"]);
+    const hud = await ui("vimium-hud-frame");
+    await hud.waitForFunction(() => document.activeElement.id === "hud-find-input");
+    await page.keyboard.type("hello world");
+    await hud.waitForFunction(() =>
+      document.querySelector("#hud-match-count").textContent.includes("1")
+    );
+    await key(["Enter"]);
+    assert(
+      await page.evaluate(() => {
+        const selection = getSelection();
+        const pane = document.querySelector("#pane");
+        const match = selection.getRangeAt(0).getBoundingClientRect();
+        const bounds = pane.getBoundingClientRect();
+        return selection.toString() === "hello world" && pane.scrollTop > 0 &&
+          match.top >= bounds.top && match.bottom <= bounds.bottom;
+      }),
+      "The rendered phrase was not selected and scrolled into view",
+    );
+    await key(["Escape"]);
+  });
+
+  await check(
+    "mixed-case hint alphabets are rejected and old saved duplicates recover",
+    async () => {
+      await fresh();
+      await setOption("linkHintCharacters", "aA");
+      await options.click("#save");
+      await options.waitForSelector('[name="linkHintCharacters"].validation-error');
+      await setOption("linkHintCharacters", "sadfjklewcmpgh");
+      await save();
+      // An older version could already have saved the invalid value.
+      await worker.evaluate(() => Settings.set("linkHintCharacters", "aa"));
+      await page.waitForFunction(() => document.hasFocus());
+      await pause();
+      await key(["f"]);
+      await page.waitForSelector(".vimiumHintMarker");
+      const labels = (await hints()).map((hint) => hint.text);
+      assert(labels.length > 1 && new Set(labels).size === labels.length, "Duplicate hint labels");
+      await key(["Escape"]);
+      await worker.evaluate(() =>
+        Settings.set("linkHintCharacters", Settings.defaultOptions.linkHintCharacters)
+      );
+    },
+  );
+
   await check("F opens a background link and the queue command opens multiple links", async () => {
     await fresh();
     const count = (await browser.pages()).length;

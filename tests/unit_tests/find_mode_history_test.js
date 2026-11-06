@@ -33,6 +33,10 @@ context("private find history", () => {
     assert.equal(["normal search"], data.findModeRawQueryList);
   });
 
+  should("allow a repeat key before history finishes loading", () => {
+    assert.equal("", FindModeHistory.getQuery());
+  });
+
   should("keep an explicitly empty private history empty", async () => {
     data = { findModeRawQueryList: ["normal search"], findModeRawQueryListIncognito: [] };
     await FindModeHistory.init();

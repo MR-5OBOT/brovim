@@ -300,7 +300,7 @@ function getValidationErrors() {
   }
 
   // linkHintCharacters field.
-  text = getOptionEl("linkHintCharacters").value.trim();
+  text = getOptionEl("linkHintCharacters").value.trim().toLowerCase();
   if (text != removeDuplicateChars(text)) {
     results["linkHintCharacters"] = "This cannot contain duplicate characters.";
   } else if (text.length <= 1) {
@@ -308,7 +308,7 @@ function getValidationErrors() {
   }
 
   // linkHintNumbers field.
-  text = getOptionEl("linkHintNumbers").value.trim();
+  text = getOptionEl("linkHintNumbers").value.trim().toUpperCase();
   if (text != removeDuplicateChars(text)) {
     results["linkHintNumbers"] = "This cannot contain duplicate characters.";
   } else if (text.length <= 1) {

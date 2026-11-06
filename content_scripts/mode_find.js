@@ -194,16 +194,23 @@ class FindMode extends Mode {
     return this.getQueryFromRegexMatches();
   }
 
-  // Returns null if no search has been performed yet.
+  // Refresh on every repeat: live pages can replace, hide or append matching content without
+  // changing the saved query. Start from the selection, including on a newly navigated page.
   static getQuery(backwards) {
-    if (!this.query) return;
-    // check if the query has been changed by a script in another frame
     const mostRecentQuery = FindModeHistory.getQuery();
-    if (mostRecentQuery !== this.query.rawQuery) {
-      this.updateQuery(mostRecentQuery);
-    }
-
-    return this.getNextQueryFromRegexMatches(backwards);
+    this.updateQuery(mostRecentQuery);
+    const selection = globalThis.getSelection();
+    const selected = selection.rangeCount ? selection.getRangeAt(0) : null;
+    const match = this.query.matches[this.query.activeMatchIndex]?.range;
+    const isCurrentMatch = selected && match &&
+      selected.startContainer === match.startContainer &&
+      selected.startOffset === match.startOffset &&
+      selected.endContainer === match.endContainer && selected.endOffset === match.endOffset;
+    // Forward search includes the first match at/after the cursor unless it is already selected.
+    // Backward search takes the preceding match, wrapping to the last when no selection exists.
+    return backwards || isCurrentMatch
+      ? this.getNextQueryFromRegexMatches(backwards)
+      : this.getQueryFromRegexMatches();
   }
 
   static saveQuery() {
@@ -215,7 +222,7 @@ class FindMode extends Mode {
     let result = null;
     options = Object.assign({
       backwards: false,
-      caseSensitive: !this.query.ignoreCase,
+      caseSensitive: !this.query?.ignoreCase,
       colorSelection: true,
     }, options);
     if (query == null) {
@@ -228,7 +235,7 @@ class FindMode extends Mode {
       document.removeEventListener("selectionchange", this.restoreDefaultSelectionHighlight, true);
     }
 
-    const match = this.query.matches?.[this.query.activeMatchIndex];
+    const match = this.query?.matches?.[this.query.activeMatchIndex];
     if (query && match?.range.startContainer.isConnected) {
       result = highlight(match.range);
     }
@@ -284,7 +291,7 @@ class FindMode extends Mode {
   static findNext(backwards) {
     // Bail out if we don't have any query text.
     const nextQuery = FindMode.getQuery(backwards);
-    if (!nextQuery) {
+    if (!FindMode.query.rawQuery) {
       HUD.show("No query to find.", 1000);
       return;
     }
@@ -366,17 +373,37 @@ const highlight = (matchRange) => {
   selection.removeAllRanges();
   selection.addRange(range);
 
-  // Ensure the highlighted element is visible within the viewport.
-  const rect = range.getBoundingClientRect();
-  if (rect.top < 0 || rect.bottom > globalThis.innerHeight) {
-    const screenHeight = globalThis.innerHeight;
-    globalThis.scrollTo({
-      top: globalThis.scrollY + rect.top + rect.height / 2 - screenHeight / 2,
-      // Scroll instantly when we find a search result. This matches the behavior of Chrome and
-      // Firefox's native search UI. See #4661.
+  // Reveal the actual text range, rather than its potentially much larger parent element.
+  // Walk from the innermost scrollport out through slots/shadow hosts, then the viewport.
+  const delta = (start, end, min, max) =>
+    start < min || end > max ? (start + end - min - max) / 2 : 0;
+  let element = range.startContainer.nodeType === Node.ELEMENT_NODE
+    ? range.startContainer
+    : range.startContainer.assignedSlot || range.startContainer.parentElement ||
+      range.startContainer.getRootNode().host;
+  while (element && element !== document.scrollingElement) {
+    const rect = range.getBoundingClientRect();
+    const bounds = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const left = bounds.left + element.clientLeft;
+    const top = bounds.top + element.clientTop;
+    element.scrollBy({
+      left: /^(auto|scroll|hidden)$/.test(style.overflowX)
+        ? delta(rect.left, rect.right, left, left + element.clientWidth)
+        : 0,
+      top: /^(auto|scroll|hidden)$/.test(style.overflowY)
+        ? delta(rect.top, rect.bottom, top, top + element.clientHeight)
+        : 0,
       behavior: "instant",
     });
+    element = element.assignedSlot || element.parentElement || element.getRootNode().host;
   }
+  const rect = range.getBoundingClientRect();
+  globalThis.scrollBy({
+    left: delta(rect.left, rect.right, 0, globalThis.innerWidth),
+    top: delta(rect.top, rect.bottom, 0, globalThis.innerHeight),
+    behavior: "instant",
+  });
 
   return true;
 };
@@ -409,29 +436,64 @@ const collectFindMatches = (pattern) => {
   let parts = [], text = [], length = 0;
   const flush = () => {
     const value = text.join("");
+    // Collapsible whitespace at a block's edges is not rendered.
+    const leading = parts[0]?.collapsed ? 1 : 0;
+    const trailing = parts.at(-1)?.collapsed ? 1 : 0;
+    const rendered = value.slice(leading, value.length - trailing);
     pattern.lastIndex = 0;
     let match, startPart = 0, endPart = 0;
-    while ((match = pattern.exec(value)) !== null) {
+    while ((match = pattern.exec(rendered)) !== null) {
+      match.index += leading;
       const end = match.index + match[0].length;
       while (parts[startPart].end <= match.index) startPart++;
       endPart = Math.max(startPart, endPart);
       while (parts[endPart].end < end) endPart++;
       const range = document.createRange();
-      range.setStart(parts[startPart].node, match.index - parts[startPart].start);
-      range.setEnd(parts[endPart].node, end - parts[endPart].start);
+      const first = parts[startPart], last = parts[endPart];
+      range.setStart(first.node, first.offset + (first.collapsed ? 0 : match.index - first.start));
+      range.setEnd(
+        last.endNode,
+        last.collapsed ? last.endOffset : last.offset + end - last.start,
+      );
       matches.push({ text: match[0], range });
     }
     parts = [];
     text = [];
     length = 0;
   };
-  const visit = (node, visible = true) => {
+  const visit = (node, visible = true, whiteSpace = "normal") => {
     if (node.nodeType === Node.TEXT_NODE) {
       if (!visible || !node.data.length) return;
       if (parts.length && parts[0].node.getRootNode() !== node.getRootNode()) flush();
-      parts.push({ node, start: length, end: length + node.data.length });
-      text.push(node.data);
-      length += node.data.length;
+      // Retain source offsets while collapsing only whitespace CSS actually collapses. A run
+      // may span inline elements, so consecutive collapsed parts share one rendered space.
+      const collapse = /^(normal|nowrap|pre-line)$/.test(whiteSpace);
+      const tokens = !collapse ? [{ 0: node.data, index: 0 }] : node.data.matchAll(
+        whiteSpace === "pre-line" ? /[ \t\r\f]+|[^ \t\r\f]+/g : /[ \t\r\n\f]+|[^ \t\r\n\f]+/g,
+      );
+      for (const token of tokens) {
+        const collapsed = collapse && /^[ \t\r\n\f]+$/.test(token[0]) &&
+          !(whiteSpace === "pre-line" && token[0].includes("\n"));
+        const previous = parts.at(-1);
+        const endOffset = token.index + token[0].length;
+        if (collapsed && previous?.collapsed) {
+          previous.endNode = node;
+          previous.endOffset = endOffset;
+          continue;
+        }
+        const value = collapsed ? " " : token[0];
+        parts.push({
+          node,
+          offset: token.index,
+          endNode: node,
+          endOffset,
+          start: length,
+          end: length + value.length,
+          collapsed,
+        });
+        text.push(value);
+        length += value.length;
+      }
       return;
     }
     if (
@@ -453,7 +515,7 @@ const collectFindMatches = (pattern) => {
         ? node.assignedNodes({ flatten: true })
         : node.childNodes);
     const childrenVisible = style.visibility !== "hidden" && style.visibility !== "collapse";
-    for (const child of children) visit(child, childrenVisible);
+    for (const child of children) visit(child, childrenVisible, style.whiteSpace);
     if (boundary) flush();
   };
   if (document.body) visit(document.body);

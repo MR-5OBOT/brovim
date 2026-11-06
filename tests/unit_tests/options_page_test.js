@@ -78,6 +78,19 @@ context("options page", () => {
     assert.equal("example.com", el.value);
   });
 
+  should("reject hint characters that collide after case normalization", async () => {
+    for (const name of ["linkHintCharacters", "linkHintNumbers"]) {
+      const field = optionsPage.getOptionEl(name);
+      field.value = "aA";
+      await optionsPage.saveOptions();
+      assert.isTrue(field.classList.contains("validation-error"));
+      assert.equal(Settings.defaultOptions[name], Settings.get(name));
+      field.value = "Ab";
+      await optionsPage.saveOptions();
+      assert.isFalse(field.classList.contains("validation-error"));
+    }
+  });
+
   context("backup", () => {
     should(
       "reject invalid backup shapes and types before changing settings or storage",
@@ -98,6 +111,8 @@ context("options page", () => {
             { tabSwitcherRows: 4 },
             { scrollStepSize: -1 },
             { linkHintCharacters: "a" },
+            { linkHintCharacters: "aA" },
+            { linkHintNumbers: "aA" },
           ]
         ) {
           let error;

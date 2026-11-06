@@ -899,6 +899,104 @@ context("FindMode rendered text", () => {
     assert.equal("contentsneedle", globalThis.getSelection().toString());
   });
 
+  should("refresh repeat searches after matches are replaced or added", () => {
+    stub(FindModeHistory, "getQuery", () => "dynamicneedle");
+    fixture.innerHTML = "<p>dynamicneedle old</p><p>dynamicneedle old</p>";
+    FindMode.updateQuery("dynamicneedle");
+    FindMode.execute("dynamicneedle", { colorSelection: false });
+    fixture.innerHTML = "<p>replacement</p><p>dynamicneedle new</p>";
+    FindMode.findNext(false);
+    assert.equal("dynamicneedle", getSelection().toString());
+    assert.equal("dynamicneedle new", getSelection().anchorNode.parentElement.textContent);
+    assert.equal(1, FindMode.query.matchCount);
+    fixture.insertAdjacentHTML("beforeend", "<p>dynamicneedle appended</p>");
+    FindMode.findNext(false);
+    assert.equal("dynamicneedle appended", getSelection().anchorNode.parentElement.textContent);
+    FindMode.findNext(true);
+    assert.equal("dynamicneedle new", getSelection().anchorNode.parentElement.textContent);
+    fixture.innerHTML = "<p>no matching text</p>";
+    const messages = [];
+    stub(HUD, "show", (text) => messages.push(text));
+    FindMode.findNext(false);
+    assert.isFalse(!!FindMode.query.hasResults);
+    assert.equal(["No matches for 'dynamicneedle'"], messages);
+  });
+
+  should("resume saved searches in either direction without skipping the first match", () => {
+    stub(FindModeHistory, "getQuery", () => "savedneedle");
+    fixture.innerHTML = "<p>savedneedle first</p><p>savedneedle last</p>";
+    FindMode.findNext(false);
+    assert.equal("savedneedle first", getSelection().anchorNode.parentElement.textContent);
+    FindMode.findNext(false);
+    assert.equal("savedneedle last", getSelection().anchorNode.parentElement.textContent);
+    FindMode.query = null;
+    getSelection().removeAllRanges();
+    FindMode.findNext(true);
+    assert.equal("savedneedle last", getSelection().anchorNode.parentElement.textContent);
+  });
+
+  should("collapse rendered whitespace across nodes but preserve preformatted spacing", () => {
+    fixture.innerHTML = "<p>hello\n    <b> \tworld</b> again</p>" +
+      '<pre>hello\n    world</pre><p style="white-space:pre-wrap">hello  world</p>';
+    assert.equal(1, FindMode.updateQuery("hello world"));
+    assert.isTrue(FindMode.execute("hello world", { colorSelection: false }));
+    assert.equal("hello world", getSelection().toString());
+    assert.equal(
+      fixture.querySelector("b").firstChild,
+      FindMode.query.matches[0].range.endContainer,
+    );
+    assert.equal(7, FindMode.query.matches[0].range.endOffset);
+    assert.equal(1, FindMode.updateQuery("hello  world"));
+    assert.equal(1, FindMode.updateQuery("hello\n    world"));
+  });
+
+  should("reveal a match inside nested scrolling panes on both axes", () => {
+    fixture.innerHTML = '<div style="width:180px;height:120px;overflow:auto">' +
+      '<div style="padding:300px;width:250px"><div style="width:200px;height:100px;overflow:auto">' +
+      '<div style="height:1000px;width:2000px"></div><span style="margin-left:1000px">paneneedle</span>' +
+      "</div></div></div>";
+    const outer = fixture.firstElementChild;
+    const inner = outer.firstElementChild.firstElementChild;
+    FindMode.updateQuery("paneneedle");
+    FindMode.execute("paneneedle", { colorSelection: false });
+    const rect = getSelection().getRangeAt(0).getBoundingClientRect();
+    for (const pane of [inner, outer]) {
+      const bounds = pane.getBoundingClientRect();
+      assert.isTrue(pane.scrollTop > 0);
+      assert.isTrue(pane.scrollLeft > 0);
+      assert.isTrue(rect.top >= bounds.top && rect.bottom <= bounds.bottom);
+      assert.isTrue(rect.left >= bounds.left && rect.right <= bounds.right);
+    }
+  });
+
+  should("repeat searches and scroll matches inside open shadow roots", () => {
+    stub(FindModeHistory, "getQuery", () => "shadowrepeat");
+    const host = document.createElement("section");
+    fixture.append(host);
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = '<div style="height:100px;overflow:auto"><p>shadowrepeat first</p>' +
+      '<div style="height:1000px"></div><p>shadowrepeat last</p></div>';
+    FindMode.findNext(false);
+    assert.equal(0, FindMode.query.activeMatchIndex);
+    FindMode.findNext(false);
+    assert.equal(1, FindMode.query.activeMatchIndex);
+    assert.isTrue(root.firstElementChild.scrollTop > 0);
+    FindMode.findNext(true);
+    assert.equal(0, FindMode.query.activeMatchIndex);
+    assert.equal(0, root.firstElementChild.scrollTop);
+  });
+
+  should("scroll the host when matching text directly inside a shadow root", () => {
+    const host = document.createElement("section");
+    host.style.cssText = "height:100px;overflow:auto";
+    fixture.append(host);
+    host.attachShadow({ mode: "open" }).innerHTML =
+      '<div style="height:1000px"></div>directshadowneedle';
+    FindMode.updateQuery("directshadowneedle");
+    FindMode.execute("directshadowneedle", { colorSelection: false });
+    assert.isTrue(host.scrollTop > 0);
+  });
+
   should("search and highlight formatted text inside open shadow roots", () => {
     const host = document.createElement("section");
     fixture.append(host);
