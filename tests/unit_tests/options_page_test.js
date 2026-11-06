@@ -79,6 +79,70 @@ context("options page", () => {
   });
 
   context("backup", () => {
+    should(
+      "reject invalid backup shapes and types before changing settings or storage",
+      async () => {
+        await Settings.set("scrollStepSize", 90);
+        const before = Settings.getSettings();
+        const stored = await chrome.storage.sync.get(null);
+        for (
+          const backup of [
+            null,
+            [],
+            "settings",
+            { exclusionRules: null },
+            { exclusionRules: [{ pattern: "*", passKeys: null }] },
+            { exclusionRules: [{ pattern: "[", passKeys: "" }] },
+            { keyMappings: [] },
+            { smoothScroll: "yes" },
+            { tabSwitcherRows: 4 },
+            { scrollStepSize: -1 },
+            { linkHintCharacters: "a" },
+          ]
+        ) {
+          let error;
+          try {
+            await optionsPage.restoreBackup(JSON.stringify(
+              backup && typeof backup === "object" && !Array.isArray(backup)
+                ? { settingsVersion: "2.4.2", ...backup }
+                : backup,
+            ));
+          } catch (caught) {
+            error = caught;
+          }
+          assert.isTrue(error instanceof Error);
+          assert.equal(before, Settings.getSettings());
+          assert.equal(stored, await chrome.storage.sync.get(null));
+        }
+      },
+    );
+
+    should("restore a valid backup and reset omitted values to defaults", async () => {
+      await Settings.set("smoothScroll", false);
+      await optionsPage.restoreBackup(JSON.stringify({
+        settingsVersion: "2.4.2",
+        scrollStepSize: 90,
+        exclusionRules: [{ pattern: "https?://example.com/*", passKeys: "j" }],
+      }));
+      assert.equal(90, Settings.get("scrollStepSize"));
+      assert.isTrue(Settings.get("smoothScroll"));
+      assert.equal("90", optionsPage.getOptionEl("scrollStepSize").value);
+      assert.equal("Backup restored", document.querySelector("#save-status").textContent);
+    });
+
+    should("migrate legacy backups and ignore unknown preferences", async () => {
+      await optionsPage.restoreBackup(JSON.stringify({
+        scrollStepSize: "90",
+        smoothScroll: "false",
+        tabSwitcherMaxThumbnails: "240",
+        unknownOption: JSON.stringify({ unsafe: true }),
+      }));
+      assert.equal(90, Settings.get("scrollStepSize"));
+      assert.isFalse(Settings.get("smoothScroll"));
+      assert.equal(10, Settings.get("tabSwitcherMaxThumbnails"));
+      assert.equal(undefined, Settings.get("unknownOption"));
+    });
+
     should("exclude settings which are default values", () => {
       const settings = JSON.parse(optionsPage.prepareBackupSettings());
       // This should exclude all values which are defaults.

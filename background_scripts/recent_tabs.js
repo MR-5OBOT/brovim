@@ -1,19 +1,10 @@
 import * as bgUtils from "./bg_utils.js";
 
-// The recent-card limit; pinned tabs beyond it are included separately.
-export function getTabSwitcherLimit() {
-  const value = (key, min, max) => {
-    const stored = Number(Settings.get(key));
-    return Number.isInteger(stored) && stored >= min && stored <= max
-      ? stored
-      : Settings.defaultOptions[key];
-  };
-  return value("tabSwitcherColumns", 3, 6) * value("tabSwitcherRows", 1, 3);
-}
-
 // Eligible tabs in this window: the active tab first, then tabs used this session (most recent
-// first), then other tabs by lastAccessed. Pinned tabs remain available while sleeping; hidden
-// tabs and sleeping unpinned tabs stay out of both the grid and quick-switch path.
+// first), then other tabs by lastAccessed. Sleeping (discarded, so unloaded) unpinned tabs and
+// hidden tabs stay out of both the grid and the quick-switch path; pinned sleepers remain. Frozen
+// tabs are awake: the browser pauses background tabs (Helium within seconds), but they stay loaded
+// and resume as soon as they're selected.
 export async function getRecentTabs(windowId) {
   const [tabs] = await Promise.all([
     chrome.tabs.query({ windowId }),
@@ -21,7 +12,7 @@ export async function getRecentTabs(windowId) {
   ]);
   const rank = new Map(bgUtils.tabRecency.getTabsByRecency().map((id, index) => [id, index]));
   // Firefox tab-group extensions hide tabs; those aren't part of the visible window.
-  return tabs.filter((tab) => !tab.hidden && (tab.pinned || (!tab.discarded && !tab.frozen))).sort((
+  return tabs.filter((tab) => !tab.hidden && (tab.pinned || !tab.discarded)).sort((
     a,
     b,
   ) =>

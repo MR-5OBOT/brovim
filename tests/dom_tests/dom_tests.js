@@ -860,6 +860,105 @@ context("Mode utilities", () => {
   });
 });
 
+context("FindMode rendered text", () => {
+  let fixture;
+  setup(() => {
+    initializeModeState();
+    fixture = document.getElementById("test-div");
+    fixture.innerHTML = "";
+    globalThis.getSelection().removeAllRanges();
+    stub(FindMode, "query", null);
+  });
+  teardown(() => {
+    fixture.innerHTML = "";
+    globalThis.getSelection().removeAllRanges();
+  });
+
+  should("highlight and cycle phrases across inline formatting in both directions", () => {
+    fixture.innerHTML = "<p>Hello <b>world</b> and Hello <i>world</i></p>";
+    assert.equal(2, FindMode.updateQuery("Hello world"));
+    assert.isTrue(FindMode.execute("Hello world", { colorSelection: false }));
+    assert.equal("Hello world", globalThis.getSelection().toString());
+    assert.equal(
+      fixture.querySelector("b").firstChild,
+      FindMode.query.matches[0].range.endContainer,
+    );
+    for (const [backwards, expected] of [[false, 1], [false, 0], [true, 1]]) {
+      const query = FindMode.getNextQueryFromRegexMatches(backwards);
+      assert.isTrue(FindMode.execute(query, { colorSelection: false }));
+      assert.equal(expected, FindMode.query.activeMatchIndex);
+      assert.equal("Hello world", globalThis.getSelection().toString());
+    }
+  });
+
+  should("include text in elements styled with display contents through a class", () => {
+    fixture.innerHTML =
+      '<style>.find-contents{display:contents}</style><p class="find-contents"><span>contentsneedle</span></p>';
+    assert.equal(1, FindMode.updateQuery("contentsneedle"));
+    assert.isTrue(FindMode.execute("contentsneedle", { colorSelection: false }));
+    assert.equal("contentsneedle", globalThis.getSelection().toString());
+  });
+
+  should("search and highlight formatted text inside open shadow roots", () => {
+    const host = document.createElement("section");
+    fixture.append(host);
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = "<p>shadow <b>needle</b></p>";
+    assert.equal(1, FindMode.updateQuery("shadow needle"));
+    assert.equal(root, FindMode.query.matches[0].range.startContainer.getRootNode());
+    assert.isTrue(FindMode.execute("shadow needle", { colorSelection: false }));
+    assert.equal("shadow needle", globalThis.getSelection().toString());
+  });
+
+  should("visit slotted text once and exclude unassigned light DOM", () => {
+    const host = document.createElement("section");
+    host.innerHTML = '<span slot="visible">slotneedle</span><span>unassignedneedle</span>';
+    fixture.append(host);
+    host.attachShadow({ mode: "open" }).innerHTML = '<slot name="visible"></slot>';
+    assert.equal(1, FindMode.updateQuery("slotneedle"));
+    assert.equal(0, FindMode.updateQuery("unassignedneedle"));
+  });
+
+  should("preserve match order and selection proximity across shadow roots", () => {
+    fixture.innerHTML = "<p>repeatneedle</p><section></section><p>repeatneedle</p>";
+    const root = fixture.querySelector("section").attachShadow({ mode: "open" });
+    root.innerHTML = "<p>repeatneedle</p>";
+    assert.equal(3, FindMode.updateQuery("repeatneedle"));
+    for (let i = 0; i < 3; i++) {
+      assert.isTrue(FindMode.execute("repeatneedle", { colorSelection: false }));
+      assert.equal("repeatneedle", globalThis.getSelection().toString());
+      assert.equal(
+        i === 1 ? root : document,
+        FindMode.query.matches[i].range.startContainer.getRootNode(),
+      );
+      FindMode.updateQuery("repeatneedle");
+      assert.equal(i, FindMode.query.activeMatchIndex);
+      FindMode.getNextQueryFromRegexMatches(false);
+    }
+    assert.equal(0, FindMode.query.activeMatchIndex);
+  });
+
+  should("not invent matches across block elements or line breaks", () => {
+    fixture.innerHTML = "<p>left</p><p>right</p><span>left</span><br><span>right</span>";
+    assert.equal(0, FindMode.updateQuery("leftright"));
+  });
+
+  should("skip hidden text and include children that restore visibility", () => {
+    fixture.innerHTML = '<p style="display:none">hiddenneedle</p>' +
+      '<p style="visibility:hidden">hiddenneedle<span style="visibility:visible">visibleneedle</span></p>';
+    assert.equal(0, FindMode.updateQuery("hiddenneedle"));
+    assert.equal(1, FindMode.updateQuery("visibleneedle"));
+  });
+
+  should("keep literal matching and smartcase and handle an empty query", () => {
+    fixture.innerHTML = "<p>needle.*[x] Needle.*[x]</p>";
+    assert.equal(2, FindMode.updateQuery("needle.*[x]"));
+    assert.equal(1, FindMode.updateQuery("Needle.*[x]"));
+    assert.equal(0, FindMode.updateQuery(""));
+    assert.isFalse(FindMode.execute("", { colorSelection: false }));
+  });
+});
+
 context("PostFindMode", () => {
   let postFindMode;
 

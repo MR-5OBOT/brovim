@@ -63,33 +63,34 @@ popup.
 ### Tab switcher
 
 The switcher works like TabGlance's: a grid of tab previews, most recently used first. Sleeping
-(discarded or frozen) unpinned tabs and hidden tabs are excluded. Pinned tabs stay eligible while
-sleeping and wake only when selected; awake background tabs remain available.
+(discarded) unpinned tabs and hidden tabs are excluded. Frozen tabs are listed: the browser pauses
+background tabs (Helium does it within seconds), but they stay loaded and resume when selected.
+Pinned tabs stay eligible while sleeping and wake only when selected; awake background tabs remain
+available.
 
 The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
 reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its
 letter to move through the same list; release the modifier to switch. Adding Shift moves back unless
 Shift is already part of your assigned shortcut.
 
-The grid shows up to 18 eligible tabs (6 columns and up to 3 rows), reserving space for pinned tabs
-even if they are sleeping or have not been visited recently. The current and previous tabs stay
-included; other recent tabs fill the remaining places. All rows fit in the frame without scrolling.
-Only when pins plus the current/previous pair exceed the grid's capacity does keyboard navigation
-advance to another page; a page indicator shows where you are. Pinned tabs occupy the leading cells
-in tab-bar order, including while sleeping or inactive. A quick tap always swaps to the last-used
-tab. Holding starts at that tab's visible cell; further presses move to the next cell, wrapping from
-the last cell back to cell 0. Arrow keys and Tab follow the same visible grid. Shortcut presses wrap
-within those displayed cards; older unpinned tabs stay outside the cycle. Closing a card brings in
-the next eligible tab. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches, `x`, Delete
-or Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle clicks, touch
-and wheel input do not operate the switcher; there are no close buttons.
+The grid lists every eligible tab. It starts at your configured size (6 columns and 3 rows by
+default) and, when there are more tabs, adds columns and rows (widening the panel) until every tab
+has a cell, as far as the screen allows while cards stay readable. All rows fit in the frame without
+scrolling. Only past that limit does keyboard navigation advance to another page; a page indicator
+shows where you are. Pinned tabs occupy the leading cells in tab-bar order, including while sleeping
+or inactive. A quick tap always swaps to the last-used tab. Holding starts at that tab's visible
+cell; further presses move to the next cell, wrapping from the last cell back to cell 0. Closing a
+card moves the following cards up. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches,
+`x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle
+clicks, touch and wheel input do not operate the switcher; there are no close buttons.
 
 In shortcut order, the current tab comes first, then tabs used this session (new background tabs
 come right after the current tab, including tabs created without an opener), then the rest by when
 they were last used. This is also how TabGlance's cycling grid places the current tab. Options › Tab
-switcher offers tab bar order instead, fewer rows, a liquid glass panel (off by default), direct
-swapping with two tabs (on by default), and the preview settings below. Change the shortcut at
-`chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
+switcher offers tab bar order instead, a smaller starting grid, a liquid glass panel (off by
+default), direct swapping with two tabs (on by default), and the preview settings below. Change the
+shortcut at `chrome://extensions/shortcuts`; if another extension already uses it, assign it to
+Brovim there.
 
 Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
 after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the

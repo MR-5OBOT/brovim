@@ -39,6 +39,12 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
         ), 4000)
     );
   }
+  if (url.pathname === "/sandboxed") {
+    // Like raw.githubusercontent.com: a CSP sandbox gives the page an opaque origin.
+    return new Response("<!doctype html><title>Sandboxed</title><p>Raw file</p>", {
+      headers: { "content-type": "text/html", "content-security-policy": "sandbox" },
+    });
+  }
   if (url.pathname === "/slow-preview") {
     return new Response(
       '<!doctype html><title>Loading preview</title><h1>First paint</h1><img src="/delayed-preview-image" width="600" height="300"><a href="/">Home</a>',
@@ -101,6 +107,11 @@ try {
     errors.push(
       `Service worker: ${exceptionDetails.exception?.description || exceptionDetails.text}`,
     );
+  });
+  // Some API failures, like setIcon on a closed tab, are only logged as unchecked lastErrors.
+  await workerSession.send("Log.enable");
+  workerSession.on("Log.entryAdded", ({ entry }) => {
+    if (/runtime\.lastError/.test(entry.text)) errors.push(`Service worker: ${entry.text}`);
   });
   const extensionOrigin = new URL(workerTarget.url()).origin;
   // URL.origin is "null" for chrome-extension URLs in Node's URL implementation.
@@ -1256,8 +1267,44 @@ try {
     await page.bringToFront();
   });
 
-  await check("Ctrl+Q uses the assigned modifier and commits on Control release", async () => {
+  await check("Escape while holding Alt closes the grid and stays on the current tab", async () => {
     await fresh();
+    const peer = await browser.newPage();
+    try {
+      await peer.goto(`${origin}/escape-peer`);
+      await page.bringToFront();
+      await pause(200);
+      const sourceId = await tabId();
+      await page.keyboard.down("Alt");
+      await openBrowserSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector("#panel.ready .tab-card.selected");
+      // Move with further shortcut presses, as when choosing a tab, then change one's mind.
+      const first = await switcher.$eval(".selected", (el) => el.dataset.id);
+      await openBrowserSwitcher();
+      await switcher.waitForFunction(
+        (first) => document.querySelector(".selected").dataset.id !== first,
+        {},
+        first,
+      );
+      await key(["Escape"]);
+      await noUi("tab-switcher-frame");
+      await page.keyboard.up("Alt");
+      await pause(300);
+      assert(
+        await worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, sourceId),
+        "Releasing Alt after Escape switched tabs",
+      );
+      await key(["j"]);
+      await page.waitForFunction(() => scrollY > 0);
+    } finally {
+      await page.keyboard.up("Alt");
+      await peer.close();
+      await page.bringToFront();
+    }
+  });
+
+  await check("Ctrl+Q uses the assigned modifier and commits on Control release", async () => {
     const peers = [];
     await worker.evaluate(() => {
       globalThis.originalCommandsGetAll = chrome.commands.getAll;
@@ -1265,6 +1312,8 @@ try {
         Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
     });
     try {
+      // The page learns the assigned shortcut when it initializes.
+      await fresh();
       for (let i = 0; i < 3; i++) {
         const peer = await browser.newPage();
         peers.push(peer);
@@ -1272,6 +1321,14 @@ try {
       }
       await page.bringToFront();
       await page.keyboard.down("Control");
+      // Control alone loads the hidden grid frame, before the shortcut's letter arrives.
+      await page.waitForFunction(
+        () =>
+          [...document.documentElement.children].some((el) =>
+            el.shadowRoot?.querySelector("iframe.tab-switcher-frame")
+          ),
+        { polling: 20 },
+      );
       await openBrowserSwitcher();
       const frame = await ui("tab-switcher-frame");
       await frame.waitForSelector(".selected");
@@ -1924,7 +1981,7 @@ try {
     }
   });
 
-  await check("quick taps switch without creating or loading a preview frame", async () => {
+  await check("quick taps switch directly; the modifier only warms a hidden frame", async () => {
     await fresh();
     const other = await browser.newPage();
     try {
@@ -1932,6 +1989,16 @@ try {
       const peerId = await tabId(other);
       await page.bringToFront();
       await key(["Alt"]);
+      // Pressing the modifier loads the hidden grid frame early. Record whether it is ever shown.
+      await page.waitForFunction(() => {
+        const frame = [...document.documentElement.children]
+          .map((el) => el.shadowRoot?.querySelector("iframe.tab-switcher-frame")).find(Boolean);
+        if (!frame) return false;
+        new MutationObserver(() => {
+          if (frame.classList.contains("vimium-ui-component-visible")) globalThis.gridShown = true;
+        }).observe(frame, { attributeFilter: ["class"] });
+        return true;
+      }, { polling: 20 });
       const started = performance.now();
       await openBrowserSwitcher();
       const elapsed = performance.now() - started;
@@ -1939,10 +2006,7 @@ try {
         (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
       );
       assert(active === peerId, "Quick tap did not switch to the previous tab");
-      assert(
-        await page.$(":root >>> iframe.tab-switcher-frame") === null,
-        "Quick tap unnecessarily created a preview frame",
-      );
+      assert(!await page.evaluate(() => globalThis.gridShown), "Quick tap showed the grid");
       console.log(`Quick-swap request: ${Math.round(elapsed)} ms`);
     } finally {
       await other.close();
@@ -1991,6 +2055,54 @@ try {
     }
   });
 
+  await check(
+    "popup rejects invalid patterns and tolerates an older invalid saved rule",
+    async () => {
+      await fresh();
+      const savedRules = await worker.evaluate(() => Settings.get("exclusionRules"));
+      try {
+        await worker.evaluate(() =>
+          Settings.set("exclusionRules", [{ pattern: "[", passKeys: "" }])
+        );
+        await worker.evaluate(() => chrome.action.openPopup());
+        const popupTarget = await browser.waitForTarget((target) =>
+          target.url() === `${extensionUrl}/pages/action.html`
+        );
+        const popup = await popupTarget.asPage();
+        // The button is in the static page; its handler is attached when the link gets its URL.
+        await popup.waitForSelector("#optionsLink[href]");
+        await popup.click("#add-first-rule");
+        await popup.$eval('input[name="pattern"]', (el) => {
+          el.value = "[";
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        });
+        assert(await popup.$eval("#save", (el) => el.disabled), "Invalid pattern enabled Save");
+        assert(
+          await popup.$eval(
+            ".validationMessage",
+            (el) => el.textContent.includes("Invalid URL pattern"),
+          ),
+          "Invalid pattern has no inline error",
+        );
+        await popup.click("#save");
+        assert(
+          (await worker.evaluate(() => Settings.get("exclusionRules"))).length === 1,
+          "Invalid rule was saved",
+        );
+        await popup.$eval('input[name="pattern"]', (el, pattern) => {
+          el.value = pattern;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        }, `${origin}/*`);
+        await popup.click("#save");
+        await popup.waitForFunction(() => document.querySelector("#save").textContent === "Saved");
+        await popup.close();
+      } finally {
+        await worker.evaluate((rules) => Settings.set("exclusionRules", rules), savedRules);
+        await fresh();
+      }
+    },
+  );
+
   await check("popup opens and saves an exclusion for the active page", async () => {
     await fresh();
     await worker.evaluate(() => chrome.action.openPopup());
@@ -1999,7 +2111,8 @@ try {
       { timeout: 5000 },
     );
     const popup = await popupTarget.asPage();
-    await popup.waitForSelector("#add-first-rule", { visible: true });
+    // The button is in the static page; its handler is attached when the link gets its URL.
+    await popup.waitForSelector("#optionsLink[href]");
     assert(
       await popup.$eval("#how-many-enabled", (el) => el.textContent) === "All",
       "Popup has wrong enabled state",
@@ -2167,6 +2280,71 @@ try {
     },
   );
 
+  await check("invalid backup uploads leave saved settings and page controls intact", async () => {
+    const before = await worker.evaluate(() => Settings.getSettings());
+    const backupPath = await Deno.makeTempFile({
+      prefix: "brovim-invalid-backup-",
+      suffix: ".json",
+    });
+    try {
+      await options.bringToFront();
+      await Deno.writeTextFile(
+        backupPath,
+        JSON.stringify({ settingsVersion: "2.4.2", exclusionRules: null }),
+      );
+      const dialog = new Promise((resolve) =>
+        options.once("dialog", (event) => resolve(event.message()))
+      );
+      await (await options.$("#upload-backup")).uploadFile(backupPath);
+      assert(
+        (await dialog).startsWith("Failed to restore Brovim backup:"),
+        "Bad backup was accepted",
+      );
+      assert(
+        JSON.stringify(before) ===
+          JSON.stringify(await worker.evaluate(() => Settings.getSettings())),
+        "Bad backup changed settings",
+      );
+      await options.waitForFunction(() => document.querySelector("#upload-backup").value === "");
+      await fresh();
+      await key(["j"]);
+      await page.waitForFunction(() => scrollY > 0);
+    } finally {
+      await Deno.remove(backupPath);
+    }
+  });
+
+  await check("history suggestions resume after clearing browser history", async () => {
+    const query = "history-recovery-check";
+    await worker.evaluate((query) =>
+      sendRequestHandlers.filterCompletions({
+        completerName: "omni",
+        query,
+        queryTerms: [query],
+      }), query);
+    await worker.evaluate(() => chrome.history.deleteAll());
+    const visited = await browser.newPage();
+    try {
+      await visited.goto(`${origin}/${query}`);
+      const found = await worker.evaluate(async ({ url, query }) => {
+        for (let i = 0; i < 30; i++) {
+          const suggestions = await sendRequestHandlers.filterCompletions({
+            completerName: "omni",
+            query,
+            queryTerms: [query],
+          });
+          if (suggestions.some((entry) => entry.url === url)) return true;
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        return false;
+      }, { url: visited.url(), query });
+      assert(found, "Newly visited page is missing from history suggestions after clearing");
+    } finally {
+      await visited.close();
+      await page.bringToFront();
+    }
+  });
+
   await check(
     "denied clipboard access shows a message and leaves page navigation usable",
     async () => {
@@ -2246,7 +2424,7 @@ try {
   );
 
   await check(
-    "sleeping pinned tabs beyond the card limit stay in the grid and wake only when selected",
+    "sleeping pinned tabs stay in a grown grid and wake only when selected",
     async () => {
       await fresh();
       const urls = [
@@ -2275,7 +2453,7 @@ try {
         await worker.evaluate(async (origin) => {
           await Settings.set("tabSwitcherColumns", 3);
           await Settings.set("tabSwitcherRows", 1);
-          // Push the pinned sleeper out of the recent-card limit, as happens after a long sleep.
+          // More tabs than the configured 3x1 grid holds, as after a long sleep.
           for (let i = 0; i < 4; i++) {
             await chrome.tabs.create({
               url: `${origin}/pin-limit-inactive-${i}?title=InactivePin${i}`,
@@ -2306,15 +2484,28 @@ try {
         for (let i = 0; i < 4; i++) {
           assert(titles.includes(`InactivePin${i}`), `Inactive pinned tab ${i} was missing`);
         }
-        const cardIds = await switcher.$$eval(".tab-card", (els) => els.map((el) => el.dataset.id));
-        assert(cardIds.length === 7, `Expected the quick-swap pair plus 5 pins: ${cardIds}`);
+        const cardIds = await switcher.$$eval(
+          ".tab-card",
+          (els) => els.map((el) => Number(el.dataset.id)),
+        );
         assert(new Set(cardIds).size === cardIds.length, "Pinned cards were duplicated");
+        // Every fixture except the unpinned sleeper: the sleeping pin and eight more tabs than
+        // the 3x1 grid holds. (Comparing with the whole window races with the browser freezing
+        // its idle tabs.)
+        const fixtures = await worker.evaluate(
+          async ({ origin, url }) =>
+            (await chrome.tabs.query({}))
+              .filter((tab) => tab.url === url || tab.url.startsWith(`${origin}/pin-limit-`))
+              .map((tab) => tab.id),
+          { origin, url: urls[0] },
+        );
         assert(
-          await switcher.$$eval(
-            ".tab-card:not([hidden])",
-            (cards) => cards.length > 0 && cards.length <= 3,
-          ),
-          "Pinned overflow exceeded the one-page grid",
+          fixtures.length === 9 && fixtures.every((id) => cardIds.includes(id)),
+          `The grid left out awake tabs: ${cardIds} vs ${fixtures}`,
+        );
+        assert(
+          await switcher.$$eval(".tab-card[hidden]", (cards) => cards.length === 0),
+          "The grid paged instead of growing to fit every tab",
         );
         assert(
           (await worker.evaluate((id) => chrome.tabs.get(id), pinned.id)).discarded,
@@ -2330,11 +2521,11 @@ try {
         );
         assert(
           await switcher.$eval(".selected", (el) => !el.hidden),
-          "The pinned selection was not visible on its overflow page",
+          "The pinned selection was not visible",
         );
         assert(
           await switcher.$eval("#panel", (el) => el.scrollHeight <= el.clientHeight + 1),
-          "Pinned overflow required scrolling",
+          "The grown grid required scrolling",
         );
         await key(["Enter"]);
         await worker.evaluate(async (id) => {
@@ -2366,7 +2557,7 @@ try {
   );
 
   await check(
-    "old sleeping pins on excluded sites stay on the first page and preserve quick swaps",
+    "old sleeping pins on excluded sites lead a grid of every tab and preserve quick swaps",
     async () => {
       await fresh();
       const prefix = `${origin}/reserved-pin-`;
@@ -2415,7 +2606,17 @@ try {
           ".tab-card:not([hidden]) .card-title",
           (els) => els.map((el) => el.textContent),
         );
-        assert(visibleTitles.length === 18, `Unexpected first-page count: ${visibleTitles}`);
+        const allTitles = await frame.$$eval(
+          ".card-title",
+          (els) => els.map((el) => el.textContent),
+        );
+        assert(
+          visibleTitles.length === allTitles.length,
+          `The grid paged instead of growing: ${visibleTitles}`,
+        );
+        for (let i = 0; i < 20; i++) {
+          assert(visibleTitles.includes(`Recent${i}`), `Recent${i} was left out: ${visibleTitles}`);
+        }
         for (const name of ["WhatsApp", "Gmail", "OtherPin"]) {
           assert(visibleTitles.includes(name), `${name} was missing from the visible first page`);
         }
@@ -2708,7 +2909,7 @@ try {
   }
 
   await check(
-    "Ctrl+Q wraps inside the displayed recent tabs without reaching older tabs",
+    "Ctrl+Q lists every awake tab in a grid grown to fit, and wraps through all of them",
     async () => {
       await fresh();
       const urls = Array.from({ length: 19 }, (_, i) => `${origin}/extra${i}?title=Extra${i}`);
@@ -2718,7 +2919,7 @@ try {
           Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
       });
       try {
-        // Visit each so the oldest one (Extra0) falls past the cap.
+        // More tabs than the default 6x3 grid holds.
         for (const url of urls) await worker.evaluate((url) => chrome.tabs.create({ url }), url);
         await worker.evaluate(async (urls) => {
           for (let attempt = 0; attempt < 100; attempt++) {
@@ -2745,7 +2946,24 @@ try {
           ".card-title",
           (els) => els.map((el) => el.textContent),
         );
-        assert(titles.length === 18, JSON.stringify(titles));
+        for (let i = 0; i < 19; i++) {
+          assert(titles.includes(`Extra${i}`), `Extra${i} was left out: ${JSON.stringify(titles)}`);
+        }
+        assert(
+          titles[0] === "Brovim browser fixture" && titles[1] === "Extra18",
+          JSON.stringify(titles),
+        );
+        const columns = () =>
+          switcher.$eval(
+            "#tab-switcher",
+            (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
+          );
+        assert(await columns() > 6, "More tabs than a 6x3 grid did not add columns");
+        assert(
+          await switcher.$$eval(".tab-card[hidden]", (cards) => cards.length === 0),
+          "A large screen paged instead of growing the grid",
+        );
+        // Smaller screens grow the grid less; the smallest pages through the cards instead.
         for (const [width, height] of [[1280, 900], [900, 700], [640, 480]]) {
           await page.setViewport({ width, height });
           await switcher.waitForFunction((width) => innerWidth === width, {}, width);
@@ -2753,32 +2971,28 @@ try {
             const panel = document.querySelector("#panel");
             const rect = panel.getBoundingClientRect();
             const cards = [...document.querySelectorAll(".tab-card:not([hidden])")];
-            return cards.length === 18 &&
-              getComputedStyle(document.querySelector("#tab-switcher")).gridTemplateColumns.split(
-                  " ",
-                ).length === 6 &&
-              panel.scrollHeight <= panel.clientHeight + 1 &&
+            return cards.length >= 18 && panel.scrollHeight <= panel.clientHeight + 1 &&
               rect.top >= 0 && rect.bottom <= innerHeight &&
+              rect.left >= 0 && rect.right <= innerWidth &&
               cards.every((card) => {
                 const box = card.getBoundingClientRect();
                 return box.top >= rect.top && box.bottom <= rect.bottom &&
                   box.left >= rect.left && box.right <= rect.right;
               });
           });
-          if (width === 1280) await page.screenshot({ path: "/tmp/brovim-6x3.png" });
+          if (width === 1280) await page.screenshot({ path: "/tmp/brovim-grown-grid.png" });
         }
         await page.setViewport({ width: 1280, height: 900 });
-        assert(
-          titles[0] === "Brovim browser fixture" && titles[1] === "Extra18",
-          JSON.stringify(titles),
+        await switcher.waitForFunction(() =>
+          document.querySelectorAll(".tab-card[hidden]").length === 0
         );
-        assert(!titles.includes("Extra0"), "Oldest tab was shown past the cap");
         const initialIds = await switcher.$$eval(
           ".tab-card",
           (cards) => cards.map((card) => card.dataset.id),
         );
-        // Keep pressing the actual assigned letter while the primary modifier is held.
-        for (let i = 0; i < 71; i++) await page.keyboard.press("q");
+        // Keep pressing the actual assigned letter while the primary modifier is held. Starting
+        // on the second card, three full rounds less one press end on the first card.
+        for (let i = 0; i < initialIds.length * 3 - 1; i++) await page.keyboard.press("q");
         await switcher.waitForFunction(() =>
           document.querySelector(".selected .card-title").textContent === "Brovim browser fixture"
         );
@@ -2787,16 +3001,23 @@ try {
             await switcher.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id)),
           ) ===
             JSON.stringify(initialIds),
-          "Repeated presses left the original recent grid",
+          "Repeated presses changed the grid",
         );
         await page.keyboard.press("q");
         await switcher.waitForFunction(() =>
           document.querySelector(".selected .card-title").textContent === "Extra18"
         );
-        // Closing the selected card (Extra18) refills the grid with the next hidden tab.
+        // Closing the selected card (Extra18) just removes it; every other tab was already listed.
         await key(["x"]);
-        await switcher.waitForFunction(() =>
-          [...document.querySelectorAll(".card-title")].some((el) => el.textContent === "Extra1")
+        await switcher.waitForFunction(
+          (count) => document.querySelectorAll(".tab-card").length === count,
+          {},
+          initialIds.length - 1,
+        );
+        assert(
+          !(await switcher.$$eval(".card-title", (els) => els.map((el) => el.textContent)))
+            .includes("Extra18"),
+          "The closed tab stayed in the grid",
         );
         await key(["Escape"]);
       } finally {
@@ -2868,74 +3089,80 @@ try {
     }
   });
 
-  await check("protected-page grid keeps its recent cards and refills after a close", async () => {
-    await fresh();
-    const peers = [];
-    await worker.evaluate(async () => {
-      globalThis.refillOriginalCommands = chrome.commands.getAll;
-      chrome.commands.getAll = () =>
-        Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
-      await Settings.set("tabSwitcherColumns", 3);
-      await Settings.set("tabSwitcherRows", 1);
-    });
-    try {
-      for (let i = 0; i < 3; i++) {
-        const peer = await browser.newPage();
-        peer.setDefaultTimeout(5000);
-        peers.push(peer);
-        await peer.goto(`${origin}/refill-${i}?title=Refill${i}`);
-      }
-      await options.bringToFront();
-      await options.keyboard.down("Control");
-      await openBrowserSwitcher(options);
-      await openBrowserSwitcher(peers[2]);
-      const element = await peers[2].waitForSelector(
-        ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
-      );
-      const frame = await element.contentFrame();
-      await frame.waitForSelector("#panel.ready .selected");
-      const initial = await frame.$$eval(
-        ".tab-card",
-        (cards) => cards.map((card) => card.dataset.id),
-      );
-      assert(initial.length === 3, "Protected handoff exceeded the grid size");
-      assert(
-        !await frame.$eval("#tab-switcher", (grid) => grid.textContent.includes("Refill0")),
-        "Older tab entered the initial grid",
-      );
-      await peers[2].keyboard.press("x");
-      await frame.waitForFunction(() =>
-        document.querySelector("#tab-switcher").textContent.includes("Refill0")
-      );
-      assert(
-        await frame.$$eval(".tab-card", (cards) => cards.length) === 3,
-        "Close did not refill the carried grid",
-      );
-      const refilled = await frame.$$eval(
-        ".tab-card",
-        (cards) => cards.map((card) => card.dataset.id),
-      );
-      for (let i = 0; i < 12; i++) await peers[2].keyboard.press("q");
-      assert(
-        JSON.stringify(
-          await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id)),
-        ) === JSON.stringify(refilled),
-        "Cycling paged beyond the refilled grid",
-      );
-      await peers[2].keyboard.press("Escape");
-    } finally {
-      await options.keyboard.up("Control");
-      for (const peer of peers) if (!peer.isClosed()) await peer.close();
+  await check(
+    "protected-page handoff keeps every awake tab in the grid after a close",
+    async () => {
+      await fresh();
+      const peers = [];
       await worker.evaluate(async () => {
-        chrome.commands.getAll = globalThis.refillOriginalCommands;
-        await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
+        globalThis.refillOriginalCommands = chrome.commands.getAll;
+        chrome.commands.getAll = () =>
+          Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
+        await Settings.set("tabSwitcherColumns", 3);
+        await Settings.set("tabSwitcherRows", 1);
       });
-      await page.bringToFront();
-    }
-  });
+      try {
+        for (let i = 0; i < 3; i++) {
+          const peer = await browser.newPage();
+          peer.setDefaultTimeout(5000);
+          peers.push(peer);
+          await peer.goto(`${origin}/refill-${i}?title=Refill${i}`);
+        }
+        await options.bringToFront();
+        await options.keyboard.down("Control");
+        await openBrowserSwitcher(options);
+        await openBrowserSwitcher(peers[2]);
+        const element = await peers[2].waitForSelector(
+          ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
+        );
+        const frame = await element.contentFrame();
+        await frame.waitForSelector("#panel.ready .selected");
+        const cardIds = () =>
+          frame.$$eval(".tab-card", (cards) => cards.map((card) => Number(card.dataset.id)));
+        const initial = await cardIds();
+        assert(initial.length > 3, `The carried grid kept the configured 3x1 limit: ${initial}`);
+        for (const title of ["Refill0", "Refill1", "Refill2"]) {
+          assert(
+            await frame.$eval(
+              "#tab-switcher",
+              (grid, title) => grid.textContent.includes(title),
+              title,
+            ),
+            `${title} was left out of the carried grid`,
+          );
+        }
+        const closedId = Number(await frame.$eval(".selected", (card) => card.dataset.id));
+        await peers[2].keyboard.press("x");
+        await frame.waitForFunction(
+          (count) => document.querySelectorAll(".tab-card").length === count,
+          {},
+          initial.length - 1,
+        );
+        const remaining = await cardIds();
+        assert(
+          JSON.stringify(remaining) === JSON.stringify(initial.filter((id) => id !== closedId)),
+          "A close changed the other cards",
+        );
+        for (let i = 0; i < 12; i++) await peers[2].keyboard.press("q");
+        assert(
+          JSON.stringify(await cardIds()) === JSON.stringify(remaining),
+          "Cycling changed the carried grid",
+        );
+        await peers[2].keyboard.press("Escape");
+      } finally {
+        await options.keyboard.up("Control");
+        for (const peer of peers) if (!peer.isClosed()) await peer.close();
+        await worker.evaluate(async () => {
+          chrome.commands.getAll = globalThis.refillOriginalCommands;
+          await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
+          await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
+        });
+        await page.bringToFront();
+      }
+    },
+  );
 
-  await check("reverse opening starts at the last displayed recent tab", async () => {
+  await check("reverse opening starts at the last card of a grown grid", async () => {
     let windowId;
     try {
       await worker.evaluate(async () => {
@@ -2967,8 +3194,12 @@ try {
       const frame = await element.contentFrame();
       await frame.waitForSelector("#panel.ready .selected");
       assert(
-        await frame.$$eval(".tab-card", (cards) => cards.length) === 3,
-        "Reverse opening left the three-card recent grid",
+        await frame.$$eval(".tab-card", (cards) => cards.length) === 4,
+        "Four tabs did not all fit in the grown 3x1 grid",
+      );
+      assert(
+        await frame.$$eval(".tab-card", (cards) => cards.at(-1).classList.contains("selected")),
+        "Reverse opening did not start at the last card",
       );
       await source.keyboard.press("Enter");
       await frame.waitForFunction(() => !document.querySelector("#panel.ready"));
@@ -2979,7 +3210,7 @@ try {
           windowId,
           result.sourceId,
         ),
-        "Final-page selection did not switch",
+        "Selecting the last card did not switch",
       );
     } finally {
       if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
@@ -2991,36 +3222,65 @@ try {
     }
   });
 
-  await check("cards per row and rows settings size the grid", async () => {
-    await fresh();
-    const extras = [];
-    for (let i = 0; i < 4; i++) {
-      const extra = await browser.newPage();
-      await extra.goto(`${origin}/layout-${i}`);
-      extras.push(extra);
-    }
-    await page.bringToFront();
+  await check("cards per row and rows set the starting grid, which grows to fit", async () => {
+    let windowId;
     try {
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", 3);
         await Settings.set("tabSwitcherRows", 1);
       });
-      await pause(300);
-      await openSwitcher();
-      const switcher = await ui("tab-switcher-frame");
-      await switcher.waitForSelector("#panel.ready .tab-card.selected");
-      const layout = await switcher.$eval("#tab-switcher", (el) => ({
-        cards: el.children.length,
-        columns: getComputedStyle(el).gridTemplateColumns.split(" ").length,
-      }));
-      assert(layout.cards === 3 && layout.columns === 3, JSON.stringify(layout));
-      await key(["Escape"]);
+      const urls = Array.from({ length: 3 }, (_, i) => `${origin}/layout-${i}?title=Layout${i}`);
+      const created = await worker.evaluate(async (urls) => {
+        const window = await chrome.windows.create({ url: urls });
+        return { windowId: window.id, sourceId: window.tabs[0].id };
+      }, urls);
+      windowId = created.windowId;
+      const source = await (await browser.waitForTarget((target) => target.url() === urls[0]))
+        .page();
+      await source.waitForFunction(() => document.readyState === "complete");
+      await pause(200);
+      const layout = async () => {
+        await worker.evaluate((id) =>
+          chrome.tabs.sendMessage(id, {
+            handler: "runInTopFrame",
+            sourceFrameId: 0,
+            registryEntry: { command: "TabSwitcher.activate", options: { altCycle: false } },
+          }), created.sourceId);
+        const element = await source.waitForSelector(
+          ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
+        );
+        const frame = await element.contentFrame();
+        await frame.waitForSelector("#panel.ready .tab-card.selected");
+        const result = await frame.$eval("#tab-switcher", (el) => ({
+          cards: el.children.length,
+          columns: getComputedStyle(el).gridTemplateColumns.split(" ").length,
+          rows: getComputedStyle(el).gridTemplateRows.split(" ").length,
+        }));
+        await source.keyboard.press("Escape");
+        await frame.waitForFunction(() => !document.querySelector("#panel.ready"));
+        return result;
+      };
+      let result = await layout();
+      assert(
+        result.cards === 3 && result.columns === 3 && result.rows === 1,
+        JSON.stringify(result),
+      );
+      await worker.evaluate(async ({ windowId, origin }) => {
+        for (let i = 3; i < 5; i++) {
+          await chrome.tabs.create({ windowId, url: `${origin}/layout-${i}`, active: false });
+        }
+      }, { windowId, origin });
+      result = await layout();
+      assert(
+        result.cards === 5 && result.columns === 3 && result.rows === 2,
+        `Five tabs did not grow the 3x1 grid to 3x2: ${JSON.stringify(result)}`,
+      );
     } finally {
+      if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
         await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
-      for (const extra of extras) await extra.close();
       await page.bringToFront();
     }
   });
@@ -3142,13 +3402,63 @@ try {
         pair[0],
       );
       assert(active === pair[1], "Two-tab shortcut did not swap to the other tab");
+      // Holding Alt loads a hidden frame; the grid itself must never show.
       assert(
-        await pairPage.$(":root >>> iframe.tab-switcher-frame") === null,
+        await pairPage.$(":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible") ===
+          null,
         "Two-tab shortcut showed the preview grid",
       );
     } finally {
       await pairPage?.keyboard.up("Alt");
       await worker.evaluate((ids) => chrome.tabs.remove(ids), pair);
+      await page.bringToFront();
+    }
+  });
+
+  await check("a tab that closes while it initializes logs no extension error", async () => {
+    const before = errors.length;
+    await worker.evaluate(() =>
+      sendRequestHandlers.initializeFrame({}, {
+        tab: { id: 1684673800, url: "https://example.com/" },
+        frameId: 0,
+      })
+    );
+    await pause(300);
+    assert(errors.length === before, errors.slice(before).join("\n"));
+  });
+
+  await check("sandboxed pages load no UI frames and the shortcut switches directly", async () => {
+    await fresh();
+    const previous = await tabId();
+    const sandboxed = await browser.newPage();
+    try {
+      await sandboxed.goto(`${origin}/sandboxed`);
+      await pause(300);
+      // The Vomnibar and the switcher's warm-up would load frames that can't start here.
+      await key(["Alt", "o"], sandboxed);
+      await pause(300);
+      assert(
+        await sandboxed.evaluate(() =>
+          [...document.documentElement.children].every((el) =>
+            !el.shadowRoot?.querySelector("iframe")
+          )
+        ),
+        "A sandboxed page loaded a Brovim frame",
+      );
+      await sandboxed.keyboard.down("Alt");
+      const started = performance.now();
+      await openBrowserSwitcher(sandboxed);
+      const elapsed = performance.now() - started;
+      assert(
+        await worker.evaluate(async () =>
+          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+        ) === previous,
+        "The shortcut did not switch away from the sandboxed page",
+      );
+      assert(elapsed < 300, `The direct switch waited ${Math.round(elapsed)} ms for a grid`);
+    } finally {
+      await sandboxed.keyboard.up("Alt");
+      await sandboxed.close();
       await page.bringToFront();
     }
   });

@@ -13,7 +13,7 @@ const ExclusionRegexpCache = {
       let result;
       // We use try/catch to ensure that a broken regexp doesn't wholly cripple Vimium.
       try {
-        result = new RegExp("^" + pattern.replace(/\*/g, ".*") + "$");
+        result = Utils.compileExclusionPattern(pattern);
       } catch {
         if (!globalThis.isUnitTests) {
           console.log(`bad regexp in exclusion rule: ${pattern}`);

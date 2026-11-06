@@ -72,6 +72,8 @@ class UIComponent {
     });
 
     this.setIframeVisible(false);
+    // The frame couldn't start here. Don't load it, so the component simply never shows.
+    if (!DomUtils.canHostExtensionFrames()) return;
     this.iframeElement.src = chrome.runtime.getURL(iframeUrl);
     await DomUtils.documentReady();
     this.handleDarkReaderFilter();

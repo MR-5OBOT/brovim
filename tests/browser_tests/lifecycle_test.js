@@ -214,6 +214,72 @@ try {
     await privatePage.keyboard.press("Escape");
     pass("Real incognito window supports hints and Vomnibar");
 
+    await options.evaluate(() =>
+      chrome.storage.session.set({
+        findModeRawQueryList: ["normal-query"],
+        findModeRawQueryListIncognito: ["private-query"],
+      })
+    );
+    const historyPeer = await options.evaluate(async (url) => {
+      const source = (await chrome.tabs.query({})).find((tab) => tab.url === url);
+      return await chrome.tabs.create({
+        windowId: source.windowId,
+        url: `${url}-history-peer`,
+        active: true,
+      });
+    }, `${origin}/private`);
+    try {
+      const peerTarget = await browser.waitForTarget((target) =>
+        target.url() === `${origin}/private-history-peer`
+      );
+      const peerPage = track(await peerTarget.page());
+      const state = await options.evaluate(async (tabId) => {
+        const [{ result }] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: async () => {
+            for (let i = 0; i < 50 && !globalThis.FindModeHistory?.rawQueryList; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+            }
+            return {
+              private: chrome.extension.inIncognitoContext,
+              query: FindModeHistory.getQuery(),
+            };
+          },
+        });
+        return result;
+      }, historyPeer.id);
+      assert(state.private && state.query === "private-query", JSON.stringify(state));
+      await peerPage.bringToFront();
+      await peerPage.keyboard.press("/");
+      await visibleUi(peerPage, "vimium-hud-frame");
+      // Puppeteer can list a just-shown extension frame before it knows the frame's URL.
+      const hud = await peerPage.waitForFrame((frame) =>
+        frame.url().includes("/pages/hud_page.html")
+      );
+      await hud.waitForFunction(() => FindModeHistory.rawQueryList?.[0] === "private-query");
+      const history = await options.evaluate(() =>
+        chrome.storage.session.get([
+          "findModeRawQueryList",
+          "findModeRawQueryListIncognito",
+        ])
+      );
+      assert(
+        history.findModeRawQueryListIncognito[0] === "private-query",
+        "Private history was reset",
+      );
+      assert(
+        history.findModeRawQueryList[0] === "normal-query",
+        "Private queries reached normal history",
+      );
+      await peerPage.keyboard.press("Escape");
+      pass(
+        "New private tabs and HUDs preserve private find history without changing normal history",
+      );
+    } finally {
+      await options.evaluate((id) => chrome.tabs.remove(id), historyPeer.id);
+      await privatePage.bringToFront();
+    }
+
     const normalPage = track(await browser.newPage());
     await normalPage.goto(`${origin}/normal`);
     await normalPage.bringToFront();
@@ -247,7 +313,7 @@ try {
       return { source: source.id, peer: peer.id };
     }, `${origin}/private`);
     await visibleUi(privatePage, "tab-switcher-frame");
-    const privateGrid = privatePage.frames().find((frame) =>
+    const privateGrid = await privatePage.waitForFrame((frame) =>
       frame.url().includes("/pages/tab_switcher_page.html")
     );
     await privateGrid.waitForFunction(() => document.querySelector("#panel.ready .tab-card"));

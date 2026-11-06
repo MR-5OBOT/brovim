@@ -1,11 +1,6 @@
 import { ensureContentScripts } from "./content_script_bootstrap.js";
-import { orderTabSwitcherCards, selectTabSwitcherCards } from "../lib/tab_switcher.js";
-import {
-  getRecentTabs,
-  getTabSwitcherData,
-  getTabSwitcherLimit,
-  switchToPreviousRecentTab,
-} from "./recent_tabs.js";
+import { orderTabSwitcherCards } from "../lib/tab_switcher.js";
+import { getRecentTabs, getTabSwitcherData, switchToPreviousRecentTab } from "./recent_tabs.js";
 
 let pendingOpen = Promise.resolve();
 const cycles = new Map();
@@ -91,10 +86,7 @@ async function showTabSwitcher(tab, expectedOverlayId) {
     await switchToPreviousRecentTab(tab);
     return;
   }
-  const commands = await chrome.commands?.getAll() ?? [];
-  const shortcut = Utils.parseBrowserShortcut(
-    commands.find((command) => command.name === "open_tab_switcher")?.shortcut || "Alt+Q",
-  );
+  const shortcut = await getTabSwitcherShortcut();
   let cycle = cycles.get(tab.windowId);
   if (
     cycle && (cycle.currentId !== tab.id ||
@@ -158,10 +150,8 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   const current = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0];
   if (current?.id !== tab.id) return;
   if (!cycle) {
-    const tabIds = orderTabSwitcherCards(
-      selectTabSwitcherCards(tabs, getTabSwitcherLimit(), { previousId }),
-    )
-      .map((tab) => tab.id);
+    // The same cards, in the same order, as the grid shows.
+    const tabIds = orderTabSwitcherCards(tabs).map((tab) => tab.id);
     cycle = {
       id: crypto.randomUUID(),
       tabIds,
@@ -190,6 +180,14 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   } catch {
     endTabSwitcherCycle(tab.windowId, cycle.id);
   }
+}
+
+// The shortcut assigned in the browser's extension-shortcut settings.
+export async function getTabSwitcherShortcut() {
+  const commands = await chrome.commands?.getAll() ?? [];
+  return Utils.parseBrowserShortcut(
+    commands.find((command) => command.name === "open_tab_switcher")?.shortcut || "Alt+Q",
+  );
 }
 
 function snapshot(cycle) {

@@ -259,12 +259,11 @@ async function buildStorePackage() {
 async function runUnitTests() {
   // Import every test file.
   const dir = path.join(projectPath, "tests/unit_tests");
-  const files = Array.from(Deno.readDirSync(dir)).map((f) => f.name).sort();
-  for (const f of files) {
-    if (f.endsWith("_test.js")) {
-      await import(path.join(dir, f));
-    }
+  const files = [];
+  for await (const entry of fs.walk(dir, { includeDirs: false, exts: [".js"] })) {
+    if (entry.name.endsWith("_test.js")) files.push(entry.path);
   }
+  for (const file of files.sort()) await import(path.toFileUrl(file).href);
 
   return await shoulda.run();
 }

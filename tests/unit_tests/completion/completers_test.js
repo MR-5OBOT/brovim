@@ -82,6 +82,13 @@ context("bookmark completer", () => {
 context("HistoryCache", () => {
   const compare = (a, b) => a - b;
   context("binary search", () => {
+    should("insert the first visit into an empty history without comparing a missing entry", () => {
+      assert.equal(
+        0,
+        HistoryCache.binarySearch({ url: "a.com" }, [], HistoryCache.compareHistoryByUrl),
+      );
+    });
+
     should("find elements to the left of the middle", () => {
       assert.equal(0, HistoryCache.binarySearch(3, [3, 5, 8], compare));
     });
@@ -180,6 +187,22 @@ context("HistoryCache", () => {
       const toRemove = { allHistory: true };
       onVisitRemovedListener(toRemove);
       assert.equal([], HistoryCache.history);
+    });
+
+    should("cache new visits after clearing all history", () => {
+      onVisitRemovedListener({ allHistory: true });
+      const first = { url: "new.com", title: "First visit" };
+      onVisitedListener(first);
+      onVisitedListener({ ...first, title: "Updated visit" });
+      assert.equal([{ ...first, title: "Updated visit" }], HistoryCache.history);
+    });
+
+    should("accept late removals and new visits after deleting the last cached page", () => {
+      onVisitRemovedListener({ urls: ["a.com", "b.com", "already-gone.com"] });
+      assert.equal([], HistoryCache.history);
+      const first = { url: "new.com", title: "First visit" };
+      onVisitedListener(first);
+      assert.equal([first], HistoryCache.history);
     });
   });
 });

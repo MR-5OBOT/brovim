@@ -8,7 +8,7 @@ const TabSwitcher = {
   cycle: null,
   currentRequestId: null,
   overlayId: null,
-  cancelledPreviewRequest: null,
+  openingGeneration: 0,
   shortcutRequest: null,
   pendingCommit: false,
   isUnavailable: false,
@@ -20,9 +20,10 @@ const TabSwitcher = {
     if (this.isUnavailable) return Promise.resolve(false);
     this.currentRequestId = options?.requestId ?? null;
     if (this.isOpening) {
+      const overlayId = this.overlayId;
       // The activation message must reach the frame before any queued cycle messages.
       return this.opening.then((opened) => {
-        if (!opened || !this.tabSwitcherUI.showing) return false;
+        if (!opened || this.overlayId !== overlayId || !this.tabSwitcherUI.showing) return false;
         return this.tabSwitcherUI.postMessage({ name: "cycleNext" }).then(() => true);
       });
     }
@@ -44,7 +45,7 @@ const TabSwitcher = {
     if (options.cycle || !this.tabSwitcherUI?.showing) this.cycle = options.cycle ?? null;
     this.currentRequestId = requestId;
     const focusedInFrame = ["IFRAME", "FRAME"].includes(document.activeElement?.tagName);
-    if (this.modifierReleased() && !focusedInFrame) return await this.quickSwitch(requestId);
+    if (this.modifierReleased() && !focusedInFrame) return await this.quickSwitch();
 
     let complete;
     const released = new Promise((resolve) => complete = resolve);
@@ -62,14 +63,15 @@ const TabSwitcher = {
     }
   },
 
-  async quickSwitch(requestId) {
-    this.cancelledPreviewRequest = requestId;
+  async quickSwitch() {
+    this.openingGeneration++;
     this.isOpening = this.isAltCycling = false;
+    const cycle = this.cycle;
+    this.cycle = null;
     const result = await chrome.runtime.sendMessage({
       handler: "quickSwitchTab",
-      cycle: this.cycle,
+      cycle,
     });
-    this.cycle = null;
     if (!result?.switched) HUD.show("No other tab to switch to.", 2000);
     return { opened: true, quickSwitch: true };
   },
@@ -82,19 +84,20 @@ const TabSwitcher = {
     this.isOpening = true;
     this.pendingCommit = false;
     this.overlayId = crypto.randomUUID();
+    const generation = ++this.openingGeneration;
+    const overlayId = this.overlayId;
     const ui = this.tabSwitcherUI;
-    const requestId = options?.requestId ?? null;
     // Let an early Alt release switch directly while the hidden frame warms up. Do not send its
     // activation or fetch thumbnails if that request was already completed or cancelled.
     // Passive preview capture keeps screenshots current without delaying this interaction.
     this.opening = (async () => {
       await Promise.all([this.uiLoad, ui.iframePort]);
-      if (requestId && this.cancelledPreviewRequest === requestId) return false;
+      if (generation !== this.openingGeneration) return false;
       this.hideBackdrop();
       await ui.show(
         {
           name: "activate",
-          overlayId: this.overlayId,
+          overlayId,
           isAltCycle: this.isAltCycling,
           shortcut: options?.shortcut ?? Utils.parseBrowserShortcut(),
           cycle: options?.cycle,
@@ -103,11 +106,23 @@ const TabSwitcher = {
         },
         { sourceFrameId, focus: true },
       );
-      return !this.isUnavailable;
+      return generation === this.openingGeneration && !this.isUnavailable;
     })().finally(() => {
-      this.isOpening = false;
+      if (generation === this.openingGeneration) this.isOpening = false;
     });
     return this.opening;
+  },
+
+  // The shortcut's modifier goes down before its letter. Load the hidden grid frame and wake the
+  // background then, so the first grid on a page opens as fast as later ones. A quick tap doesn't
+  // wait for either.
+  warmUp(event) {
+    if (event.repeat || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
+    // Loading the frame reads settings (for the user's CSS), which can still be loading early in a
+    // page's life. A script orphaned by an extension update can't reach the extension.
+    if (!Settings.isLoaded() || !chrome.runtime?.id) return;
+    this.init();
+    chrome.runtime.sendMessage({ handler: "warmTabSwitcher" }).catch(() => {});
   },
 
   init() {
@@ -193,7 +208,7 @@ const TabSwitcher = {
 
   cancel(requestId) {
     if (this.currentRequestId !== requestId) return;
-    this.cancelledPreviewRequest = requestId;
+    this.openingGeneration++;
     this.currentRequestId = null;
     this.isOpening = this.isAltCycling = false;
     if (this.tabSwitcherUI?.showing) this.tabSwitcherUI.hide(false);
@@ -216,7 +231,7 @@ const TabSwitcher = {
     if (this.shortcutRequest && !this.tabSwitcherUI?.showing) {
       if (this.shortcutRequest.released) return;
       this.shortcutRequest.released = true;
-      this.shortcutRequest.complete(this.quickSwitch(this.shortcutRequest.id));
+      this.shortcutRequest.complete(this.quickSwitch());
       return;
     }
     if (this.isAltCycling && this.isOpening) {
@@ -446,7 +461,13 @@ globalThis.TabSwitcher = TabSwitcher;
 globalThis.TabPreview = TabPreview;
 
 if (globalThis.window != null) {
-  globalThis.addEventListener("keydown", (event) => TabSwitcher.recordKeyboardEvent(event), true);
-  globalThis.addEventListener("keyup", (event) => TabSwitcher.recordKeyboardEvent(event), true);
-  if (DomUtils.isTopFrame() && /^(https?|file):$/.test(location.protocol)) TabPreview.init();
+  // Only real key presses: a page must not be able to fake a modifier release and commit the grid.
+  const recordKeyboardEvent = forTrusted((event) => TabSwitcher.recordKeyboardEvent(event));
+  globalThis.addEventListener("keydown", recordKeyboardEvent, true);
+  globalThis.addEventListener("keyup", recordKeyboardEvent, true);
+  // The background opens the grid only on these pages.
+  if (DomUtils.isTopFrame() && /^(https?|file):$/.test(location.protocol)) {
+    globalThis.addEventListener("keydown", forTrusted((event) => TabSwitcher.warmUp(event)), true);
+    TabPreview.init();
+  }
 }

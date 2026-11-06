@@ -383,6 +383,8 @@ const messageHandlers = {
     if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
       return { opened: false };
     }
+    // No grid on a sandboxed page: the background switches tabs directly instead.
+    if (!DomUtils.canHostExtensionFrames()) return { opened: false };
     try {
       const result = await Utils.promiseWithTimeout(
         TabSwitcher.activateFromBrowserShortcut(requestId, options),
@@ -550,6 +552,7 @@ async function updateEnabledState(revision) {
   Utils._browserInfoLoaded = true;
   // This is the first time we learn what this frame's ID is.
   globalThis.frameId = response.frameId;
+  if (response.tabSwitcherShortcut) TabSwitcher.shortcut = response.tabSwitcherShortcut;
 
   if (normalMode == null) installModes();
   normalMode.setPassKeys(response.passKeys);

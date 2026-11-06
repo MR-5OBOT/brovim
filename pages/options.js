@@ -421,6 +421,20 @@ function onDownloadBackupClicked() {
   document.querySelector("#download-backup").href = URL.createObjectURL(blob);
 }
 
+export async function restoreBackup(contents) {
+  const backup = Settings.validateBackup(JSON.parse(contents));
+  // Backups omit default values. Restore defaults as well as the validated customizations.
+  await Settings.setSettings({
+    ...globalThis.structuredClone(Settings.defaultOptions),
+    ...backup,
+  });
+  setFormFromSettings(Settings.getSettings());
+  const saveButton = document.querySelector("#save");
+  saveButton.disabled = true;
+  saveButton.textContent = "Saved";
+  document.querySelector("#save-status").textContent = "Backup restored";
+}
+
 function onUploadBackupClicked(event) {
   if (document.activeElement) {
     document.activeElement.blur();
@@ -430,30 +444,22 @@ function onUploadBackupClicked(event) {
   if (files.length === 1) {
     const file = files[0];
     const reader = new FileReader();
-    reader.readAsText(file);
     reader.onload = async () => {
-      let backup;
       try {
-        backup = JSON.parse(reader.result);
+        await restoreBackup(reader.result);
       } catch (error) {
-        console.log("parsing error:", error);
-        alert("Failed to parse Brovim backup: " + error);
+        alert("Failed to restore Brovim backup: " + error.message);
         return;
+      } finally {
+        event.target.value = "";
       }
-
-      // Backups omit default values. Restore those defaults too, rather than retaining unrelated
-      // customizations from the current settings. Migrate legacy backups before adding defaults.
-      await Settings.setSettings({
-        ...globalThis.structuredClone(Settings.defaultOptions),
-        ...Settings.migrateSettingsIfNecessary(backup),
-      });
-      setFormFromSettings(Settings.getSettings());
-      const saveButton = document.querySelector("#save");
-      saveButton.disabled = true;
-      saveButton.textContent = "Saved";
-      document.querySelector("#save-status").textContent = "Backup restored";
       alert("Settings have been restored from the backup.");
     };
+    reader.onerror = () => {
+      event.target.value = "";
+      alert("Failed to read Brovim backup.");
+    };
+    reader.readAsText(file);
   }
 }
 

@@ -74,7 +74,8 @@ body {
 #panel {
   box-sizing: border-box;
   width: 90vw;
-  max-width: 1080px;
+  /* Six columns fill 1080px. A grid that grew past six widens the panel as far as 90vw. */
+  max-width: max(1080px, calc(var(--columns, 6) * 180px));
   max-height: 90vh;
   padding: clamp(10px, 2vw, 24px);
   overflow: hidden;
@@ -102,7 +103,7 @@ body {
 
 #tab-switcher {
   display: grid;
-  /* --columns is set from the "cards per row" setting. */
+  /* --columns comes from the panel: the "cards per row" setting, grown to fit every tab. */
   grid-template-columns: repeat(var(--columns, 6), minmax(0, 1fr));
   grid-auto-rows: var(--card-height, auto);
   gap: 10px;

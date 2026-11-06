@@ -1,10 +1,11 @@
 import "../lib/utils.js";
 import "../lib/settings.js";
-import { orderTabSwitcherCards, selectTabSwitcherCards } from "../lib/tab_switcher.js";
+import { orderTabSwitcherCards, tabSwitcherGrid } from "../lib/tab_switcher.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
 // Keyboard-only tab switcher: a fixed MRU list for each gesture, with one grid of cards at a
-// time. Cycling wraps within the displayed recent cards. Hold the assigned modifier and
+// time. The grid lists every eligible tab, growing to fit them, and cycling wraps through all of
+// them. Hold the assigned modifier and
 // repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l and Tab also move, Enter
 // switches, x/Delete/Backspace close the selected tab, and Escape cancels.
 
@@ -16,7 +17,7 @@ const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
 let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
 let tabs = []; // Frozen visual order for this gesture, with pins in the leading cells.
-let selectionAnchors = {}; // Preserve the original current/last-used pair across fallback hops.
+let layout = { columns: 6, rows: 3 }; // The grid's size for these tabs; see gridLayout.
 let selectedIndex = 0;
 let selectedCard = null;
 let visiblePage = -1;
@@ -62,16 +63,14 @@ async function fetchTabs(options = {}) {
     list = await sendRequest({
       handler: "getOpenTabsWithScreenshots",
       includeScreenshots: "cached",
-      screenshotLimit: pageSize(),
     }) || [];
   } catch (err) {
     console.error("Failed to load tabs:", err);
   }
   if (currentActivation !== activation) return;
-  selectionAnchors = {
-    sourceId: options.cycle?.sourceId ?? list.find((tab) => tab.active)?.id,
-    previousId: options.cycle?.previousId ?? list.find((tab) => tab.lastUsed)?.id ?? list[1]?.id,
-  };
+  // A carried gesture keeps its original last-used tab across protected-page hops.
+  const previousId = options.cycle?.previousId ?? list.find((tab) => tab.lastUsed)?.id ??
+    list[1]?.id;
   if (options.cycle) {
     const byId = new Map(list.map((tab) => [tab.id, tab]));
     const cycleIds = new Set(options.cycle.tabIds);
@@ -94,7 +93,7 @@ async function fetchTabs(options = {}) {
     return;
   }
   const selectedId = options.cycle?.selectedId ??
-    (options.reverse ? tabs.at(-1)?.id : selectionAnchors.previousId);
+    (options.reverse ? tabs.at(-1)?.id : previousId);
   selectedIndex = Math.max(0, tabs.findIndex((tab) => tab.id === selectedId));
   render();
   // Show usable cards immediately; cached previews arrive without delaying keys or painting.
@@ -105,10 +104,21 @@ async function fetchTabs(options = {}) {
   loadScreenshots(currentActivation, tabs);
 }
 
-const pageSize = () => columnSetting() * layoutSetting("tabSwitcherRows", 1, 3);
+const pageSize = () => layout.columns * layout.rows;
 
 function chooseTabs() {
-  tabs = orderTabSwitcherCards(selectTabSwitcherCards(allTabs, pageSize(), selectionAnchors));
+  tabs = orderTabSwitcherCards(allTabs);
+  layout = gridLayout(tabs.length);
+}
+
+// The configured grid, grown to fit every card while cards stay at least about 140×120px.
+function gridLayout(count) {
+  return tabSwitcherGrid(count, {
+    columns: columnSetting(),
+    rows: layoutSetting("tabSwitcherRows", 1, 3),
+    maxColumns: Math.min(10, Math.floor(innerWidth * 0.9 / 140)),
+    maxRows: Math.min(6, Math.floor(innerHeight * 0.9 / 120)),
+  });
 }
 
 async function loadScreenshots(currentActivation, tabsToLoad) {
@@ -133,9 +143,9 @@ async function loadScreenshots(currentActivation, tabsToLoad) {
 }
 
 function render() {
-  const columns = columnSetting();
-  grid.classList.toggle("few", tabs.length < columns);
-  grid.style.setProperty("--columns", Math.min(columns, tabs.length));
+  grid.classList.toggle("few", tabs.length < layout.columns);
+  // On the panel, so that extra columns can widen it as well as the grid.
+  panel.style.setProperty("--columns", Math.min(layout.columns, tabs.length));
   grid.replaceChildren(...tabs.map(createCard));
   selectedCard = null;
   visiblePage = -1;
@@ -152,7 +162,7 @@ function sizePanel() {
   const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) +
     parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
   const gap = parseFloat(getComputedStyle(grid).rowGap);
-  const columns = Math.min(columnSetting(), tabs.length);
+  const columns = Math.min(layout.columns, tabs.length);
   const count = Math.min(pageSize(), tabs.length - visiblePage * pageSize());
   const rows = Math.ceil(count / columns);
   const title = card.querySelector(".card-title");
@@ -274,7 +284,7 @@ function step(delta) {
 // Moves a row up or down, wrapping within the column and skipping the gaps of a short last row.
 function moveRow(delta) {
   if (tabs.length === 0) return;
-  const columns = Math.min(columnSetting(), tabs.length);
+  const columns = Math.min(layout.columns, tabs.length);
   const rows = Math.ceil(tabs.length / columns);
   const column = selectedIndex % columns;
   let row = Math.floor(selectedIndex / columns);
@@ -325,7 +335,7 @@ async function closeTab(index) {
   if (!closed || !visible || currentActivation !== activation) return;
   const selectedId = tabs[selectedIndex]?.id;
   allTabs = allTabs.filter((t) => t.id !== tab.id);
-  // The next most recent tab takes the free place.
+  // The following cards move up; the grid shrinks back toward its configured size.
   chooseTabs();
   if (allTabs.length < 2) {
     hide();
@@ -477,6 +487,13 @@ globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
 globalThis.addEventListener("resize", () => {
   if (!visible) return;
+  // The screen's size limits how far the grid grows.
+  const next = gridLayout(tabs.length);
+  if (next.columns !== layout.columns || next.rows !== layout.rows) {
+    layout = next;
+    render();
+    return;
+  }
   sizePanel();
   postPanel();
 });

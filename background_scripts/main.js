@@ -13,13 +13,13 @@ import "../background_scripts/tab_operations.js";
 import {
   commitTabSwitcherCycle,
   endTabSwitcherCycle,
+  getTabSwitcherShortcut,
   openTabSwitcher,
   setTabSwitcherOverlay,
 } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { initializeInternalPages } from "./internal_pages.js";
 import { getTabSwitcherData, switchToPreviousRecentTab } from "./recent_tabs.js";
-import { selectTabSwitcherCards } from "../lib/tab_switcher.js";
 import {
   captureThumbnail,
   findThumbnails,
@@ -225,9 +225,10 @@ async function selectSpecificTab(request) {
     return null;
   });
   // A tab can close, move or go to sleep while the fixed grid is open. Pinned sleepers remain
-  // eligible and are woken only when selected; other unavailable tabs stay asleep.
+  // eligible and are woken only when selected; other unavailable tabs stay asleep. Frozen tabs are
+  // awake (see getRecentTabs).
   if (
-    request.awakeOnly && (!tab || (!tab.pinned && (tab.discarded || tab.frozen)) || tab.hidden ||
+    request.awakeOnly && (!tab || (!tab.pinned && tab.discarded) || tab.hidden ||
       (request.tab && request.tab.windowId !== tab.windowId))
   ) return false;
   // Focus the tab's window. TODO(philc): Why are we null-checking chrome.windows here?
@@ -531,28 +532,22 @@ const sendRequestHandlers = {
   endTabSwitcherCycle({ tab, id }) {
     endTabSwitcherCycle(tab.windowId, id);
   },
+  // Sent when a page sees the switcher's modifier go down. Receiving it is the point: it starts a
+  // stopped service worker before the shortcut itself arrives.
+  warmTabSwitcher() {},
   setTabSwitcherOverlay({ tab, id, showing }) {
     setTabSwitcherOverlay(tab, id, showing);
   },
   // Eligible tabs in the window, in the switcher's order (the active tab first).
-  async getOpenTabsWithScreenshots({
-    tab,
-    windowId,
-    includeScreenshots = true,
-    screenshotLimit = 18,
-  }) {
+  async getOpenTabsWithScreenshots({ tab, windowId, includeScreenshots = true }) {
     const { tabs, previousId } = await getTabSwitcherData(windowId ?? tab.windowId);
-    const cards = selectTabSwitcherCards(tabs, Math.max(0, Math.min(18, screenshotLimit)), {
-      previousId,
-    });
-    const urls = cards.map((t) => t.url);
+    const urls = tabs.map((t) => t.url);
     const screenshots = includeScreenshots === "cached"
       ? getCachedThumbnails(urls, tab?.incognito)
       : includeScreenshots
       ? await findThumbnails(urls, tab?.incognito)
       : [];
-    const screenshotsById = new Map(cards.map((t, i) => [t.id, screenshots[i]]));
-    return tabs.map((t) => ({
+    return tabs.map((t, i) => ({
       id: t.id,
       index: t.index,
       title: t.title || "Untitled",
@@ -561,7 +556,7 @@ const sendRequestHandlers = {
       active: t.active,
       lastUsed: t.id === previousId,
       pinned: t.pinned,
-      screenshot: screenshotsById.get(t.id) ?? null,
+      screenshot: screenshots[i] ?? null,
     }));
   },
   // The stored preview for each URL, or null.
@@ -627,13 +622,20 @@ const sendRequestHandlers = {
         },
       };
 
-      chrome.action.setIcon({ path: iconSet[whichIcon], tabId: sender.tab.id });
+      // The tab can be gone by now (closed, or replaced by a prerendered or discarded copy).
+      // setIcon reports that through lastError, not a rejection, so only a callback consumes it.
+      chrome.action.setIcon(
+        { path: iconSet[whichIcon], tabId: sender.tab.id },
+        () => chrome.runtime.lastError,
+      );
     }
 
     const response = Object.assign({
       isFirefox: bgUtils.isFirefox(),
       firefoxVersion: await bgUtils.getFirefoxVersion(),
       frameId: sender.frameId,
+      // Lets the page warm up the switcher when the shortcut's modifier goes down.
+      tabSwitcherShortcut: isTopFrame ? await getTabSwitcherShortcut() : null,
     }, enabledState);
 
     return response;

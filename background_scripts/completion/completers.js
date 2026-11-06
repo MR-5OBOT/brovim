@@ -785,14 +785,12 @@ HistoryCache._onVisitRemovedListener = HistoryCache.onVisitRemoved.bind(HistoryC
 // you must check the element at the returned index to know whether the element was actually found.
 // This method is used for quickly searching through our history cache.
 HistoryCache.binarySearch = function (targetElement, array, compareFunction) {
-  let element, middle;
   let high = array.length - 1;
   let low = 0;
 
   while (low <= high) {
-    middle = Math.floor((low + high) / 2);
-    element = array[middle];
-    const compareResult = compareFunction(element, targetElement);
+    const middle = Math.floor((low + high) / 2);
+    const compareResult = compareFunction(array[middle], targetElement);
     if (compareResult > 0) {
       high = middle - 1;
     } else if (compareResult < 0) {
@@ -802,9 +800,5 @@ HistoryCache.binarySearch = function (targetElement, array, compareFunction) {
     }
   }
   // We didn't find the element. Return the position where it should be in this array.
-  if (compareFunction(element, targetElement) < 0) {
-    return middle + 1;
-  } else {
-    return middle;
-  }
+  return low;
 };

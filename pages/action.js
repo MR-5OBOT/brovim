@@ -53,10 +53,9 @@ const ActionPage = {
     document.querySelector("#cancel").addEventListener("click", () => globalThis.close());
 
     const onUpdated = () => {
-      saveButton.disabled = false;
       saveButton.textContent = "Save changes";
       this.syncEnabledKeysCaption();
-      this.showValidationErrors();
+      saveButton.disabled = !this.showValidationErrors();
     };
 
     const defaultPatternForNewRules = this.generateDefaultPattern(this.tabUrl);
@@ -73,9 +72,7 @@ const ActionPage = {
     ExclusionRulesEditor.defaultPatternForNewRules = defaultPatternForNewRules;
     ExclusionRulesEditor.init();
     ExclusionRulesEditor.addEventListener("input", onUpdated);
-    const rules = Settings.get("exclusionRules").filter((r) =>
-      this.tabUrl.match(this.getPatternRegExp(r.pattern))
-    );
+    const rules = Settings.get("exclusionRules").filter((r) => this.matchesCurrentUrl(r.pattern));
     ExclusionRulesEditor.setForm(rules);
     this.syncEnabledKeysCaption();
 
@@ -95,20 +92,24 @@ const ActionPage = {
   },
 
   showValidationErrors() {
+    let valid = true;
     const rows = document.querySelectorAll(".rule");
     for (const row of rows) {
       const pattern = row.querySelector("input[name=pattern]").value;
-      const regExp = this.getPatternRegExp(pattern);
       const validationEl = row.querySelector(".validationMessage");
-      const patternMatchesUrl = this.tabUrl.match(regExp);
-      if (patternMatchesUrl) {
-        row.classList.remove("validationError");
-        validationEl.textContent = "";
-      } else {
-        row.classList.add("validationError");
-        validationEl.textContent = "Pattern does not match the current URL";
+      let message = "";
+      try {
+        if (!Utils.compileExclusionPattern(pattern.trim()).test(this.tabUrl)) {
+          message = "Pattern does not match the current URL";
+        }
+      } catch {
+        valid = false;
+        message = "Invalid URL pattern. Check brackets and other special characters.";
       }
+      row.classList.toggle("validationError", message !== "");
+      validationEl.textContent = message;
     }
+    return valid;
   },
 
   showExclusionRulesEditor() {
@@ -127,18 +128,24 @@ const ActionPage = {
   },
 
   async onSave() {
+    if (!this.showValidationErrors()) return;
     let rules = await Settings.get("exclusionRules");
     // Remove any rules which match the current URL, and replace them with the contents of this dialog.
-    rules = rules.filter((r) => !this.tabUrl.match(this.getPatternRegExp(r.pattern)));
+    rules = rules.filter((r) => !this.matchesCurrentUrl(r.pattern));
     rules = rules.concat(ExclusionRulesEditor.getRules());
-    Settings.set("exclusionRules", rules);
+    await Settings.set("exclusionRules", rules);
     const el = document.querySelector("#save");
     el.disabled = true;
     el.textContent = "Saved";
   },
 
-  getPatternRegExp(patternStr) {
-    return new RegExp("^" + patternStr.replace(/\*/g, ".*") + "$");
+  matchesCurrentUrl(pattern) {
+    try {
+      return Utils.compileExclusionPattern(pattern).test(this.tabUrl);
+    } catch {
+      // An older invalid rule must not prevent the popup from opening or saving valid rules.
+      return false;
+    }
   },
 
   // Returns an exclusion pattern which matches the domain of the given URL.

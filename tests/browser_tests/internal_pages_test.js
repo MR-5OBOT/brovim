@@ -90,6 +90,25 @@ try {
         }
         throw new Error(`Brovim did not initialize on ${urlPrefix}`);
       };
+      // After this suite's settings changes, Helium sometimes reloads a reloaded Settings page a
+      // second time, up to ~300ms later (a "reload" navigation that neither Brovim nor Puppeteer
+      // requests). Keys typed before it would reach the discarded page, so wait for a full second
+      // without navigation.
+      const settle = async (load) => {
+        let lastNavigation = Date.now();
+        const onNavigation = (frame) => {
+          if (frame === page.mainFrame()) lastNavigation = Date.now();
+        };
+        page.on("framenavigated", onNavigation);
+        try {
+          await load();
+          while (Date.now() - lastNavigation < 1000) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        } finally {
+          page.off("framenavigated", onNavigation);
+        }
+      };
       const enabledState = async (urlPrefix, expected) => {
         for (let i = 0; i < 100; i++) {
           const state = await worker.evaluate(async (prefix) => {
@@ -205,7 +224,7 @@ try {
       await history.close();
       await options.close();
       await page.bringToFront();
-      await page.reload();
+      await settle(() => page.reload());
       await ready("chrome://settings/");
       await page.keyboard.press("Escape");
       await page.keyboard.press("o");
@@ -225,7 +244,7 @@ try {
         throw new Error(`URL bar did not navigate to the fixture; current URL: ${page.url()}`);
       }
       pass("Reloaded Settings can navigate using Brovim's URL bar");
-      await page.goto("chrome://settings/");
+      await settle(() => page.goto("chrome://settings/"));
       await ready("chrome://settings/");
       await page.keyboard.press("Escape");
       const closed = new Promise((resolve) => page.once("close", resolve));
