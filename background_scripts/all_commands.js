@@ -142,6 +142,22 @@ const allCommands = [
   },
 
   {
+    name: "enterVisualMode",
+    desc: "Select page text with Vim keys",
+    details: "Use h/j/k/l, w/b/e, 0/$ and gg/G to adjust the selection; y copies it. " +
+      "Press c to position the caret, v to resume selecting, o to swap ends, or Escape to exit.",
+    group: "navigation",
+    noRepeat: true,
+  },
+
+  {
+    name: "enterVisualLineMode",
+    desc: "Select whole lines of page text",
+    group: "navigation",
+    noRepeat: true,
+  },
+
+  {
     name: "LinkHints.activateMode",
     desc: "Open a link in the current tab",
     options: {

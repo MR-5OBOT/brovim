@@ -390,6 +390,8 @@ const defaultKeyMappings = {
   "yy": "copyCurrentUrl",
   "gi": "focusInput",
   "i": "enterInsertMode",
+  "v": "enterVisualMode",
+  "V": "enterVisualLineMode",
 
   // Link hints
   "f": "LinkHints.activateMode",

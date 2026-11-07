@@ -1214,6 +1214,277 @@ try {
     await key(["Escape"]);
   });
 
+  const visualFixture = async () => {
+    await fresh();
+    await browser.defaultBrowserContext().overridePermissions(origin, [
+      "clipboard-read",
+      "clipboard-write",
+    ]);
+    await page.evaluate(() => {
+      document.body.innerHTML = "<p hidden>Hidden text must never receive the caret.</p>" +
+        '<p id="words">alpha bravo charlie delta</p>' +
+        '<pre id="lines">first line\nsecond line\nthird line</pre>' +
+        '<input id="visual-input"><div id="visual-editor" contenteditable="true">Draft</div>';
+      getSelection().removeAllRanges();
+    });
+  };
+  const selectVisualText = async (id, start, end = start) => {
+    await page.evaluate(({ id, start, end }) => {
+      const node = document.getElementById(id).firstChild;
+      getSelection().setBaseAndExtent(node, start, node, end);
+    }, { id, start, end });
+  };
+  const selectedText = () => page.evaluate(() => getSelection().toString());
+  const visualModeName = async () => {
+    const id = await tabId();
+    return await worker.evaluate(async (id) => {
+      const [result] = await chrome.scripting.executeScript({
+        target: { tabId: id },
+        func: () => Mode.singletons?.["visual-mode-group"]?.name || null,
+      });
+      return result.result;
+    }, id);
+  };
+
+  await check("visual selection extends a find match and y copies its text", async () => {
+    await visualFixture();
+    await key(["/"]);
+    const hud = await ui("vimium-hud-frame");
+    await hud.waitForFunction(() => document.activeElement.id === "hud-find-input");
+    await page.keyboard.type("bravo");
+    await hud.waitForFunction(() =>
+      document.querySelector("#hud-match-count").textContent.includes("1")
+    );
+    await key(["Enter", "v", "l"]);
+    assert(await selectedText() === "bravo ", "l did not extend the found word");
+    await key(["e"]);
+    assert(await selectedText() === "bravo charlie", "e did not select to the next word end");
+    await key(["y"]);
+    await page.waitForFunction(async () =>
+      await navigator.clipboard.readText() === "bravo charlie"
+    );
+    assert(await visualModeName() === null, "Yank left visual mode active");
+    assert(await selectedText() === "", "Yank retained the text highlight");
+    assert(await page.evaluate(() => getSelection().rangeCount) === 0, "Yank retained a range");
+    await page.evaluate(() => document.body.style.minHeight = "3000px");
+    await key(["j"]);
+    await page.waitForFunction(() => scrollY > 0);
+  });
+
+  await check("visual caret starts on visible short text and v toggles selection", async () => {
+    await visualFixture();
+    await key(["v"]);
+    assert(await visualModeName() === "caret", "No selection did not start caret mode");
+    assert(await selectedText() === "a", "Caret did not start at visible text");
+    await key(["w"]);
+    assert(await selectedText() === "b", "w did not position the caret at the next word");
+    await key(["b"]);
+    assert(await selectedText() === "a", "b did not move the caret back a word");
+    await key(["v", "l"]);
+    assert(await selectedText() === "al", "v/l did not start and extend selection");
+    await key(["o", "l"]);
+    assert(await selectedText() === "l", "o did not swap the active selection end");
+    await key(["c"]);
+    assert(await visualModeName() === "caret", "c did not return to caret mode");
+    await key(["v"]);
+    assert(await visualModeName() === "visual", "v did not resume visual mode");
+    await key(["Escape"]);
+    assert(await visualModeName() === null, "Escape left selection mode active");
+  });
+
+  await check("visual line mode selects lines and Enter copies them", async () => {
+    await visualFixture();
+    await selectVisualText("lines", 2);
+    await key(["V"]);
+    assert(await selectedText() === "first line", "V did not select the complete line");
+    await key(["j"]);
+    assert(await selectedText() === "first line\nsecond line", "j did not extend by a line");
+    await key(["k"]);
+    assert(await selectedText() === "first line", "k did not shrink the line selection");
+    await key(["Enter"]);
+    await page.waitForFunction(async () => await navigator.clipboard.readText() === "first line");
+    assert(await visualModeName() === null, "Enter left line selection active");
+    assert(await selectedText() === "", "Enter retained the line highlight");
+    assert(await page.evaluate(() => getSelection().rangeCount) === 0, "Enter retained a range");
+    await selectVisualText("lines", 14);
+    await key(["v", "Y"]);
+    // Y is linewise, so it copies the line's existing newline as well.
+    await page.waitForFunction(async () =>
+      await navigator.clipboard.readText() === "second line\n"
+    );
+    assert(await visualModeName() === null, "Y left visual mode active");
+    assert(await selectedText() === "", "Y retained the line highlight");
+    assert(await page.evaluate(() => getSelection().rangeCount) === 0, "Y retained a range");
+    await page.evaluate(() => getSelection().removeAllRanges());
+    await key(["V"]);
+    assert(
+      await visualModeName() === "visual/line",
+      "V without a selection did not start line mode",
+    );
+    await key(["Escape"]);
+  });
+
+  await check(
+    "visual Escape clears existing selections, caret and line highlights immediately",
+    async () => {
+      await visualFixture();
+      for (const keys of [["v"], ["V"], ["v", "c"], ["v", "g"]]) {
+        await selectVisualText("words", 0, 5);
+        await key(keys);
+        await key(["Escape"]);
+        assert(await visualModeName() === null, `Escape left ${keys} active`);
+        assert(await selectedText() === "", `Escape left a highlight after ${keys}`);
+        assert(
+          await page.evaluate(() => getSelection().rangeCount) === 0,
+          "Escape retained a range",
+        );
+      }
+      await key(["/"]);
+      const hud = await ui("vimium-hud-frame");
+      await hud.waitForFunction(() => document.activeElement.id === "hud-find-input");
+      await page.keyboard.type("bravo");
+      await hud.waitForFunction(() =>
+        document.querySelector("#hud-match-count").textContent.includes("1")
+      );
+      await key(["Enter", "v", "l", "Escape"]);
+      assert(await selectedText() === "", "Escape retained the selected search result");
+      assert(await visualModeName() === null, "Escape did not leave visual mode after search");
+
+      await selectVisualText("words", 0, 5);
+      await key(["v", "y"]);
+      await page.waitForFunction(async () => await navigator.clipboard.readText() === "alpha");
+      assert(await visualModeName() === null, "Copy did not exit visual mode");
+      assert(await selectedText() === "", "Copy did not immediately clear the highlight");
+      assert(await page.evaluate(() => getSelection().rangeCount) === 0, "Copy retained a range");
+      await key(["Escape"]);
+      assert(await selectedText() === "", "Escape retained a highlight after copying");
+      assert(await page.evaluate(() => getSelection().rangeCount) === 0, "Copied range remained");
+
+      await selectVisualText("words", 0, 5);
+      await key(["g", "Escape"]);
+      assert(await selectedText() === "", "Escape retained native selection in normal mode");
+    },
+  );
+
+  await check("visual selection respects editors and recovers after page replacement", async () => {
+    await visualFixture();
+    await page.focus("#visual-input");
+    await page.keyboard.type("vVcy");
+    assert(
+      await page.$eval("#visual-input", (el) => el.value) === "vVcy",
+      "Typing was intercepted",
+    );
+    assert(await visualModeName() === null, "Typing entered selection mode");
+    await key(["Escape"]);
+    await selectVisualText("words", 0, 5);
+    await key(["v"]);
+    await page.click("#visual-editor");
+    await page.keyboard.type("vcy");
+    assert(await visualModeName() === null, "Clicking an editor did not exit visual mode");
+    assert(
+      await page.$eval("#visual-editor", (el) => el.textContent.includes("vcy")),
+      "Editor lost typing",
+    );
+    await key(["Escape"]);
+    await selectVisualText("words", 0, 5);
+    await key(["v"]);
+    await page.evaluate(() => document.getElementById("words").remove());
+    await key(["l", "Escape"]);
+    assert(await visualModeName() === null, "A removed text node trapped selection mode");
+  });
+
+  await check("visual selection moves across inline markup and Unicode words", async () => {
+    await visualFixture();
+    await page.evaluate(() => {
+      document.getElementById("words").innerHTML = "café <b>naïve</b> résumé";
+    });
+    await selectVisualText("words", 0, 4);
+    await key(["v", "e"]);
+    assert(await selectedText() === "café naïve", "Word movement broke at markup or accented text");
+    await key(["o", "ArrowRight"]);
+    assert(await selectedText() === "afé naïve", "Arrow movement broke a reversed selection");
+    await key(["Escape"]);
+  });
+
+  await check("visual selection works inside open shadow roots", async () => {
+    await visualFixture();
+    await page.evaluate(() => {
+      document.body.innerHTML = '<div id="host"></div>';
+      document.getElementById("host").attachShadow({ mode: "open" }).innerHTML =
+        '<p id="shadow-words">shadow words here</p>';
+      getSelection().removeAllRanges();
+    });
+    await key(["v"]);
+    assert(await visualModeName() === "caret", "Shadow text did not get a caret");
+    assert(await selectedText() === "s", "The shadow caret started at the wrong position");
+    await key(["v", "e"]);
+    assert(
+      await selectedText() === "shadow",
+      `Shadow text did not extend to a word end: ${await selectedText()}`,
+    );
+    await key(["o", "l"]);
+    assert(await selectedText() === "hadow", "Swapping ends lost the shadow selection");
+    await key(["y"]);
+    await page.waitForFunction(async () => await navigator.clipboard.readText() === "hadow");
+  });
+
+  await check("visual selection reveals its focus inside nested scrolling panels", async () => {
+    await visualFixture();
+    await page.evaluate(() => {
+      document.body.innerHTML = '<div id="pane" style="height:100px;overflow:auto">' +
+        '<pre id="long-lines">' + Array.from({ length: 80 }, (_, i) => `line ${i}`).join("\n") +
+        "</pre></div>";
+    });
+    await selectVisualText("long-lines", 0, 1);
+    await key(["v", ...Array(12).fill("j")]);
+    assert(
+      await page.evaluate(() => {
+        const pane = document.getElementById("pane");
+        const selection = getSelection();
+        const focus = document.createRange();
+        focus.setStart(selection.focusNode, selection.focusOffset);
+        focus.collapse(true);
+        const rect = focus.getBoundingClientRect(), bounds = pane.getBoundingClientRect();
+        return pane.scrollTop > 0 && rect.top >= bounds.top && rect.bottom <= bounds.bottom;
+      }),
+      "The active selection end was not revealed inside its panel",
+    );
+    await key(["Escape"]);
+  });
+
+  await check("visual selection handles boundaries, empty pages and focus recovery", async () => {
+    await visualFixture();
+    await selectVisualText("words", 6, 11);
+    await key(["v", "0"]);
+    assert(await selectedText() === "alpha ", "0 did not move to the line start");
+    await key(["$"]);
+    assert(await selectedText() === "bravo charlie delta", "$ did not move to the line end");
+    await key(["o", "Home"]);
+    assert(
+      await selectedText() === "alpha bravo charlie delta",
+      "Home did not extend the opposite end",
+    );
+    await key(["Escape"]);
+    await page.evaluate(() => {
+      document.body.innerHTML = '<input id="empty-input">';
+      getSelection().removeAllRanges();
+    });
+    await key(["v"]);
+    assert(await visualModeName() === null, "An empty page left selection mode active");
+    await page.focus("#empty-input");
+    await page.keyboard.type("vV");
+    assert(
+      await page.$eval("#empty-input", (el) => el.value) === "vV",
+      "Empty-page recovery lost input",
+    );
+    await visualFixture();
+    await selectVisualText("words", 0, 5);
+    await key(["v"]);
+    const id = await tabId();
+    await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+    assert(await visualModeName() === null, "The focus-page shortcut did not exit visual mode");
+  });
+
   await check("find reveals rendered phrases inside a scrolling panel", async () => {
     await fresh();
     await page.evaluate(() => {
@@ -2406,7 +2677,7 @@ try {
       await save();
       await key(["q"]);
       await page.waitForFunction(() => scrollY >= 300);
-      await setOption("keyMappings", "map q enterVisualMode");
+      await setOption("keyMappings", "map q createTab");
       await options.click("#save");
       await options.waitForSelector(".validation-message");
       assert(

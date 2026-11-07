@@ -42,6 +42,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `zH` `zL`       | Scroll all the way left / right                                 |
 | `f` `F`         | Open a link in this tab / a new tab (hold Shift to flip)        |
 | `/` `n` `N`     | Find (plain text, smartcase), next match, previous match        |
+| `v` `V`         | Select text / whole lines with Vim movements                    |
 | `o` `O`         | Vomnibar: open URL, history, or web search (this tab / new tab) |
 | `b` `B`         | Vomnibar: bookmarks (this tab / new tab)                        |
 | `ge`            | Edit the current URL                                            |
@@ -67,6 +68,20 @@ browser shortcut with no custom mapping required; change it in the browser's ext
 settings. Typing keeps its normal focus until you leave the editor.
 
 Brovim runs on every site by default. Add excluded sites in Options or the toolbar popup.
+
+### Text selection
+
+Search with `/`, type a phrase and press Enter, then `v` to adjust the matched selection. Use
+`h`/`l` for characters, `j`/`k` for lines, `w`/`b` for words, `e` for a word's end, `0`/`$` for line
+boundaries, and `gg`/`G` for the start/end of the document. Arrow keys and Home/End also work. Press
+`y` or Enter to copy the selected text, clear its highlight and leave the mode. `Y` copies the
+current line and clears the highlight too.
+
+Press `c` to position the caret without extending the selection, then `v` to select from there. `v`
+also switches between caret and visual mode; `o` swaps the selection's active end. `V` selects whole
+lines. Escape exits and clears the highlight, including after copying; clicking an editor returns
+control to the page. When there is no existing selection, `v` starts caret mode at visible page
+text; press `v` again to extend it. Text fields keep their normal typing behavior.
 
 ### Tab switcher
 

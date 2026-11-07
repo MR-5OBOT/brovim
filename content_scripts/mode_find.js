@@ -373,6 +373,11 @@ const highlight = (matchRange) => {
   selection.removeAllRanges();
   selection.addRange(range);
 
+  scrollRangeIntoView(range);
+  return true;
+};
+
+const scrollRangeIntoView = (range) => {
   // Reveal the actual text range, rather than its potentially much larger parent element.
   // Walk from the innermost scrollport out through slots/shadow hosts, then the viewport.
   const delta = (start, end, min, max) =>
@@ -404,8 +409,6 @@ const highlight = (matchRange) => {
     top: delta(rect.top, rect.bottom, 0, globalThis.innerHeight),
     behavior: "instant",
   });
-
-  return true;
 };
 
 // Compare in a common tree when either the match or the selection is inside a shadow root.

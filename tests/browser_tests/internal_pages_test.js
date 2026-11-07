@@ -244,6 +244,79 @@ try {
         throw new Error(`URL bar did not navigate to the fixture; current URL: ${page.url()}`);
       }
       pass("Reloaded Settings can navigate using Brovim's URL bar");
+
+      const selectionPage = await browser.newPage();
+      try {
+        await browser.defaultBrowserContext().overridePermissions(origin, [
+          "clipboard-read",
+          "clipboard-write",
+        ]);
+        await selectionPage.goto("chrome://extensions/");
+        await ready("chrome://extensions/");
+        await selectionPage.bringToFront();
+        await selectionPage.waitForFunction(() => document.hasFocus());
+        await selectionPage.evaluate(() => {
+          // Extensions initially focuses its search field. Select page text outside that editor.
+          let active = document.activeElement;
+          while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+          active?.blur();
+        });
+        const selectExtensionName = () =>
+          selectionPage.waitForFunction(() => {
+            const visit = (node) => {
+              if (node.nodeType === Node.TEXT_NODE && node.textContent.includes("Brovim")) {
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                if (range.getBoundingClientRect().width > 0) {
+                  const selection = getSelection();
+                  selection.removeAllRanges();
+                  selection.addRange(range);
+                  return true;
+                }
+              }
+              return [...(node.shadowRoot?.childNodes || []), ...node.childNodes].some(visit);
+            };
+            return visit(document.documentElement);
+          });
+        await selectExtensionName();
+        await selectionPage.keyboard.press("v");
+        assert(
+          await worker.evaluate(async () => {
+            const tab = (await chrome.tabs.query({})).find((tab) =>
+              tab.url === "chrome://extensions/"
+            );
+            const [state] = await chrome.scripting.executeScript({
+              target: { tabId: tab.id },
+              func: () => !!Mode.singletons?.["visual-mode-group"],
+            });
+            return state.result;
+          }),
+          "Extensions text did not enter visual mode",
+        );
+        const copiedText = await selectionPage.evaluate(() => getSelection().toString());
+        await selectionPage.keyboard.press("y");
+        await selectionPage.waitForFunction(() => getSelection().rangeCount === 0);
+        await page.bringToFront();
+        await page.waitForFunction(
+          async (expected) => await navigator.clipboard.readText() === expected,
+          {},
+          copiedText,
+        );
+        pass("Yank copies Extensions-page text and immediately clears the highlight");
+        await selectionPage.bringToFront();
+        await selectExtensionName();
+        await selectionPage.keyboard.press("v");
+        await selectionPage.keyboard.press("Escape");
+        assert(
+          await selectionPage.evaluate(() => getSelection().rangeCount === 0),
+          "Escape retained a selected extension card on chrome://extensions",
+        );
+        pass("Escape clears visual selection inside Extensions-page shadow DOM");
+      } finally {
+        await selectionPage.close();
+      }
+
+      await page.bringToFront();
       await settle(() => page.goto("chrome://settings/"));
       await ready("chrome://settings/");
       await page.keyboard.press("Escape");

@@ -1046,3 +1046,32 @@ suggestions still come from YouTube's suggestion service on `suggestqueries.goog
 Verification: formatting/lint passed; 324 unit tests, 101 DOM tests, 91 installed-browser checks
 (from source and from the extracted Chrome Store ZIP), 7 lifecycle checks, 10 internal-page checks
 and 7 native shortcut checks passed. Firefox was not rerun for this change.
+
+## 21. Visual and Caret Text Selection Restored (November 7, 2026)
+
+`/phrase`, Enter, `v`, Vim movements and `y` now select and copy page text. Copying clears the
+highlight immediately and removes every selection range; `y`, `Y` and Enter share this behavior. `V`
+selects whole lines, `c` positions the caret, `v` switches caret/visual mode, `o` swaps ends, and
+Escape exits and clears the highlight, including after copying, existing search selections and
+pending movement prefixes. Arrow keys, Home/End and Enter-to-copy are also supported. Without an
+existing selection, `v` starts a caret at visible text. Inputs keep normal typing.
+
+Implementation:
+
+- Restored the selection machinery from the fork's history and connected it to the current manifest,
+  command registry, default mappings, normal mode and help.
+- Replaced the old character table with Unicode properties and preserved actual selection endpoints,
+  including composed ranges inside open shadow roots.
+- Guarded word stepping against repeated endpoints so a browser boundary cannot trap a page in a
+  movement loop. Caret fallback also handles short visible text.
+- Shared the find-mode range scrolling helper so moving the selection reveals its active end inside
+  nested scroll panels. Copy uses Brovim's existing clipboard HUD.
+- Added nine installed-browser regression checks for find-to-select/copy, caret switching, whole
+  lines, editors, replaced content, Unicode/inline markup, shadow roots, nested scrolling, empty
+  pages, boundaries, focus recovery and immediate Escape cleanup, including after copying.
+
+Validation: formatting/lint, 325 unit tests, 101 DOM tests and 101 installed-browser checks passed
+in Helium/Chromium. All three distribution packages built with the new script in their manifests.
+Twelve internal-page checks also passed, including clipboard contents, immediate copy cleanup and
+Escape cleanup on the actual Extensions page's shadow DOM with Helium's existing internal-page
+override. Firefox runtime tests were not run for this change.

@@ -28,6 +28,12 @@ class NormalMode extends KeyHandlerMode {
     });
   }
 
+  onKeydown(event) {
+    // A copied or native selection can outlive visual mode. Escape clears that highlight too.
+    if (KeyboardUtils.isEscape(event)) globalThis.getSelection()?.removeAllRanges();
+    return super.onKeydown(event);
+  }
+
   commandHandler({ command: registryEntry }) {
     // Count prefixes are gone, but a mapping can still repeat a command: "map J scrollDown count=5".
     const count = registryEntry.options.count ?? 1;
@@ -146,6 +152,18 @@ const NormalModeCommands = {
 
   enterFindMode() {
     return new FindMode();
+  },
+
+  enterVisualMode() {
+    const mode = new VisualMode();
+    mode.init({ userLaunchedMode: true });
+    return mode;
+  },
+
+  enterVisualLineMode() {
+    const mode = new VisualLineMode();
+    mode.init({ userLaunchedMode: true });
+    return mode;
   },
 
   // Find.
