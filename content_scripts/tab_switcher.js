@@ -304,11 +304,26 @@ const TabPreview = {
   pending: null,
   pendingUrl: null,
   mutations: null,
+  changed: new Set(), // Nodes changed since the last check for visible changes.
 
   init() {
     this.enabled = true;
+    // Measuring a change as it happens would force a style and layout pass from Brovim's world,
+    // and images that pass starts loading would skip the page's preloads (Chrome warns of a
+    // "cross-world-for-csp resource mismatch") and download twice. Measure once the page has
+    // rendered the change instead.
     this.mutations = new MutationObserver((records) => {
-      if (records.some(isVisibleChange)) this.lastChange = performance.now();
+      if (this.changed.size === 0) {
+        requestAnimationFrame(() =>
+          requestIdleCallback(() => this.checkChanges(), { timeout: 150 })
+        );
+      }
+      for (const record of records) {
+        this.changed.add(record.target);
+        if (record.type === "childList") {
+          for (const node of record.addedNodes) this.changed.add(node);
+        }
+      }
     });
     // Images finishing their paint and layout shifts (from fonts loading, say) don't change the DOM.
     for (const type of ["largest-contentful-paint", "layout-shift"]) {
@@ -367,6 +382,12 @@ const TabPreview = {
     });
     this.timer = setInterval(() => this.check(), 250);
     if (firstPaint) this.scheduleCapture(true);
+  },
+
+  checkChanges() {
+    const nodes = [...this.changed];
+    this.changed.clear();
+    if (nodes.some(isVisible)) this.lastChange = performance.now();
   },
 
   check() {
@@ -429,25 +450,20 @@ const TabPreview = {
   },
 };
 
-// Whether a DOM change shows on screen: it's in a visible element of at least 32x32px within the
+// Whether a changed node shows on screen: it's in a visible element of at least 32x32px within the
 // viewport.
-function isVisibleChange(record) {
-  const nodes = record.type === "childList"
-    ? [...record.addedNodes, record.target]
-    : [record.target];
-  return nodes.some((node) => {
-    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
-    if (!el?.isConnected) return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width * rect.height >= 1024 && rect.bottom > 0 && rect.right > 0 &&
-      rect.top < globalThis.innerHeight && rect.left < globalThis.innerWidth &&
-      (el.checkVisibility?.({
-        checkOpacity: true,
-        checkVisibilityCSS: true,
-        opacityProperty: true,
-        visibilityProperty: true,
-      }) ?? true);
-  });
+function isVisible(node) {
+  const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!el?.isConnected) return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width * rect.height >= 1024 && rect.bottom > 0 && rect.right > 0 &&
+    rect.top < globalThis.innerHeight && rect.left < globalThis.innerWidth &&
+    (el.checkVisibility?.({
+      checkOpacity: true,
+      checkVisibilityCSS: true,
+      opacityProperty: true,
+      visibilityProperty: true,
+    }) ?? true);
 }
 
 // Link hints, or a visible switcher, Vomnibar, HUD or help dialog.

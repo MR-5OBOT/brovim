@@ -25,7 +25,7 @@ context("TabOperations openurlInCurrentTab", () => {
 
   should("open a javascript URL", async () => {
     let details = null;
-    // NOTE(philc): This is a shallow test.
+    // NOTE: This is a shallow test.
     stub(chrome.scripting, "executeScript", (_details) => {
       details = _details;
     });
@@ -54,7 +54,7 @@ context("TabOperations openurlInCurrentTab", () => {
       called = true;
     });
     const url = "javascript:console.log('hello')";
-    // Simulates a cross-origin subframe (not the top frame, not one of Vimium's own pages).
+    // Simulates a cross-origin subframe (not the top frame, not one of Brovim's own pages).
     const sender = { frameId: 5, url: "https://attacker.example.com/iframe.html" };
     await to.openUrlInCurrentTab({ url }, sender);
     assert.isFalse(called);

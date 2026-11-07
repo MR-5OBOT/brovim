@@ -32,7 +32,7 @@
 //   strings.
 //   options.example: an example object containing at least "keyword" and "searchUrl", and optional
 //   "description".
-// TODO(philc): This base class is doing very little. We should remove it and use composition.
+// TODO: This base class is doing very little. We should remove it and use composition.
 class BaseEngine {
   constructor(options) {
     Object.assign(this, options);

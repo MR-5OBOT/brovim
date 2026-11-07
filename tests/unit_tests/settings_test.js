@@ -4,7 +4,7 @@ import "../../lib/settings.js";
 context("settings", () => {
   context("v2.0 migration", () => {
     setup(async () => {
-      // Prior to Vimium 2.0.0, the settings values were encoded as JSON strings.
+      // Prior to Brovim 2.0.0, the settings values were encoded as JSON strings.
       await chrome.storage.sync.set({ scrollStepSize: JSON.stringify(123) });
     });
 

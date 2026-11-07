@@ -17,7 +17,7 @@ const ActionPage = {
       document.querySelector("footer").style.display = "none";
     };
 
-    // In Firefox, prompt the user if they haven't enabled the "all hosts" permission. Vimium needs
+    // In Firefox, prompt the user if they haven't enabled the "all hosts" permission. Brovim needs
     // this permission to work correctly, and as of 2023-11-06, Firefox does not grant this
     // permission without user consent, and doesn't make it clear that the user needs to do
     // anything. See #4348 for discussion, and https://stackoverflow.com/q/76083327 for
@@ -152,7 +152,7 @@ const ActionPage = {
   // This is used as the default starter pattern when the "Add rule" button is clicked.
   generateDefaultPattern(url) {
     if (/^https?:\/\/./.test(url)) {
-      // The common use case is to disable Vimium at the domain level.
+      // The common use case is to disable Brovim at the domain level.
       // Generate "https?://www.example.com/*" from "http://www.example.com/path/to/page.html".
       // Note: IPV6 host addresses will contain "[" and "]" (which must be escaped).
       const hostname = url.split("/", 3).slice(1).join("/").replace("[", "\\[").replace(

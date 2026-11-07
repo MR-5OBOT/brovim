@@ -158,7 +158,7 @@ const HintCoordinator = {
 
   prepareToActivateMode(mode, onExit) {
     // We need to communicate with the background page (and other frames) to initiate link-hints
-    // mode. To prevent other Vimium commands from being triggered before link-hints mode is
+    // mode. To prevent other Brovim commands from being triggered before link-hints mode is
     // launched, we install a temporary mode to block (and cache) keyboard events.
     let cacheAllKeydownEvents;
     this.cacheAllKeydownEvents = cacheAllKeydownEvents = new CacheAllKeydownEvents({
@@ -172,9 +172,9 @@ const HintCoordinator = {
         this.sendMessage("exit", { isSuccess: false });
       }
     });
-    // FIXME(smblott) Global link hints is currently insufficiently reliable. If the mode above is
-    // left in place, then Vimium blocks. As a temporary measure, we install a timer to remove it.
-    // TODO(philc): I believe link hints is sufficiently reliable after the manifest V3 port
+    // FIXME: Global link hints is currently insufficiently reliable. If the mode above is
+    // left in place, then Brovim blocks. As a temporary measure, we install a timer to remove it.
+    // TODO: I believe link hints is sufficiently reliable after the manifest V3 port
     // that this safeguard can now be removed.
     Utils.setTimeout(1000, function () {
       if (cacheAllKeydownEvents && cacheAllKeydownEvents.modeIsActive) {
@@ -414,7 +414,7 @@ class LinkHintsMode {
       this.containerEl.appendChild(el);
     }
 
-    // TODO(philc): 2024-03-27 Remove this hasPopoverSupport check once Firefox has popover support.
+    // TODO: 2024-03-27 Remove this hasPopoverSupport check once Firefox has popover support.
     // Also move this CSS into vimium.css.
     const hasPopoverSupport = this.containerEl.showPopover != null;
     if (hasPopoverSupport) {
@@ -473,7 +473,7 @@ class LinkHintsMode {
       const el = DomUtils.createElement("div");
       el.style.left = localHint.rect.left + "px";
       el.style.top = localHint.rect.top + "px";
-      // Note that Vimium's CSS is user-customizable. We're adding the "vimiumHintMarker" class here
+      // Note that Brovim's CSS is user-customizable. We're adding the "vimiumHintMarker" class here
       // for users to customize. See further comments about this in vimium.css.
       el.className = "vimium-reset internal-vimium-hint-marker vimiumHintMarker";
       Object.assign(marker, {
@@ -504,7 +504,7 @@ class LinkHintsMode {
     }
     if (event.repeat) return;
 
-    // NOTE(smblott) The modifier behaviour here applies only to alphabet hints.
+    // NOTE: The modifier behaviour here applies only to alphabet hints.
     if (
       event.key === "Shift" && !Settings.get("filterLinkHints") &&
       [OPEN_IN_CURRENT_TAB, OPEN_WITH_QUEUE, OPEN_IN_NEW_BG_TAB].includes(this.mode)
@@ -719,7 +719,7 @@ class LinkHintsMode {
             const linkActivator = this.mode.linkActivator != null
               ? this.mode.linkActivator
               : clickActivator(this.mode.clickModifiers);
-            // Note(gdh1995): Here we should allow special elements to get focus,
+            // Note: Here we should allow special elements to get focus,
             // <select>: latest Chrome refuses `mousedown` event, and we can only focus it to let
             //     user press space to activate the popup menu
             // <object> & <embed>: for Flash games which have their own key event handlers since we
@@ -1242,7 +1242,7 @@ const LocalHints = {
         break;
     }
 
-    // NOTE(smblott) Disabled pending resolution of #2997.
+    // NOTE: Disabled pending resolution of #2997.
     // # Detect elements with "click" listeners installed with `addEventListener()`.
     // isClickable ||= element.hasAttribute "_vimium-has-onclick-listener"
 
@@ -1358,7 +1358,7 @@ const LocalHints = {
     // The order of elements here is important; they should appear in the order they are in the DOM,
     // so that we can work out which element is on top when multiple elements overlap. Detecting
     // elements in this loop is the sensible, efficient way to ensure this happens.
-    // NOTE(mrmr1993): Our previous method (combined XPath and DOM traversal for jsaction) couldn't
+    // NOTE: Our previous method (combined XPath and DOM traversal for jsaction) couldn't
     // provide this, so it's necessary to check whether elements are clickable in order, as we do
     // below.
     for (const element of Array.from(elements)) {
@@ -1374,7 +1374,7 @@ const LocalHints = {
     // Filter out suspected false positives. A false positive is taken to be an element marked as a
     // possible false positive for which a close descendant is already clickable. False positives
     // tend to be close together in the DOM, so - to keep the cost down - we only search nearby
-    // elements. NOTE(smblott): The visible elements have already been reversed, so we're visiting
+    // elements. NOTE: The visible elements have already been reversed, so we're visiting
     // descendants before their ancestors.
     // This determines how many descendants we're willing to consider.
     const descendantsToCheck = [1, 2, 3];
@@ -1424,7 +1424,7 @@ const LocalHints = {
 
       // If not in middle, try corners.
       // Adjusting the rect by 0.1 towards the upper left, which empirically fixes some cases where
-      // another element would've been found instead. NOTE(philc): This isn't well explained.
+      // another element would've been found instead. NOTE: This isn't well explained.
       // Originated in #2251.
       const verticalCoords = [rect.top + 0.1, rect.bottom - 0.1];
       const horizontalCoords = [rect.left + 0.1, rect.right - 0.1];

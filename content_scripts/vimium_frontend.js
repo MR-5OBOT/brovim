@@ -68,7 +68,7 @@ class GrabBackFocus extends Mode {
     });
 
     // True after we've grabbed back focus to the page and logged it via console.log , so web devs
-    // using Vimium don't get confused.
+    // using Brovim don't get confused.
     this.logged = false;
 
     this.push({
@@ -226,7 +226,7 @@ function installListener(element, event, callback) {
 
 // Installing or uninstalling listeners is error prone. Instead we elect to check isEnabledForUrl
 // each time so we know whether the listener should run or not.
-// Note: We install the listeners even if Vimium is disabled. See comment in commit
+// Note: We install the listeners even if Brovim is disabled. See comment in commit
 // 6446cf04c7b44c3d419dc450a73b60bcaf5cdf02.
 const installListeners = Utils.makeIdempotent(function () {
   // Key event handlers fire on window before they do on document. Prefer window for key events so
@@ -250,7 +250,7 @@ const onFocus = forTrusted(function (event) {
 });
 
 // We install these listeners directly (that is, we don't use installListener) because we still need
-// to receive events when Vimium is not enabled.
+// to receive events when Brovim is not enabled.
 globalThis.addEventListener("focus", onFocus, true);
 globalThis.addEventListener("hashchange", checkEnabledAfterURLChange, true);
 
@@ -425,7 +425,7 @@ const messageHandlers = {
     return { allowed: location.href === url && !document.hidden && !isBrovimUiVisible() };
   },
   runInTopFrame({ sourceFrameId, registryEntry }) {
-    // TODO(philc): it seems to me that we should be able to get rid of this runInTopFrame
+    // TODO: it seems to me that we should be able to get rid of this runInTopFrame
     // command, and instead use chrome.tabs.sendMessage with a frameId 0 from the background page.
     if (DomUtils.isTopFrame()) {
       return NormalModeCommands[registryEntry.command](sourceFrameId, registryEntry);
@@ -480,7 +480,7 @@ async function handleMessage(request, sender) {
 async function initializePreDomReady() {
   // Run this as early as possible, so the page can't register any event handlers before us.
   installListeners();
-  // NOTE(philc): I'm blocking further Vimium initialization on this, for simplicity. If necessary
+  // NOTE: I'm blocking further Brovim initialization on this, for simplicity. If necessary
   // we could allow other tasks to run concurrently.
   await checkIfEnabledForUrl();
   if (extensionHasBeenUnloaded()) return onUnload();
@@ -491,7 +491,7 @@ async function initializePreDomReady() {
   );
 }
 
-// Check if Vimium should be enabled or not based on the top frame's URL.
+// Check if Brovim should be enabled or not based on the top frame's URL.
 function checkIfEnabledForUrl() {
   // Coalesce simultaneous checks, retaining any focus/navigation invalidation received in flight.
   enabledCheckRevision++;

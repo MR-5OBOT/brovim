@@ -1,9 +1,8 @@
 # Brovim
 
-Brovim is a browser extension for keyboard-driven browsing in the spirit of Vim. It is a streamlined
-fork of [Vimium](https://github.com/philc/vimium): niche modes were removed, and it adds a dark
-theme with purple accents, a visual tab switcher with thumbnails, and ready-made search engine
-keywords.
+Brovim is a browser extension for keyboard-driven browsing in the spirit of Vim: link hints, a
+Vomnibar, a visual tab switcher with thumbnails, a dark theme with purple accents, and ready-made
+search engine keywords.
 
 ## Install from source
 
@@ -71,24 +70,23 @@ reassigned) to switch directly to the previous tab. Hold its modifier to see the
 letter to move through the same list; release the modifier to switch. Adding Shift moves back unless
 Shift is already part of your assigned shortcut.
 
-The grid lists every eligible tab. It starts at your configured size (6 columns and 3 rows by
-default) and, when there are more tabs, adds columns and rows (widening the panel) until every tab
-has a cell, as far as the screen allows while cards stay readable. All rows fit in the frame without
-scrolling. Only past that limit does keyboard navigation advance to another page; a page indicator
-shows where you are. Pinned tabs occupy the leading cells in tab-bar order, including while sleeping
-or inactive. A quick tap always swaps to the last-used tab. Holding starts at that tab's visible
-cell; further presses move to the next cell, wrapping from the last cell back to cell 0. Closing a
-card moves the following cards up. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches,
-`x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle
-clicks, touch and wheel input do not operate the switcher; there are no close buttons.
+The grid lists every eligible tab, 8 cards per row by default: each further 8 tabs start a new row.
+When the screen has no room for another row while cards stay readable, it adds columns instead
+(widening the panel), so every tab has a cell. All rows fit in the frame without scrolling. Only
+past that limit does keyboard navigation advance to another page; a page indicator shows where you
+are. Pinned tabs occupy the leading cells in tab-bar order, including while sleeping or inactive. A
+quick tap always swaps to the last-used tab. Holding starts at that tab's visible cell; further
+presses move to the next cell, wrapping from the last cell back to cell 0. Closing a card moves the
+following cards up. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches, `x`, Delete or
+Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle clicks, touch
+and wheel input do not operate the switcher; there are no close buttons.
 
 In shortcut order, the current tab comes first, then tabs used this session (new background tabs
 come right after the current tab, including tabs created without an opener), then the rest by when
 they were last used. This is also how TabGlance's cycling grid places the current tab. Options › Tab
-switcher offers tab bar order instead, a smaller starting grid, a liquid glass panel (off by
-default), direct swapping with two tabs (on by default), and the preview settings below. Change the
-shortcut at `chrome://extensions/shortcuts`; if another extension already uses it, assign it to
-Brovim there.
+switcher offers tab bar order instead, fewer cards per row, a liquid glass panel (off by default),
+direct swapping with two tabs (on by default), and the preview settings below. Change the shortcut
+at `chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
 
 Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
 after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the
@@ -206,4 +204,4 @@ results.
 
 ## License
 
-MIT, like Vimium.
+MIT. See [LICENSE](LICENSE).

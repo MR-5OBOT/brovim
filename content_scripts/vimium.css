@@ -1,11 +1,11 @@
 /*
  * Many CSS class names in this file use the verbose "vimium-" as the class name. This is so we
  * don't use the same CSS class names that the page is using, so the page's CSS doesn't mess with
- * the style of our Vimium dialogs.
+ * the style of our Brovim dialogs.
  *
- * We use the maximum z-index value for all Vimium elements to guarantee that they always appear on
+ * We use the maximum z-index value for all Brovim elements to guarantee that they always appear on
  * top. Chrome supports z-index values up to 2,147,483,647 (= 2^31 - 1). We utilize the maximum
- * z-index value allowable to ensure Vimium elements have precedence over all other page elements.
+ * z-index value allowable to ensure Brovim elements have precedence over all other page elements.
  */
 
 /*
@@ -312,7 +312,7 @@ iframe.vimium-non-clickable {
 @media (prefers-color-scheme: dark) {
   /* DarkReader is a popular dark mode browser extension. It can apply an invert filter to the whole
    * page to make the page dark, when used in Filter and Filter+ modes. We want to reverse/invert
-   * that filter again for Vimium's UI elements, because Vimium is already dark mode aware. */
+   * that filter again for Brovim's UI elements, because Brovim is already dark mode aware. */
   iframe.vimium-reverse-dark-reader-filter {
     -webkit-filter: invert(100%) hue-rotate(180deg) !important;
     filter: invert(100%) hue-rotate(180deg) !important;

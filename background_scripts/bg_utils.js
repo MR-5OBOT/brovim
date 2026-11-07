@@ -14,6 +14,6 @@ export async function getFirefoxVersion() {
   return isFirefox() ? (await browser.runtime.getBrowserInfo()).version : null;
 }
 
-// TODO(philc): tabRecency imports bg_utils. We should resovle the cycle for the sake of clarity.
+// TODO: tabRecency imports bg_utils. We should resovle the cycle for the sake of clarity.
 export const tabRecency = new TabRecency();
 tabRecency.init();

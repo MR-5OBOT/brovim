@@ -1,7 +1,6 @@
 # Brovim: Project Report and Verification
 
 **Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
-**Base:** Based on `philc/vimium` (full history kept; no longer a GitHub fork)\
 **Date:** November 6, 2026\
 **Status:** The switcher lists every awake tab in a grid that grows to fit, and the reported
 extension errors are fixed; verified. See section 17.
@@ -156,7 +155,7 @@ An audit of this report and `TODOS.md` against the code found these problems, al
    wipes when it suspends the worker. They are now downscaled to 480px thumbnails (a few KB each
    instead of full-size screenshots) and kept in `chrome.storage.session`. Captures also check that
    the tab is still active, so a fast tab switch can't save one tab's pixels under another.
-10. **Theme only half applied.** In dark OS mode, `vimium.css` swapped the palette back to Vimium's
+10. **Theme only half applied.** In dark OS mode, `vimium.css` swapped the palette back to the old
     greys. In light mode, the popup footer and command-listing headings turned dark purple with
     black text. The help dialog (`?`) had never been restyled. Now the in-page UI is always dark
     (neutral grey surfaces, purple accents), the help dialog matches it, and extension pages stay
@@ -169,8 +168,8 @@ An audit of this report and `TODOS.md` against the code found these problems, al
 13. **Test stub bug.** The `chrome.storage` stub threw when `get` was passed an array of keys.
 14. **"Extension context invalidated" after reloading the extension.** Content scripts left running
     in already-open tabs threw on their next focus/URL check. They now shut themselves down.
-15. **Missing icon on the command listing.** The page requested a `github.svg` that only exists on
-    Vimium's hosted site; it's a plain text link now.
+15. **Missing icon on the command listing.** The page requested a `github.svg` that didn't exist;
+    it's a plain text link now.
 16. **Rapid `f` keypress buffering for alphabet hints.** `CacheAllKeydownEvents` had pushed captured
     events to a local closure array while `this.keydownEvents` remained an empty instance field, and
     replay had an improper condition check. Events arriving while hints are being collected across
@@ -202,7 +201,7 @@ An audit of this report and `TODOS.md` against the code found these problems, al
     dedicated to `Alt+Q`.
 
 The extension was also renamed to **Brovim** (manifest, user-visible strings, help/options pages,
-build zips, and a new Firefox add-on ID, since the old one belongs to Vimium on AMO).
+build zips, and its own Firefox add-on ID).
 
 ## 8. Consolidated Roadmap
 
@@ -434,8 +433,8 @@ runner).
 
 Historical snapshot; section 11 records the current behavior and verification.
 
-The retained Vimium code and history (pre-streamlining commit `5aa29614`) were used as the reference
-for core keyboard behavior. The 19 intentional feature removals remain in place.
+The pre-streamlining code and history (commit `5aa29614`) were used as the reference for core
+keyboard behavior. The 19 intentional feature removals remain in place.
 
 ### Fixes and requested changes
 
@@ -1014,3 +1013,39 @@ error before the fix and passes with the fix.
 Verification: formatting/lint and diff whitespace passed; 324 unit tests and all 90
 installed-browser checks passed. All three packages built successfully, and their CRCs and updated
 switcher script were verified against the source.
+
+## 20. Eight Cards per Row and Preload Warning (November 7, 2026)
+
+- **Cards per row:** the default is now 8 (options 3–8). The grid keeps that width and starts a new
+  row for each further 8 tabs. It adds columns only when the screen has no room for another row
+  (cards at least about 140 × 120 px, at most 10 × 6), and pages only past that. The Rows setting no
+  longer did anything and was removed; stored values are deleted on load. 21 tabs show as 8 + 8 + 5
+  at 1280 × 900.
+- **YouTube "cross-world-for-csp resource mismatch":** the extension's error page reported this
+  warning from `content_scripts/tab_switcher.js` on YouTube watch pages. Preview capture measured
+  each DOM change as it happened. That forced a style and layout pass from Brovim's isolated world,
+  and a background image that this pass started loading was attributed to that world. The page's
+  preload was therefore not reused, and a cross-origin image downloaded twice. Changed nodes are now
+  collected and measured after the page's next frame, once the browser has rendered them. A browser
+  regression check (a busy page that shows a preloaded cross-origin thumbnail) failed with the exact
+  warning before the fix, and passes with one image request after it.
+- **Upgrade notification clicks:** the click listener was added only after the notification was
+  shown. The MV3 service worker usually stops before the user clicks, so the click did nothing, and
+  with no focused window it threw. The listener is now registered at startup and opens the project
+  page in a new tab.
+- **License:** `LICENSE` (MIT) names MR-5OBOT as the copyright holder and keeps the earlier MIT
+  notice that the license requires in every copy. The store packages include it.
+- **Version 1.0.0:** Brovim's first release. Settings migration keys on whether `settingsVersion`
+  exists, not on its value, so moving from 2.4.2 to 1.0.0 keeps existing settings; that downgrade
+  shows no upgrade notification.
+
+Production recheck: the manifest's permissions are all in use, and every file the manifest
+references exists. Store packages contain no tests or build files, omit the `chrome://` host
+permission, and match the source. Old backups that contain the removed Rows setting still restore.
+No eval or untrusted HTML sinks were found in the code that renders tab titles and completions.
+Default Vomnibar searches use the browser's engine (DuckDuckGo in Helium). The `yt` keyword's
+suggestions still come from YouTube's suggestion service on `suggestqueries.google.com`.
+
+Verification: formatting/lint passed; 324 unit tests, 101 DOM tests, 91 installed-browser checks
+(from source and from the extracted Chrome Store ZIP), 7 lifecycle checks, 10 internal-page checks
+and 7 native shortcut checks passed. Firefox was not rerun for this change.

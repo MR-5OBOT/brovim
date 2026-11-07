@@ -16,7 +16,7 @@ const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 
 let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
 let tabs = []; // The visual order, fixed for this gesture, with pins in the leading cells.
-let layout = { columns: 6, rows: 3 }; // The grid's size for these tabs; see gridLayout.
+let layout = { columns: 8, rows: 1 }; // The grid's size for these tabs; see gridLayout.
 let selectedIndex = 0;
 let selectedCard = null;
 let visiblePage = -1;
@@ -52,7 +52,7 @@ function layoutSetting(key, min, max) {
     ? value
     : Settings.defaultOptions[key];
 }
-const columnSetting = () => layoutSetting("tabSwitcherColumns", 3, 6);
+const columnSetting = () => layoutSetting("tabSwitcherColumns", 3, 8);
 
 async function fetchTabs(options = {}) {
   const currentActivation = ++activation;
@@ -110,11 +110,11 @@ function chooseTabs() {
   layout = gridLayout(tabs.length);
 }
 
-// The configured grid, grown to fit every card while cards stay at least about 140×120px.
+// The configured cards per row, with as many rows as the cards need while cards stay at least
+// about 140×120px.
 function gridLayout(count) {
   return tabSwitcherGrid(count, {
     columns: columnSetting(),
-    rows: layoutSetting("tabSwitcherRows", 1, 3),
     maxColumns: Math.min(10, Math.floor(innerWidth * 0.9 / 140)),
     maxRows: Math.min(6, Math.floor(innerHeight * 0.9 / 120)),
   });

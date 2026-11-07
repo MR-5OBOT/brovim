@@ -4,18 +4,17 @@
 let activatedElement = null;
 
 // Previously, the main scrolling element was document.body. If the "experimental web platform
-// features" flag is enabled, then we need to use document.scrollingElement instead. There's an
-// explanation in #2168: https://github.com/philc/vimium/pull/2168#issuecomment-236488091
+// features" flag is enabled, then we need to use document.scrollingElement instead.
 
 const getScrollingElement = () =>
   getSpecialScrollingElement() || document.scrollingElement || document.body;
 
 // Return 0, -1 or 1: the sign of the argument.
-// NOTE(smblott; 2014/12/17) We would like to use Math.sign(). However, according to this site
+// NOTE (2014-12-17): We would like to use Math.sign(). However, according to this site
 // (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Math/sign)
 // Math.sign() was only introduced in Chrome 38. This caused problems in R1.48 for users with old
 // Chrome installations. We can replace this with Math.sign() at some point.
-// TODO(philc): 2020-04-28: now we can make this replacement.
+// TODO: 2020-04-28: now we can make this replacement.
 const getSign = function (val) {
   if (!val) {
     return 0;
@@ -52,7 +51,7 @@ const getDimension = function (el, direction, amount) {
     // the clientSizes of the body are the dimensions of the entire page, but the viewport should
     // only be the part visible through the window
     if ((name === "viewSize") && (el === getScrollingElement())) {
-      // TODO(smblott) Should we not be returning the width/height of element, here?
+      // TODO: Should we not be returning the width/height of element, here?
       return (direction === "x") ? globalThis.innerWidth : globalThis.innerHeight;
     } else {
       return el[scrollProperties[direction][name]];
@@ -231,10 +230,10 @@ const CoreScroller = {
 
   // This installs listeners for events which should cancel smooth scrolling.
   installCancelEventListener() {
-    // NOTE(smblott) With extreme keyboard configurations, Chrome sometimes does not get a keyup
+    // NOTE: With extreme keyboard configurations, Chrome sometimes does not get a keyup
     // event for every keydown, in which case tapping "j" scrolls indefinitely. This appears to be a
     // Chrome/OS/XOrg bug of some kind. See #1549.
-    // TODO(philc): I believe some of these returns are unnecessary.
+    // TODO: I believe some of these returns are unnecessary.
     return handlerStack.push({
       _name: "scroller/track-key-status",
       keydown: (event) => {
@@ -391,7 +390,7 @@ const Scroller = {
       handlerStack.alwaysContinueBubbling(function () {
         // If event.path is present, the true event taget (potentially inside a Shadow DOM inside
         // event.target) can be found as its first element.
-        // NOTE(mrmr1993): event.path has been renamed to event.deepPath in the spec, but this
+        // NOTE: event.path has been renamed to event.deepPath in the spec, but this
         // change is not yet implemented by Chrome.
         const path = event.composedPath?.() || event.deepPath || event.path;
         return activatedElement = path ? path[0] : event.target;

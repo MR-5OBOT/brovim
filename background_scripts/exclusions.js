@@ -11,7 +11,7 @@ const ExclusionRegexpCache = {
       return this.cache[pattern];
     } else {
       let result;
-      // We use try/catch to ensure that a broken regexp doesn't wholly cripple Vimium.
+      // We use try/catch to ensure that a broken regexp doesn't wholly cripple Brovim.
       try {
         result = Utils.compileExclusionPattern(pattern);
       } catch {
@@ -43,7 +43,7 @@ function getRule(url, rules) {
   }
   // Strip whitespace from all matching passKeys strings, and join them together.
   const passKeys = matchingRules.map((r) => r.passKeys.split(/\s+/).join("")).join("");
-  // TODO(philc): Remove this commented out code.
+  // TODO: Remove this commented out code.
   // passKeys = (rule.passKeys.split(/\s+/).join "" for rule in matchingRules).join ""
   if (matchingRules.length > 0) {
     return { passKeys: Utils.distinctCharacters(passKeys) };
@@ -64,7 +64,7 @@ export function isEnabledForUrl(url) {
 }
 
 function onSettingsUpdated() {
-  // NOTE(mrmr1993): In FF, the |rules| argument will be garbage collected when the exclusions
+  // NOTE: In FF, the |rules| argument will be garbage collected when the exclusions
   // popup is closed. Do NOT store it/use it asynchronously.
   ExclusionRegexpCache.clear();
 }

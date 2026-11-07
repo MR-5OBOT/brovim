@@ -299,7 +299,7 @@ class VomnibarUI {
       } else {
         // If the query looks like a URL, try to open it directly. Otherwise, pass the query to
         // the user's default search engine.
-        // TODO(philc):
+        // TODO:
         const isUrl = await UrlUtils.isUrl(query);
         if (isUrl) {
           this.hide(() => this.launchUrl(query, openInNewTab));

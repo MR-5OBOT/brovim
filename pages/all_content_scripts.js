@@ -1,5 +1,5 @@
-// This is the set of all content scripts required to make Vimium's functionality work. This file is
-// imported by background pages that we want to work with Vimium's key mappings, e.g. the options
+// This is the set of all content scripts required to make Brovim's functionality work. This file is
+// imported by background pages that we want to work with Brovim's key mappings, e.g. the options
 // page. This should be the same list of files as in manifest.js's content_scripts section.
 
 import "../lib/types.js";

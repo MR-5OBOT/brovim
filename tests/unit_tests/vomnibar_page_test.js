@@ -61,7 +61,7 @@ context("vomnibar page", () => {
     );
     await ui.update();
     await ui.onKeyEvent(newKeyEvent({ type: "keydown", key: "up" }));
-    // TODO(philc): Why does this need to be lowercase enter?
+    // TODO: Why does this need to be lowercase enter?
     await ui.onKeyEvent(newKeyEvent({ type: "keypress", ctrlKey: true, key: "enter" }));
     assert.equal("http://hello.com", ui.input.value);
   });

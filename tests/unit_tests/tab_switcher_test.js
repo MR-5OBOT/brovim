@@ -164,22 +164,27 @@ context("configured switcher shortcut", () => {
     const afterVisit = [{ ...secondPin, frozen: false, active: true }, current, firstPin, previous];
     assert.equal([8010, 8011, 8012, 8013], orderTabSwitcherCards(afterVisit).map((tab) => tab.id));
   });
-  should("grow the configured grid by columns and rows until every tab fits the screen", () => {
-    const grid = (count, columns = 6, rows = 3) =>
-      tabSwitcherGrid(count, { columns, rows, maxColumns: 10, maxRows: 6 });
-    assert.equal({ columns: 6, rows: 3 }, grid(5));
-    assert.equal({ columns: 6, rows: 3 }, grid(18));
-    assert.equal({ columns: 7, rows: 3 }, grid(19));
-    assert.equal({ columns: 7, rows: 4 }, grid(22));
-    assert.equal({ columns: 8, rows: 4 }, grid(30));
-    assert.equal({ columns: 10, rows: 6 }, grid(60));
+  should("fill rows of the configured width, then widen only when no row fits", () => {
+    const grid = (count, columns = 8) =>
+      tabSwitcherGrid(count, { columns, maxColumns: 10, maxRows: 6 });
+    assert.equal({ columns: 8, rows: 1 }, grid(5));
+    assert.equal({ columns: 8, rows: 1 }, grid(8));
+    assert.equal({ columns: 8, rows: 2 }, grid(9));
+    assert.equal({ columns: 8, rows: 3 }, grid(17));
+    assert.equal({ columns: 8, rows: 6 }, grid(48));
+    // A full screen of rows adds columns instead.
+    assert.equal({ columns: 9, rows: 6 }, grid(49));
     // Past the screen's limit, the keyboard pages through the rest.
     assert.equal({ columns: 10, rows: 6 }, grid(200));
-    assert.equal({ columns: 3, rows: 2 }, grid(4, 3, 1));
-    // A small screen never shrinks the configured grid.
+    assert.equal({ columns: 3, rows: 2 }, grid(4, 3));
+    // A small screen never shrinks the configured width, and always has a row.
     assert.equal(
-      { columns: 6, rows: 3 },
-      tabSwitcherGrid(40, { columns: 6, rows: 3, maxColumns: 4, maxRows: 2 }),
+      { columns: 8, rows: 2 },
+      tabSwitcherGrid(40, { columns: 8, maxColumns: 4, maxRows: 2 }),
+    );
+    assert.equal(
+      { columns: 8, rows: 1 },
+      tabSwitcherGrid(40, { columns: 8, maxColumns: 4, maxRows: 0 }),
     );
   });
   for (const order of ["mru", "tabstrip"]) {
@@ -258,12 +263,11 @@ context("configured switcher shortcut", () => {
       assert.equal([702, 703], selected);
     },
   );
-  for (const [columns, rows] of [[3, 1], [4, 2], [6, 3]]) {
-    should(`cycle every awake tab on protected pages with a ${columns}x${rows} grid`, async () => {
+  for (const columns of [3, 5, 8]) {
+    should(`cycle every awake tab on protected pages with ${columns} cards per row`, async () => {
       await Settings.onLoaded();
       const oldColumns = Settings.get("tabSwitcherColumns");
-      const oldRows = Settings.get("tabSwitcherRows");
-      const limit = columns * rows;
+      const limit = columns * 2;
       const tabs = Array.from({ length: limit + 3 }, (_, index) => ({
         id: 5000 + index,
         index,
@@ -288,7 +292,6 @@ context("configured switcher shortcut", () => {
       for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
       try {
         await Settings.set("tabSwitcherColumns", columns);
-        await Settings.set("tabSwitcherRows", rows);
         for (let i = 0; i < limit * 2 + 2; i++) {
           await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
         }
@@ -300,7 +303,6 @@ context("configured switcher shortcut", () => {
       } finally {
         SwitcherCommands.endTabSwitcherCycle(890);
         await Settings.set("tabSwitcherColumns", oldColumns);
-        await Settings.set("tabSwitcherRows", oldRows);
       }
     });
   }
@@ -309,7 +311,6 @@ context("configured switcher shortcut", () => {
     async () => {
       await Settings.onLoaded();
       const oldColumns = Settings.get("tabSwitcherColumns");
-      const oldRows = Settings.get("tabSwitcherRows");
       const tabs = Array.from({ length: 8 }, (_, index) => ({
         id: 7300 + index,
         index,
@@ -336,7 +337,6 @@ context("configured switcher shortcut", () => {
       for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
       try {
         await Settings.set("tabSwitcherColumns", 3);
-        await Settings.set("tabSwitcherRows", 1);
         for (let i = 0; i < 7; i++) {
           await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
         }
@@ -344,7 +344,6 @@ context("configured switcher shortcut", () => {
       } finally {
         SwitcherCommands.endTabSwitcherCycle(730);
         await Settings.set("tabSwitcherColumns", oldColumns);
-        await Settings.set("tabSwitcherRows", oldRows);
       }
     },
   );

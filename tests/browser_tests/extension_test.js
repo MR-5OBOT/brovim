@@ -25,9 +25,34 @@ async function check(name, fn) {
   }
 }
 
+let thumbnailRequests = 0;
 const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (request) => {
   const url = new URL(request.url);
   if (url.pathname === "/favicon.ico") return new Response(null, { status: 204 });
+  if (url.pathname === "/preloaded-thumbnail.svg") {
+    thumbnailRequests++;
+    return new Response(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="teal"/></svg>',
+      { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } },
+    );
+  }
+  if (url.pathname === "/preloaded-thumbnail") {
+    // Like YouTube's player: a busy page shows a preloaded cross-origin thumbnail as a background
+    // image while Brovim waits for it to settle.
+    const image = `http://localhost:${server.addr.port}/preloaded-thumbnail.svg`;
+    return new Response(
+      `<!doctype html><title>Preloaded thumbnail</title>
+      <link rel="preload" as="image" href="${image}"><div id="ticker" style="height:100px"></div>
+      <script>
+        let n = 0;
+        const timer = setInterval(() => ticker.textContent = n++, 100);
+        setTimeout(() => clearInterval(timer), 2000);
+        setTimeout(() => document.body.insertAdjacentHTML("beforeend",
+          '<div style="width:400px;height:300px;background-image:url(${image})"></div>'), 500);
+      </script>`,
+      { headers: { "content-type": "text/html" } },
+    );
+  }
   if (url.pathname === "/delayed-preview-image") {
     return new Promise((resolve) =>
       setTimeout(() =>
@@ -248,7 +273,6 @@ try {
     try {
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", 3);
-        await Settings.set("tabSwitcherRows", 1);
       });
       // The modifier preloads the iframe, whose own settings stay cold until activation.
       await key(["Alt"]);
@@ -299,7 +323,6 @@ try {
       await key(["Escape"]);
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
     }
   });
@@ -2624,7 +2647,6 @@ try {
         assert(pinned.pinned && pinned.discarded, "Pinned fixture did not enter sleep");
         await worker.evaluate(async (origin) => {
           await Settings.set("tabSwitcherColumns", 3);
-          await Settings.set("tabSwitcherRows", 1);
           // More tabs than the configured 3x1 grid holds, as after a long sleep.
           for (let i = 0; i < 4; i++) {
             await chrome.tabs.create({
@@ -2712,7 +2734,6 @@ try {
         await worker.evaluate(
           async (urls, origin) => {
             await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-            await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
             const ids = (await chrome.tabs.query({})).filter((tab) =>
               urls.includes(tab.url) || tab.url.startsWith(`${origin}/pin-limit-`)
             ).map((
@@ -3091,7 +3112,7 @@ try {
           Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
       });
       try {
-        // More tabs than the default 6x3 grid holds.
+        // More tabs than one row of the default 8 cards holds.
         for (const url of urls) await worker.evaluate((url) => chrome.tabs.create({ url }), url);
         await worker.evaluate(async (urls) => {
           for (let attempt = 0; attempt < 100; attempt++) {
@@ -3130,7 +3151,7 @@ try {
             "#tab-switcher",
             (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
           );
-        assert(await columns() > 6, "More tabs than a 6x3 grid did not add columns");
+        assert(await columns() === 8, "Rows did not hold the default 8 cards each");
         assert(
           await switcher.$$eval(".tab-card[hidden]", (cards) => cards.length === 0),
           "A large screen paged instead of growing the grid",
@@ -3271,7 +3292,6 @@ try {
         chrome.commands.getAll = () =>
           Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
         await Settings.set("tabSwitcherColumns", 3);
-        await Settings.set("tabSwitcherRows", 1);
       });
       try {
         for (let i = 0; i < 3; i++) {
@@ -3327,7 +3347,6 @@ try {
         await worker.evaluate(async () => {
           chrome.commands.getAll = globalThis.refillOriginalCommands;
           await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-          await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
         });
         await page.bringToFront();
       }
@@ -3339,7 +3358,6 @@ try {
     try {
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", 3);
-        await Settings.set("tabSwitcherRows", 1);
       });
       const urls = Array.from({ length: 4 }, (_, i) => `${origin}/reverse-${i}?title=Reverse${i}`);
       const result = await worker.evaluate(async (urls) => {
@@ -3388,18 +3406,16 @@ try {
       if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
       await page.bringToFront();
     }
   });
 
-  await check("cards per row and rows set the starting grid, which grows to fit", async () => {
+  await check("cards per row sets the grid width, and more tabs add rows", async () => {
     let windowId;
     try {
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", 3);
-        await Settings.set("tabSwitcherRows", 1);
       });
       const urls = Array.from({ length: 3 }, (_, i) => `${origin}/layout-${i}?title=Layout${i}`);
       const created = await worker.evaluate(async (urls) => {
@@ -3451,7 +3467,6 @@ try {
       if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
       await worker.evaluate(async () => {
         await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);
-        await Settings.set("tabSwitcherRows", Settings.defaultOptions.tabSwitcherRows);
       });
       await page.bringToFront();
     }
@@ -3597,6 +3612,25 @@ try {
     );
     await pause(300);
     assert(errors.length === before, errors.slice(before).join("\n"));
+  });
+
+  await check("watching a page settle never loads its preloaded images a second time", async () => {
+    const thumbnail = await browser.newPage();
+    const warnings = [];
+    try {
+      const cdp = await thumbnail.createCDPSession();
+      cdp.on("Log.entryAdded", ({ entry }) => warnings.push(entry.text));
+      await cdp.send("Log.enable");
+      thumbnailRequests = 0;
+      await thumbnail.goto(`${origin}/preloaded-thumbnail`);
+      await pause(2500);
+      const mismatches = warnings.filter((text) => text.includes("cross-world-for-csp"));
+      assert(mismatches.length === 0, mismatches.join("\n"));
+      assert(thumbnailRequests === 1, `The thumbnail was requested ${thumbnailRequests} times`);
+    } finally {
+      await thumbnail.close();
+      await page.bringToFront();
+    }
   });
 
   await check("sandboxed pages load no UI frames and the shortcut switches directly", async () => {

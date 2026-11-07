@@ -16,9 +16,9 @@ export async function openUrlInCurrentTab(request, sender) {
     // javascript: URLs, i.e. "bookmarklets", are always run against the tab's top-level frame.
 
     // Since we're using chrome.scripting.executeScript to execute the javascript, assert that the
-    // request is coming from either the page's top-level frame, or one of Vimium's iframes, like
+    // request is coming from either the page's top-level frame, or one of Brovim's iframes, like
     // the Vomnibar. It should be impossible for the request to come from any other frame, but this
-    // check serves as a defensive guard to prevent a compromised Vimium content script in a
+    // check serves as a defensive guard to prevent a compromised Brovim content script in a
     // subframe with a different origin from being able to run javascript on the main frame's
     // origin.
     const isTopFrame = sender.frameId === 0;
@@ -33,7 +33,6 @@ export async function openUrlInCurrentTab(request, sender) {
 
     // Note that when injecting JavaScript, it's subject to the site's CSP. Sites with strict CSPs
     // (like github.com, developer.mozilla.org) will raise an error when we try to run this code.
-    // See https://github.com/philc/vimium/issues/4331.
     const scriptingArgs = {
       target: {
         tabId: request.tabId,
@@ -42,7 +41,7 @@ export async function openUrlInCurrentTab(request, sender) {
       func: (text) => {
         const prefix = "javascript:";
         text = text.slice(prefix.length).trim();
-        // TODO(philc): Why do we try to double decode here? Discover and then document it.
+        // TODO: Why do we try to double decode here? Discover and then document it.
         text = decodeURIComponent(text);
         try {
           text = decodeURIComponent(text);

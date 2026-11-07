@@ -60,7 +60,7 @@ class Mode {
     // avoids the need for modes which suppress all keyboard events 1) to provide handlers for all
     // of those events, or 2) to worry about event suppression and event-handler return values.
     if (this.options.suppressAllKeyboardEvents) {
-      // TODO(philc): Make a let statement.
+      // TODO: Make a let statement.
       const downHanlder = this.options["keydown"];
       this.options["keydown"] = (event) =>
         this.alwaysSuppressPropagation(() => {
@@ -240,7 +240,7 @@ class Mode {
     this.modeIsExiting = true;
 
     for (const handler of this.exitHandlers) {
-      // TODO(philc): Is this array.from necessary?
+      // TODO: Is this array.from necessary?
       handler(...Array.from(args || []));
     }
 

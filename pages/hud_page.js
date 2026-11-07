@@ -9,8 +9,8 @@ import * as UIComponentMessenger from "./ui_component_messenger.js";
 let findMode = null;
 
 // Chrome creates a unique port for each MessageChannel, so there's a race condition between
-// JavaScript messages of Vimium and browser messages during style recomputation. This duration was
-// determined empirically. See https://github.com/philc/vimium/pull/3277#discussion_r283080348
+// JavaScript messages of Brovim and browser messages during style recomputation. This duration was
+// determined empirically.
 const TIME_TO_WAIT_FOR_IPC_MESSAGES = 17;
 
 // Set the input element's text, and move the cursor to the end.
@@ -121,7 +121,7 @@ export const handlers = {
     hudEl.classList.add("hud-find");
 
     const inputEl = document.createElement("span");
-    // NOTE(mrmr1993): Chrome supports non-standard "plaintext-only", which is what we *really*
+    // NOTE: Chrome supports non-standard "plaintext-only", which is what we *really*
     // want.
     try {
       inputEl.contentEditable = "plaintext-only";

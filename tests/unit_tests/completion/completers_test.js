@@ -488,7 +488,7 @@ context("suggestions", () => {
   });
 });
 
-// TODO: (smblott)
+// TODO:
 // Word relevancy should take into account the number of matches (it doesn't currently). should
 // "score higher for multiple matches (in a URL)", ->
 //   lowScore  = ranking.wordRelevancy(["stack"], "http://stackoverflow.com/Xxxxxx", "a-title")

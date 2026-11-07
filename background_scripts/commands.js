@@ -154,7 +154,7 @@ const KeyMappingsParser = {
           }
           const fromChar = this.parseKeySequence(tokens[1]);
           const toChar = this.parseKeySequence(tokens[2]);
-          // NOTE(philc): I'm not sure why we enforce that the fromChar and toChar have to be
+          // NOTE: I'm not sure why we enforce that the fromChar and toChar have to be
           // length one. It's been that way since this feature was introduced in 6596e30.
           const isValid = fromChar.length == toChar.length && toChar.length === 1;
           if (isValid) {
@@ -237,7 +237,7 @@ const KeyMappingsParser = {
         key = match[1];
         value = true;
       }
-      // NOTE(philc): If this string doesn't match any of our option regexps, we could throw an
+      // NOTE: If this string doesn't match any of our option regexps, we could throw an
       // error here or use an assert. I think this might only happen in the case where there's a
       // single equals sign. For now, just add the whole string as a flag option. If the command in
       // question doesn't accept this option, then an error will get surfaced to the user.
@@ -308,7 +308,7 @@ const Commands = {
       for (let index = 0; index < registryEntry.keySequence.length; index++) {
         const key = registryEntry.keySequence[index];
         if (currentMapping[key] != null ? currentMapping[key].command : undefined) {
-          // Do not overwrite existing command bindings, they take priority. NOTE(smblott) This is
+          // Do not overwrite existing command bindings, they take priority. NOTE: This is
           // the legacy behaviour.
           break;
         } else if (index < (registryEntry.keySequence.length - 1)) {

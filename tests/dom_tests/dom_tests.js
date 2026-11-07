@@ -226,7 +226,7 @@ context("Buffered keyboard events", () => {
   });
 });
 
-// TODO(philc): For some reason, this test corrupts the state linkhints state for other tests, in particular,
+// TODO: For some reason, this test corrupts the state linkhints state for other tests, in particular,
 // the alphabet hints tests. I haven't yet dug into why.
 // const inputs = [];
 // context("Test link hints for focusing input elements correctly", () => {
@@ -242,7 +242,7 @@ context("Buffered keyboard events", () => {
 //     stubSettings("linkHintCharacters", "ab");
 
 //     // Every HTML5 input type except for hidden. We should be able to activate all of them with link hints.
-//     // NOTE(philc): I'm not sure why, but "image" doesn't get a link hint in Puppeteer, so I've omitted it.
+//     // NOTE: I'm not sure why, but "image" doesn't get a link hint in Puppeteer, so I've omitted it.
 //     const inputTypes = ["button", "checkbox", "color", "date", "datetime", "datetime-local", "email", "file",
 //       "month", "number", "password", "radio", "range", "reset", "search", "submit", "tel", "text",
 //       "time", "url", "week"];
@@ -262,7 +262,7 @@ context("Buffered keyboard events", () => {
 
 //   teardown(() => {
 //     document.getElementById("test-div").innerHTML = "";
-//     // linkHintsMode.deactivateMode(); // TODO(philc): I don't think this should be necessary.
+//     // linkHintsMode.deactivateMode(); // TODO: I don't think this should be necessary.
 //   });
 
 //   should("Focus each input when its hint text is typed", () => {

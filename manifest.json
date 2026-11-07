@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Brovim",
-  "version": "2.4.2",
-  "description": "Keyboard-driven browsing in the spirit of Vim: link hints, a Vomnibar and a visual tab switcher. Based on Vimium.",
+  "version": "1.0.0",
+  "description": "Keyboard-driven browsing in the spirit of Vim: link hints, a Vomnibar and a visual tab switcher.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -31,10 +31,10 @@
     "history",
     "storage",
     "sessions",
-    // Notifications are used to show a message when Vimium's major version has been upgraded.
+    // Notifications are used to show a message when Brovim's major version has been upgraded.
     "notifications",
     // We're using the scripting permission to 1) inject our content scripts and CSS into existing
-    // tabs when Vimium is first installed, and 2) inject the user's link hints CSS when a page
+    // tabs when Brovim is first installed, and 2) inject the user's link hints CSS when a page
     // loads. This permission was required when moving to manifest V3.
     "scripting",
     "favicon", // The favicon permission is not yet supported by Firefox.

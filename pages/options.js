@@ -25,7 +25,6 @@ const options = {
   tabSwitcherGlass: "boolean",
   tabSwitcherMaxThumbnails: "select",
   tabSwitcherOrder: "option",
-  tabSwitcherRows: "select",
   tabSwitcherTwoTabSwap: "boolean",
   userDefinedLinkHintCss: "string",
   waitForEnterForFilteredHints: "boolean",

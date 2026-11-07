@@ -1,4 +1,4 @@
-// A UIComponent is an iframe containing a Vimium extension page, like the Vomnibar. This class
+// A UIComponent is an iframe containing a Brovim extension page, like the Vomnibar. This class
 // provides methods that content scripts can use to interact with that page:
 // - show
 // - hide
@@ -32,9 +32,9 @@ class UIComponent {
     const isDomTests = iframeUrl.includes("?dom_tests=true");
     this.iframeElement = DomUtils.createElement("iframe");
 
-    // Allow Vimium's iframes to have clipboard access in Chrome. This is needed when triggering
+    // Allow Brovim's iframes to have clipboard access in Chrome. This is needed when triggering
     // some commands, like link hints or copyCurrentUrl, from within the help dialog. Firefox does
-    // not support clipboard-read and clipboard-write in the allow attribute. NOTE(philc): this
+    // not support clipboard-read and clipboard-write in the allow attribute. NOTE: this
     // permission has to be set before we append the iframe to the DOM, or Chrome will log the
     // console error "Potential permissions policy violation: clipboard-read is not allowed in this
     // document."
@@ -90,7 +90,7 @@ class UIComponent {
       this.iframeElement.contentWindow.postMessage(secret, targetOrigin, [port2]);
       port1.onmessage = (event) => {
         let eventName = null;
-        // TODO(philc): Why are we using both data and data.name as the name? Pick one.
+        // TODO: Why are we using both data and data.name as the name? Pick one.
         if (event) {
           eventName = (event.data ? event.data.name : undefined) || event.data;
         }
@@ -124,7 +124,7 @@ class UIComponent {
     });
   }
 
-  // This ensures that Vimium's UI elements (HUD, Vomnibar) honor the browser's light/dark theme
+  // This ensures that Brovim's UI elements (HUD, Vomnibar) honor the browser's light/dark theme
   // preference, even when the user is also using the DarkReader extension. DarkReader is the most
   // popular dark mode Chrome extension in use as of 2020.
   handleDarkReaderFilter() {

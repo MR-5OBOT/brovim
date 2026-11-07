@@ -7,9 +7,9 @@ let handleMessage = null;
 
 export async function registerPortWithOwnerPage(event) {
   if (event.source !== globalThis.parent) return;
-  // The Vimium content script that's running on the parent page has access to this vimiumSecret
+  // The Brovim content script that's running on the parent page has access to this vimiumSecret
   // fetched from session storage, so if it matches, then we know that event.ports came from the
-  // Vimium extension.
+  // Brovim extension.
   const secret = (await chrome.storage.session.get("vimiumSecret")).vimiumSecret;
   if (event.data !== secret) {
     Utils.debugLog("ui_component_messenger.js: vimiumSecret is incorrect.");

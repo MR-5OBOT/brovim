@@ -1,5 +1,5 @@
 //
-// A heads-up-display (HUD) for showing Vimium page operations.
+// A heads-up-display (HUD) for showing Brovim page operations.
 // Note: you cannot interact with the HUD until document.body is available.
 //
 const HUD = {
@@ -60,12 +60,11 @@ const HUD = {
     if (focusable) {
       classList.remove("vimium-non-clickable");
       classList.add("vimium-clickable");
-      // Note(gdh1995): Chrome 74 only acknowledges text selection when a frame has been visible.
-      // See more in #3277.
-      // Note(mrmr1993): Show the HUD frame, so Firefox will actually perform the paste.
+      // Note: Chrome 74 only acknowledges text selection when a frame has been visible.
+      // Note: Show the HUD frame, so Firefox will actually perform the paste.
       this.hudUI.setIframeVisible(true);
       // Force the re-computation of styles, so Chrome sends a visibility change message to the
-      // child frame. See https://github.com/philc/vimium/pull/3277#issuecomment-487363284
+      // child frame.
       getComputedStyle(this.hudUI.iframeElement).display;
     } else {
       classList.remove("vimium-non-clickable");
@@ -98,7 +97,7 @@ const HUD = {
   },
 
   search(data) {
-    // NOTE(mrmr1993): On Firefox, window.find moves the window focus away from the HUD. We use
+    // NOTE: On Firefox, window.find moves the window focus away from the HUD. We use
     // postFindFocus to put it back, so the user can continue typing.
     this.findMode.findInPlace(data.query, {
       "postFindFocus": this.hudUI.iframeElement.contentWindow,
@@ -174,7 +173,7 @@ const HUD = {
   },
 
   // These commands manage copying and pasting from the clipboard in the HUD frame.
-  // NOTE(mrmr1993): We need this to copy and paste on Firefox:
+  // NOTE: We need this to copy and paste on Firefox:
   // * an element can't be focused in the background page, so copying/pasting doesn't work
   // * we don't want to disrupt the focus in the page, in case the page is listening for focus/blur
   // * events.

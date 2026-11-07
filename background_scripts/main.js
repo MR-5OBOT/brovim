@@ -37,18 +37,18 @@ import {
   TabCompleter,
 } from "./completion/completers.js";
 
-// NOTE(philc): This file has many superfluous return statements in its functions, as a result of
+// NOTE: This file has many superfluous return statements in its functions, as a result of
 // converting from coffeescript to es6. Many can be removed, but I didn't take the time to
 // diligently track down precisely which return statements could be removed when I was doing the
 // conversion.
 
 import * as TabOperations from "./tab_operations.js";
 
-// Allow Vimium's content scripts to access chrome.storage.session. Otherwise,
+// Allow Brovim's content scripts to access chrome.storage.session. Otherwise,
 // chrome.storage.session will be null in content scripts.
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
 
-// A Vimium secret, available only within the current browser session. The secret is a generated
+// A Brovim secret, available only within the current browser session. The secret is a generated
 // strong random string.
 const randomArray = globalThis.crypto.getRandomValues(new Uint8Array(32)); // 32-byte random token.
 const secretToken = randomArray.reduce((a, b) => a.toString(16) + b.toString(16));
@@ -81,8 +81,8 @@ if (bgUtils.isFirefox()) {
 
 function onURLChange(details) {
   // sendMessage will throw "Error: Could not establish connection. Receiving end does not exist."
-  // if there is no Vimium content script loaded in the given tab. This can occur if the user
-  // navigated to a page where Vimium doesn't have permissions, like chrome:// URLs. This error is
+  // if there is no Brovim content script loaded in the given tab. This can occur if the user
+  // navigated to a page where Brovim doesn't have permissions, like chrome:// URLs. This error is
   // noisy and mysterious (it usually doesn't have a valid line number), so we silence it.
   const message = {
     handler: "checkEnabledAfterURLChange",
@@ -92,7 +92,7 @@ function onURLChange(details) {
     .catch(() => {});
 }
 
-// Re-check whether Vimium is enabled for a frame when the URL changes without a reload.
+// Re-check whether Brovim is enabled for a frame when the URL changes without a reload.
 // There's no reliable way to detect when the URL has changed in the content script, so we
 // have to use the webNavigation API in our background script.
 chrome.webNavigation.onHistoryStateUpdated.addListener(onURLChange); // history.pushState.
@@ -230,7 +230,7 @@ async function selectSpecificTab(request) {
     request.awakeOnly && (!tab || (!tab.pinned && isSleeping(tab)) || tab.hidden ||
       (request.tab && request.tab.windowId !== tab.windowId))
   ) return false;
-  // Focus the tab's window. TODO(philc): Why are we null-checking chrome.windows here?
+  // Focus the tab's window. TODO: Why are we null-checking chrome.windows here?
   if (chrome.windows != null) {
     await chrome.windows.update(tab.windowId, { focused: true });
   }
@@ -355,7 +355,7 @@ async function forCountTabs(count, currentTab, callback) {
 }
 
 chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId }) => {
-  // Vimium can't run on all tabs (e.g. chrome:// URLs). insertCSS will throw an error on such tabs,
+  // Brovim can't run on all tabs (e.g. chrome:// URLs). insertCSS will throw an error on such tabs,
   // which is expected, and noise. Swallow that error.
   const swallowError = () => {};
   await Settings.onLoaded();
@@ -369,7 +369,7 @@ chrome.webNavigation.onCommitted.addListener(async ({ tabId, frameId }) => {
 });
 
 // Returns all frame IDs for the given tab. Note that in Chrome, this will omit frame IDs for frames
-// or iFrames which contain chrome-extension:// URLs, even if those pages are listed in Vimium's
+// or iFrames which contain chrome-extension:// URLs, even if those pages are listed in Brovim's
 // web_accessible_resources in manifest.json.
 async function getFrameIdsForTab(tabId) {
   // getAllFrames unfortunately excludes frames and iframes from chrome-extension:// URLs.
@@ -413,7 +413,7 @@ const HintCoordinator = {
   ) {
     const frameIds = await getFrameIdsForTab(tabId);
     if (this.pendingActivations.get(tabId) !== activation) return;
-    // If link hints was triggered on a Vimium extension page (like the vimium help dialog or
+    // If link hints was triggered on a Brovim extension page (like the vimium help dialog or
     // options page), we cannot directly retrieve the frameIds for those pages using the
     // getFrameIdsForTab. However, as a workaround, if those pages were the pages activating hints,
     // their frameId is equal to originatingFrameId.
@@ -651,7 +651,7 @@ const sendRequestHandlers = {
     const completer = completers[request.completerName];
     let response = await completer.filter(request);
 
-    // NOTE(smblott): response contains `relevancyFunction` (function) properties which cause
+    // NOTE: response contains `relevancyFunction` (function) properties which cause
     // postMessage, below, to fail in Firefox. See #2576. We cannot simply delete these methods,
     // as they're needed elsewhere. Converting the response to JSON and back is a quick and easy
     // way to sanitize the object.
@@ -682,7 +682,7 @@ Utils.addChromeRuntimeOnMessageListener(
       sender.frameId,
       // request // Often useful for debugging.
     );
-    // NOTE(philc): We expect all messages to come from a content script in a tab. I've observed in
+    // NOTE: We expect all messages to come from a content script in a tab. I've observed in
     // Firefox when the extension is first installed, domReady and initializeFrame messages come from
     // content scripts in about:blank URLs, which have a null sender.tab. I don't know what this
     // corresponds to. Since we expect a valid sender.tab, ignore those messages.
@@ -724,7 +724,7 @@ globalThis.runTests = () => open(chrome.runtime.getURL("tests/dom_tests/dom_test
 // Begin initialization.
 //
 
-// True if the major version of Vimium has changed.
+// True if the major version of Brovim has changed.
 // - previousVersion: this will be null for new installs.
 function majorVersionHasIncreased(previousVersion) {
   const currentVersion = Utils.getCurrentVersion();
@@ -746,12 +746,11 @@ async function showUpgradeMessageIfNecessary(onInstalledDetails) {
     return;
   }
 
-  // NOTE(philc): These notifications use the system notification UI. So, if you don't have
+  // NOTE: These notifications use the system notification UI. So, if you don't have
   // notifications enabled from your browser (e.g. in Notification Settings in OSX), then
   // chrome.notification.create will succeed, but you won't see it.
-  const notificationId = "BrovimUpgradeNotification";
   await chrome.notifications.create(
-    notificationId,
+    upgradeNotificationId,
     {
       type: "basic",
       iconUrl: chrome.runtime.getURL("icons/icon128.png"),
@@ -761,19 +760,15 @@ async function showUpgradeMessageIfNecessary(onInstalledDetails) {
       isClickable: true,
     },
   );
-  if (!chrome.runtime.lastError) {
-    chrome.notifications.onClicked.addListener(async function (id) {
-      if (id != notificationId) return;
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const tab = tabs[0];
-      TabOperations.openUrlInNewTab({
-        tab,
-        tabId: tab.id,
-        url: "https://github.com/MR-5OBOT/brovim",
-      });
-    });
-  }
 }
+
+const upgradeNotificationId = "BrovimUpgradeNotification";
+// Registered at startup: the service worker has usually stopped by the time the user clicks.
+chrome.notifications?.onClicked.addListener((id) => {
+  if (id === upgradeNotificationId) {
+    chrome.tabs.create({ url: "https://github.com/MR-5OBOT/brovim" });
+  }
+});
 
 async function injectContentScriptsAndCSSIntoExistingTabs() {
   const tabs = await chrome.tabs.query({ status: "complete" });
@@ -791,18 +786,18 @@ function initializeExtension() {
   return extensionInitializedPromise;
 }
 
-// The browser may have tabs already open. We inject the content scripts and Vimium's CSS
+// The browser may have tabs already open. We inject the content scripts and Brovim's CSS
 // immediately so that the extension is running on the pages immediately after install, rather than
 // having to reload those pages.
 chrome.runtime.onInstalled.addListener(async (details) => {
   Utils.debugLog("chrome.runtime.onInstalled");
 
-  // NOTE(philc): In my testing, when the onInstalled event occurs, the onStartup event does not
-  // also occur, so we need to initialize Vimium here.
+  // NOTE: In my testing, when the onInstalled event occurs, the onStartup event does not
+  // also occur, so we need to initialize Brovim here.
   await initializeExtension();
 
   const shouldInjectContentScripts =
-    // NOTE(philc): 2023-06-16: we do not install the content scripts in all tabs on Firefox.
+    // NOTE: 2023-06-16: we do not install the content scripts in all tabs on Firefox.
     // I believe this is because Firefox does this already. See https://stackoverflow.com/a/37132144
     // for commentary.
     !bgUtils.isFirefox() &&

@@ -13,7 +13,7 @@ export class UserSearchEngine {
 }
 
 // Parses a user's search engine configuration from Settings, and stores the parsed results.
-// TODO(philc): Should this be responsible for updating itself when Settings changes, rather than
+// TODO: Should this be responsible for updating itself when Settings changes, rather than
 // the callers doing so? Or, remove this class and re-parse the configuration every keystroke in
 // Vomnibar, so we don't introduce another layer of caching in the code.
 export let keywordToEngine = {};

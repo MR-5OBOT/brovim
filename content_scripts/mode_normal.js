@@ -213,7 +213,7 @@ const NormalModeCommands = {
       return;
     }
 
-    // This is a hack to improve usability on the Vimium options page. We prime the recently-focused
+    // This is a hack to improve usability on the Brovim options page. We prime the recently-focused
     // input to be the key-mappings input. Arguably, this is the input that the user is most likely
     // to use.
     const recentlyFocusedElement = lastFocusedInput();

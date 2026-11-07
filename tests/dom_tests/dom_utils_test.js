@@ -114,7 +114,7 @@ context("getClientRectsForAreas", () => {
   });
 });
 
-// NOTE(philc): This test doesn't pass on puppeteer. It's unclear from the XXX comment if it's
+// NOTE: This test doesn't pass on puppeteer. It's unclear from the XXX comment if it's
 // supposed to.
 // should("Detect links within SVGs as visible"), () => {
 //   # XXX this is an expected failure

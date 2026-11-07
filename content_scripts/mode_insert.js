@@ -17,8 +17,8 @@ class InsertMode extends Mode {
         return this.continueBubbling;
       }
 
-      // See comment here:
-      // https://github.com/philc/vimium/commit/48c169bd5a61685bb4e67b1e76c939dbf360a658
+      // An editable body (say, in an about:blank iframe the page made editable) stays the active
+      // element even after blur(). Leave its keys, including Escape, to the page.
       const activeElement = this.getActiveElement();
       if ((activeElement === document.body) && activeElement.isContentEditable) {
         return this.passEventToPage;

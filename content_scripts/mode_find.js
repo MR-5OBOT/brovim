@@ -1,4 +1,4 @@
-// NOTE(smblott). Ultimately, all of the FindMode-related code should be moved here.
+// NOTE: Ultimately, all of the FindMode-related code should be moved here.
 
 // This prevents unmapped printable characters from being passed through to underlying page; see
 // #1415. Only used by PostFindMode, below.
@@ -88,7 +88,7 @@ class FindMode extends Mode {
       options = {};
     }
 
-    // TODO(philc): I don't think this.query is ever used/accessed, because it's only accessed from
+    // TODO: I don't think this.query is ever used/accessed, because it's only accessed from
     // static methods. Consider splitting the static portions of this class into a separate class
     // called FindModeSingleton. Blending the two together is confusing.
     this.query = {
@@ -112,7 +112,7 @@ class FindMode extends Mode {
       indicator: false,
       exitOnClick: true,
       exitOnEscape: true,
-      // This prevents further Vimium commands launching before the find-mode HUD receives the
+      // This prevents further Brovim commands launching before the find-mode HUD receives the
       // focus. E.g. "/" followed quickly by "i" should not leave us in insert mode.
       suppressAllKeyboardEvents: true,
     }));

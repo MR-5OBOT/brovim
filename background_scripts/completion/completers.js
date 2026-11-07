@@ -20,7 +20,7 @@ import { RegexpCache } from "./ranking.js";
 // Set this to true to render relevancy when debugging the ranking scores.
 const showRelevancy = false;
 
-// TODO(philc): Consider moving out the "computeRelevancy" function.
+// TODO: Consider moving out the "computeRelevancy" function.
 export class Suggestion {
   queryTerms;
   description;

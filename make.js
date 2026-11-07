@@ -5,7 +5,7 @@ import * as fs from "@std/fs";
 import * as path from "@std/path";
 import { abort, desc, run, task } from "drake";
 import puppeteer from "puppeteer";
-// We use a vendored version of shoulda, rather than jsr:@philc/shoulda, because shoulda.js is used
+// We use a vendored version of shoulda, rather than the JSR package, because shoulda.js is used
 // in dom_tests.js which is loaded by Puppeteer, which doesn't have access to Deno's module system.
 import * as shoulda from "./tests/vendor/shoulda.js";
 import JSON5 from "json5";
@@ -15,7 +15,7 @@ import * as fileServer from "@std/http/file-server";
 const projectPath = new URL(".", import.meta.url).pathname;
 
 async function shell(procName, argsArray = []) {
-  // NOTE(philc): Does drake's `sh` function work on Windows? If so, that can replace this function.
+  // NOTE: Does drake's `sh` function work on Windows? If so, that can replace this function.
   if (Deno.build.os == "windows") {
     // if win32, prefix arguments with "/c {original command}"
     // e.g. "mkdir c:\git\vimium" becomes "cmd.exe /c mkdir c:\git\vimium"
@@ -62,7 +62,7 @@ function createFirefoxManifest(manifest) {
     "browser_specific_settings": {
       "gecko": {
         // Firefox needs a stable ID in development mode, or many extension APIs don't work. This is
-        // Brovim's own ID; the upstream one belongs to Vimium on addons.mozilla.org.
+        // Brovim's own ID.
         "id": "brovim@mr-5obot.github.io",
         "strict_min_version": "112.0",
         "data_collection_permissions": {
@@ -293,7 +293,7 @@ function setupPuppeteerPageForTests(page) {
   });
 
   page.on("error", (err) => {
-    // NOTE(philc): As far as I can tell, this handler never gets executed.
+    // NOTE: As far as I can tell, this handler never gets executed.
     console.error(err);
   });
   // pageerror catches the same events that window.onerror would, like JavaScript parsing errors.
@@ -412,7 +412,7 @@ async function testDom() {
     // There's probably a way to prevent that, but as a work around, we avoid closing the page.
     // browser.close() will close all of its owned pages.
   }
-  // NOTE(philc): At one point in development, I noticed that the output from Deno would suddenly
+  // NOTE: At one point in development, I noticed that the output from Deno would suddenly
   // pause, prior to the tests fully finishing, so closing the browser here may be racy. If it
   // occurs again, we may need to add "await delay(200)".
   await browser.close();

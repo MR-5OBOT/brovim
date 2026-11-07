@@ -108,7 +108,7 @@ context("options page", () => {
             { exclusionRules: [{ pattern: "[", passKeys: "" }] },
             { keyMappings: [] },
             { smoothScroll: "yes" },
-            { tabSwitcherRows: 4 },
+            { tabSwitcherColumns: 9 },
             { scrollStepSize: -1 },
             { linkHintCharacters: "a" },
             { linkHintCharacters: "aA" },
