@@ -107,6 +107,7 @@ ul {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #vomnibar li .top-half {
