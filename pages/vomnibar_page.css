@@ -24,18 +24,15 @@ ul {
   display: block;
   position: relative;
   box-sizing: border-box;
-  width: min(800px, calc(100% - 48px));
+  width: min(680px, calc(100% - 48px));
   min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #e6e6e6;
-  background: #141414;
+  background: #000000;
   text-align: left;
-  border-radius: 10px;
-  box-shadow:
-    0 2px 6px rgb(0 0 0 / 18%),
-    0 12px 32px -8px rgb(0 0 0 / 32%),
-    inset 0 1px 0 rgb(255 255 255 / 4%);
-  border: 1px solid #2e2e2e;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px -8px rgb(0 0 0 / 40%);
+  border: 1px solid #242424;
   overflow: hidden;
   z-index: 2139999999;
   color-scheme: dark;
@@ -45,37 +42,29 @@ ul {
   display: flex;
   align-items: center;
   padding: 10px 12px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #2e2e2e;
-}
-
-#vomnibar-search-area .search-icon {
-  flex: none;
-  margin-right: 10px;
-  color: #8a8a8a;
+  background: #111111;
+  border-bottom: 1px solid #242424;
 }
 
 #vomnibar input {
   font-family: inherit;
-  font-size: 18px;
+  font-size: 16px;
   height: 38px;
   margin-bottom: 0;
   padding: 6px 12px;
-  background-color: #0e0e0e;
+  background-color: #0a0a0a;
   color: #ffffff;
   border-radius: 4px;
-  border: 1px solid #333333;
-  box-shadow: inset 0 1px 2px rgb(0 0 0 / 16%);
+  border: 1px solid #303030;
   min-width: 0;
   width: 100%;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 
 #vomnibar input:focus {
-  border-color: #9859bd;
-  box-shadow: 0 0 0 2px rgb(152 89 189 / 16%);
+  border-color: #8d5ba6;
 }
 
 #vomnibar input::placeholder {
@@ -88,20 +77,25 @@ ul {
 }
 
 #vomnibar ul {
+  background: #000000;
   max-height: min(440px, calc(100vh - 144px));
   overflow-y: auto;
 }
 
 #vomnibar li {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid #151515;
   line-height: 1.3em;
-  padding: 10px 16px;
+  padding: 10px 25px;
   font-size: 15px;
   position: relative;
   display: list-item;
   margin: auto;
   cursor: pointer;
-  transition: background 0.1s ease;
+  transition: background-color 0.1s ease;
+}
+
+#vomnibar li:hover {
+  background-color: #0c0c0c;
 }
 
 #vomnibar li:last-of-type {
@@ -125,7 +119,7 @@ ul {
   font-size: 13px;
   margin-top: 4px;
   padding: 1px 0;
-  color: #8bb7f0;
+  color: #999999;
 }
 
 #vomnibar li .icon {
@@ -141,13 +135,14 @@ ul {
 #vomnibar li .source {
   display: inline-block;
   font-size: 11px;
+  line-height: 16px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
   padding: 2px 6px;
   border-radius: 2px;
-  background: rgba(74, 2, 110, 0.35);
-  color: #b882f0;
+  background: rgba(74, 2, 110, 0.25);
+  color: #b18ac9;
   margin-right: 8px;
 }
 
@@ -163,11 +158,11 @@ ul {
 
 #vomnibar li .url {
   white-space: nowrap;
-  color: #8bb7f0;
+  color: #999999;
 }
 
 #vomnibar li .match {
-  color: #d596ff;
+  color: #9859bd;
   font-weight: 700;
 }
 
@@ -181,15 +176,9 @@ ul {
   color: #a8a8a8;
 }
 
-#vomnibar li em .match,
-#vomnibar li .title .match {
-  color: #d596ff;
-}
-
 #vomnibar li.selected {
-  background-color: #222222;
-  border-left: 3px solid #580382;
-  padding-left: 13px;
+  background-color: #151515;
+  box-shadow: inset 2px 0 #815297;
 }
 
 #vomnibar li.selected .top-half {
@@ -197,9 +186,9 @@ ul {
 }
 
 #vomnibar li.selected .url {
-  color: #badeff;
+  color: #c2c2c2;
 }
 
-.no-insert-text {
-  visibility: hidden;
+#vomnibar li .no-insert-text {
+  display: none;
 }
