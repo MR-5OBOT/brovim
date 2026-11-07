@@ -64,6 +64,12 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
         ), 4000)
     );
   }
+  if (url.pathname === "/dark-page") {
+    return new Response(
+      '<!doctype html><title>Dark page</title><body style="background:#121212;color:#eee">Dark</body>',
+      { headers: { "content-type": "text/html" } },
+    );
+  }
   if (url.pathname === "/sandboxed") {
     // Like raw.githubusercontent.com: a CSP sandbox gives the page an opaque origin.
     return new Response("<!doctype html><title>Sandboxed</title><p>Raw file</p>", {
@@ -1096,6 +1102,48 @@ try {
     await key(["z", "0"]);
     assert(await worker.evaluate((id) => chrome.tabs.getZoom(id), id) === 1, "Zoom reset failed");
   });
+
+  await check(
+    "Alt+D darkens light pages, but not dark pages, listed sites or Brovim's UI",
+    async () => {
+      await fresh();
+      await key(["Alt+d"]);
+      await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
+      assert(await worker.evaluate(() => Settings.get("darkModeEnabled")), "Alt+D was not saved");
+      const hud = await ui("vimium-hud-frame");
+      await hud.waitForFunction(() => document.body.textContent.includes("Dark mode on"));
+      assert(
+        await page.evaluate(() =>
+          getComputedStyle(document.documentElement).filter.startsWith("invert(1)")
+        ),
+        "The page was not inverted",
+      );
+      await key(["f"]);
+      await page.waitForSelector(".vimiumHintMarker");
+      assert(
+        await page.$eval(".vimiumHintMarker", (el) => getComputedStyle(el).filter) ===
+          "invert(1) hue-rotate(180deg)",
+        "Link hints were inverted with the page",
+      );
+      await key(["Escape"]);
+      await navigate(`${origin}/dark-page`);
+      await page.waitForFunction(() => document.readyState === "complete");
+      await pause(200);
+      assert(!await page.$("#brovim-dark-mode"), "An already dark page was inverted");
+      await fresh();
+      await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
+      await worker.evaluate(() => Settings.set("darkModeExcludedSites", "example.com\n127.0.0.1"));
+      await page.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
+      await worker.evaluate(() => Settings.set("darkModeExcludedSites", ""));
+      await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
+      await key(["Alt+d"]);
+      await page.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
+      assert(
+        !await worker.evaluate(() => Settings.get("darkModeEnabled")),
+        "Alt+D did not turn off",
+      );
+    },
+  );
 
   await check("literal find accepts regex characters; n/N move between matches", async () => {
     await fresh();

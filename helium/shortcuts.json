@@ -1,0 +1,385 @@
+{
+  "33000": {
+    "removed": [
+      "Alt+ArrowLeft"
+    ]
+  },
+  "33001": {
+    "removed": [
+      "Alt+ArrowRight"
+    ]
+  },
+  "33002": {
+    "removed": [
+      "F5"
+    ]
+  },
+  "33003": {
+    "removed": [
+      "Alt+Home"
+    ]
+  },
+  "33007": {
+    "removed": [
+      "Control+Shift+KeyR",
+      "Shift+F5",
+      "Control+F5"
+    ]
+  },
+  "34000": {
+    "removed": [
+      "Control+KeyN"
+    ]
+  },
+  "34001": {
+    "removed": [
+      "Control+Shift+KeyN"
+    ]
+  },
+  "34012": {
+    "removed": [
+      "Control+Shift+KeyW",
+      "Alt+F4"
+    ]
+  },
+  "34014": {
+    "removed": [
+      "Control+KeyT"
+    ]
+  },
+  "34015": {
+    "added": [
+      "Control+KeyX"
+    ],
+    "removed": [
+      "Control+KeyW",
+      "Control+F4"
+    ]
+  },
+  "34016": {
+    "removed": [
+      "Control+PageDown"
+    ]
+  },
+  "34017": {
+    "removed": [
+      "Control+PageUp"
+    ]
+  },
+  "34018": {
+    "removed": [
+      "Control+Digit1",
+      "Alt+Digit1",
+      "Control+Numpad1",
+      "Alt+Numpad1"
+    ]
+  },
+  "34019": {
+    "removed": [
+      "Control+Digit2",
+      "Alt+Digit2",
+      "Control+Numpad2",
+      "Alt+Numpad2"
+    ]
+  },
+  "34020": {
+    "removed": [
+      "Control+Digit3",
+      "Alt+Digit3",
+      "Control+Numpad3",
+      "Alt+Numpad3"
+    ]
+  },
+  "34021": {
+    "removed": [
+      "Control+Digit4",
+      "Alt+Digit4",
+      "Control+Numpad4",
+      "Alt+Numpad4"
+    ]
+  },
+  "34022": {
+    "removed": [
+      "Control+Digit5",
+      "Alt+Digit5",
+      "Control+Numpad5",
+      "Alt+Numpad5"
+    ]
+  },
+  "34023": {
+    "removed": [
+      "Control+Digit6",
+      "Alt+Digit6",
+      "Control+Numpad6",
+      "Alt+Numpad6"
+    ]
+  },
+  "34024": {
+    "removed": [
+      "Control+Digit7",
+      "Alt+Digit7",
+      "Control+Numpad7",
+      "Alt+Numpad7"
+    ]
+  },
+  "34025": {
+    "removed": [
+      "Control+Digit8",
+      "Alt+Digit8",
+      "Control+Numpad8",
+      "Alt+Numpad8"
+    ]
+  },
+  "34026": {
+    "removed": [
+      "Control+Digit9",
+      "Alt+Digit9",
+      "Control+Numpad9",
+      "Alt+Numpad9"
+    ]
+  },
+  "34028": {
+    "removed": [
+      "Control+Shift+KeyT"
+    ]
+  },
+  "34030": {
+    "removed": [
+      "F11"
+    ]
+  },
+  "34032": {
+    "removed": [
+      "Control+Shift+PageDown"
+    ]
+  },
+  "34033": {
+    "removed": [
+      "Control+Shift+PageUp"
+    ]
+  },
+  "34057": {
+    "removed": [
+      "Alt+Shift+KeyN"
+    ]
+  },
+  "34062": {
+    "removed": [
+      "Control+Tab"
+    ]
+  },
+  "34063": {
+    "removed": [
+      "Control+Shift+Tab"
+    ]
+  },
+  "34080": {
+    "removed": [
+      "Control+Shift+KeyC"
+    ]
+  },
+  "34091": {
+    "removed": [
+      "Control+Shift+KeyL"
+    ]
+  },
+  "34100": {
+    "removed": [
+      "Alt+Shift+KeyC"
+    ]
+  },
+  "34101": {
+    "removed": [
+      "Alt+Shift+KeyP"
+    ]
+  },
+  "34102": {
+    "removed": [
+      "Alt+Shift+KeyX"
+    ]
+  },
+  "34103": {
+    "removed": [
+      "Alt+Shift+KeyZ"
+    ]
+  },
+  "34104": {
+    "removed": [
+      "Alt+Shift+KeyW"
+    ]
+  },
+  "35001": {
+    "removed": [
+      "Control+Shift+KeyD"
+    ]
+  },
+  "35003": {
+    "removed": [
+      "Control+KeyP"
+    ]
+  },
+  "35007": {
+    "removed": [
+      "Control+Shift+KeyP"
+    ]
+  },
+  "37000": {
+    "removed": [
+      "Control+KeyF"
+    ]
+  },
+  "37001": {
+    "removed": [
+      "Control+KeyG",
+      "F3"
+    ]
+  },
+  "37002": {
+    "removed": [
+      "Control+Shift+KeyG",
+      "Shift+F3"
+    ]
+  },
+  "38001": {
+    "removed": [
+      "Control+NumpadAdd",
+      "Control+Equal",
+      "Control+Shift+Equal"
+    ]
+  },
+  "38002": {
+    "removed": [
+      "Control+Digit0",
+      "Control+Numpad0"
+    ]
+  },
+  "38003": {
+    "removed": [
+      "Control+NumpadSubtract",
+      "Control+Minus",
+      "Control+Shift+Minus"
+    ]
+  },
+  "39000": {
+    "removed": [
+      "Alt+Shift+KeyT"
+    ]
+  },
+  "39001": {
+    "removed": [
+      "Alt+KeyD",
+      "Control+KeyL"
+    ]
+  },
+  "39002": {
+    "removed": [
+      "Control+KeyE",
+      "Control+KeyK"
+    ]
+  },
+  "39003": {
+    "removed": [
+      "F10"
+    ]
+  },
+  "39004": {
+    "removed": [
+      "F6"
+    ]
+  },
+  "39005": {
+    "removed": [
+      "Shift+F6"
+    ]
+  },
+  "39006": {
+    "removed": [
+      "Alt+Shift+KeyB"
+    ]
+  },
+  "39007": {
+    "removed": [
+      "Alt+Shift+KeyA"
+    ]
+  },
+  "39009": {
+    "removed": [
+      "Control+F6"
+    ]
+  },
+  "40005": {
+    "removed": [
+      "Control+Shift+KeyJ"
+    ]
+  },
+  "40009": {
+    "removed": [
+      "Control+Shift+KeyB"
+    ]
+  },
+  "40010": {
+    "removed": [
+      "Control+KeyH"
+    ]
+  },
+  "40011": {
+    "removed": [
+      "Control+Shift+KeyO"
+    ]
+  },
+  "40012": {
+    "removed": [
+      "Control+KeyJ"
+    ]
+  },
+  "40013": {
+    "removed": [
+      "Control+Shift+Delete"
+    ]
+  },
+  "40015": {
+    "added": [
+      "Alt+KeyS"
+    ]
+  },
+  "40021": {
+    "removed": [
+      "Alt+KeyF"
+    ]
+  },
+  "40023": {
+    "removed": [
+      "Control+Shift+KeyE"
+    ]
+  },
+  "40134": {
+    "removed": [
+      "Control+Shift+KeyM"
+    ]
+  },
+  "40237": {
+    "removed": [
+      "F12"
+    ]
+  },
+  "40260": {
+    "removed": [
+      "F7"
+    ]
+  },
+  "40286": {
+    "removed": [
+      "Shift+Escape"
+    ]
+  },
+  "40303": {
+    "removed": [
+      "Alt+Shift+KeyR"
+    ]
+  },
+  "52500": {
+    "removed": [
+      "Control+Shift+KeyA"
+    ]
+  }
+}

@@ -34,8 +34,8 @@ class TabRecency {
       this.activityRevision++;
       this.queueAction("register", activeInfo.tabId);
     });
-    // Like TabGlance, all newly created background tabs are recent, including tabs opened by
-    // another extension or restored without an opener. Foreground tabs use onActivated.
+    // All newly created background tabs are recent, including tabs opened by another extension or
+    // restored without an opener. Foreground tabs use onActivated.
     chrome.tabs.onCreated.addListener((tab) => {
       if (!tab.active) this.queueAction("registerBackground", tab.id);
     });
@@ -159,8 +159,7 @@ class TabRecency {
     this.saveToStorage();
   }
 
-  // Like TabGlance: a tab opened in the background ranks right after the current tab, which stays
-  // the most recent.
+  // A tab opened in the background ranks right after the current tab, which stays the most recent.
   registerBackground(tabId) {
     const current = Object.keys(this.tabIdToCounter)
       .find((id) => this.tabIdToCounter[id] == this.counter);

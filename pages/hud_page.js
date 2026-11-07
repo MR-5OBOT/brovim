@@ -16,8 +16,7 @@ const TIME_TO_WAIT_FOR_IPC_MESSAGES = 17;
 // Set the input element's text, and move the cursor to the end.
 function setTextInInputElement(inputEl, text) {
   inputEl.textContent = text;
-  // Move the cursor to the end. Based on one of the solutions here:
-  // http://stackoverflow.com/questions/1125292/how-to-move-cursor-to-end-of-contenteditable-entity
+  // Move the cursor to the end.
   const range = document.createRange();
   range.selectNodeContents(inputEl);
   range.collapse(false);

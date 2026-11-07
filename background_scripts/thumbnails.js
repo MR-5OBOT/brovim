@@ -1,7 +1,7 @@
-// Tab switcher previews, kept the way TabGlance keeps them: one screenshot per page URL, so
-// previews survive browser restarts and changing tab IDs, and tabs showing the same page share one.
-// Only the most recent tabSwitcherMaxThumbnails are kept. Incognito previews stay in session
-// storage, which is never written to disk.
+// Tab switcher previews: one screenshot per page URL, so previews survive browser restarts and
+// changing tab IDs, and tabs showing the same page share one. Only the most recent
+// tabSwitcherMaxThumbnails are kept. Incognito previews stay in session storage, which is never
+// written to disk.
 
 const storageKey = "tabThumbnails";
 // Well under the 10 MB storage quota, whatever the preview limit.
@@ -106,8 +106,8 @@ export async function storeThumbnail(url, incognito, dataUrl) {
   }
   cache.set(url, dataUrl);
   trimCache(cache);
-  // ponytail: rewrites every preview (at most 6 MB) on each capture, as TabGlance does. Store one key
-  // per URL plus an order list if these writes ever show up in profiles.
+  // ponytail: rewrites every preview (at most 6 MB) on each capture. Store one key per URL
+  // plus an order list if these writes ever show up in profiles.
   await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
 }
 

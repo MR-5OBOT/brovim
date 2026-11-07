@@ -423,6 +423,7 @@ const defaultKeyMappings = {
   "z0": "zoomReset",
 
   // Misc
+  "<a-d>": "toggleDarkMode",
   "?": "showHelp",
 };
 

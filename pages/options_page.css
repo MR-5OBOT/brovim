@@ -338,6 +338,24 @@ body.options-page {
   color: var(--settings-muted);
   font-size: 12px;
 }
+.range-control {
+  display: flex;
+  flex: 0 1 260px;
+  align-items: center;
+  gap: 12px;
+}
+.range-control input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  accent-color: #9e56cb;
+}
+.range-control output {
+  min-width: 38px;
+  color: var(--settings-muted);
+  font-size: 12px;
+  text-align: right;
+}
 .options-page select {
   flex: none;
   min-width: 76px;

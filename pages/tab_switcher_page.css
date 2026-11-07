@@ -1,4 +1,4 @@
-/* The tab switcher, modeled on TabGlance: one centered panel of tab cards over a dimmed page. The
+/* The tab switcher: one centered panel of tab cards over a dimmed page. The
    frame covers the viewport; vimium.css blurs the page behind it, and for liquid glass blurs and
    refracts the page under the panel. */
 

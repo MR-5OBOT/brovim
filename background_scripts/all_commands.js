@@ -392,6 +392,14 @@ const allCommands = [
   },
 
   {
+    name: "toggleDarkMode",
+    desc: "Turn dark mode for light websites on or off",
+    group: "misc",
+    background: true,
+    noRepeat: true,
+  },
+
+  {
     name: "showHelp",
     desc: "Show help",
     group: "misc",

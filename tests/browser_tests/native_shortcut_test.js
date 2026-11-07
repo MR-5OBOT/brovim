@@ -174,6 +174,14 @@ try {
     "Recovery did not use the actual browser command",
   );
   pass("Native Alt+Z leaves text inputs without a custom page mapping");
+  // Browsers refuse Alt+D as an extension shortcut (it focuses the address bar), so it is a page
+  // mapping. The page must get the key first.
+  await keys("down:Alt_L", "tap:d", "up:Alt_L");
+  await source.waitForFunction(() => document.getElementById("brovim-dark-mode"));
+  assert(await source.evaluate(() => document.hasFocus()), "Alt+D moved focus off the page");
+  await keys("down:Alt_L", "tap:d", "up:Alt_L");
+  await source.waitForFunction(() => !document.getElementById("brovim-dark-mode"));
+  pass("Native Alt+D turns dark mode on and off");
   await keys("down:Alt_L", "tap:q");
   const frame = await switcher(source);
 

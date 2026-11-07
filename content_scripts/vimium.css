@@ -246,9 +246,10 @@ iframe.tab-switcher-frame {
   z-index: 2147483647;
 }
 
-/* Like TabGlance, the page behind the switcher is blurred a touch. */
+/* The page behind the switcher is blurred a touch. */
 iframe.tab-switcher-frame.vimium-ui-component-visible {
-  backdrop-filter: blur(2px) saturate(1.05);
+  /* In dark mode the frame's reverse filter also flips this backdrop; flip it back first. */
+  backdrop-filter: blur(2px) saturate(1.05) var(--brovim-reverse-filter,);
 }
 
 /* Liquid glass: the page under the switcher's panel, blurred and refracted. The switcher's content
@@ -281,6 +282,14 @@ div.vimium-flash {
   background-color: transparent;
   position: absolute;
   z-index: 2147483647;
+}
+
+/* Dark mode inverts the whole page (dark_mode.js). Invert Brovim's own UI back so it keeps its
+ * colors. The variable is only set while dark mode is on. */
+iframe.vimium-ui-component-visible,
+div.internal-vimium-hint-marker,
+div.vimium-flash {
+  filter: var(--brovim-reverse-filter, none);
 }
 
 /* UIComponent CSS */

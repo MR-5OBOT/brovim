@@ -289,7 +289,7 @@ const TabSwitcher = {
   },
 };
 
-// Keeps this page's switcher preview current, like TabGlance. After the page loads, comes into
+// Keeps this page's switcher preview current. After the page loads, comes into
 // view, changes its URL or scrolls far, wait until it looks settled (nothing visible has changed,
 // shifted or finished painting for 800ms, or 4.8s have passed), then ask the background to capture
 // it. A first-paint capture supplies an early preview on every load and visit; the settled capture

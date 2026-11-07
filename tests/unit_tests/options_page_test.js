@@ -109,6 +109,8 @@ context("options page", () => {
             { keyMappings: [] },
             { smoothScroll: "yes" },
             { tabSwitcherColumns: 9 },
+            { darkModeContrast: 151 },
+            { darkModeSepia: -1 },
             { scrollStepSize: -1 },
             { linkHintCharacters: "a" },
             { linkHintCharacters: "aA" },
@@ -143,6 +145,20 @@ context("options page", () => {
       assert.isTrue(Settings.get("smoothScroll"));
       assert.equal("90", optionsPage.getOptionEl("scrollStepSize").value);
       assert.equal("Backup restored", document.querySelector("#save-status").textContent);
+    });
+
+    should("restore dark mode settings, including zero percentages", async () => {
+      await optionsPage.restoreBackup(JSON.stringify({
+        settingsVersion: "1.0.0",
+        darkModeEnabled: true,
+        darkModeSepia: 0,
+        darkModeBrightness: 120,
+        darkModeExcludedSites: "example.com",
+      }));
+      assert.isTrue(Settings.get("darkModeEnabled"));
+      assert.equal(0, Settings.get("darkModeSepia"));
+      assert.equal("120", optionsPage.getOptionEl("darkModeBrightness").value);
+      assert.equal("example.com", optionsPage.getOptionEl("darkModeExcludedSites").value);
     });
 
     should("migrate legacy backups and ignore unknown preferences", async () => {

@@ -313,6 +313,15 @@ const BackgroundCommands = {
     });
   },
   toggleMuteTab,
+  // Alt+D. Every open tab follows the setting through its settings listener (dark_mode.js).
+  async toggleDarkMode({ tabId }, sender) {
+    const enabled = !Settings.get("darkModeEnabled");
+    await Settings.set("darkModeEnabled", enabled);
+    chrome.tabs.sendMessage(tabId, {
+      handler: "showMessage",
+      message: `Dark mode ${enabled ? "on" : "off"}`,
+    }, { frameId: sender.frameId }).catch(() => {});
+  },
   moveTabLeft: moveTab,
   moveTabRight: moveTab,
 

@@ -27,7 +27,7 @@ export async function getRecentTabs(windowId) {
   );
 }
 
-// The switcher's order: most recently used (TabGlance's default), or the tab bar's order from the
+// The switcher's order: most recently used (the default), or the tab bar's order from the
 // current tab, wrapping around.
 export async function getTabSwitcherData(windowId) {
   const [tabs] = await Promise.all([getRecentTabs(windowId), Settings.onLoaded()]);

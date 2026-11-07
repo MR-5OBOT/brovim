@@ -1,6 +1,6 @@
 # Brovim: Project Report and Verification
 
-**Repository:** `MR-5OBOT/brovim` (previously the `MR-5OBOT/vim-browser` fork)\
+**Repository:** `MR-5OBOT/brovim`\
 **Date:** November 6, 2026\
 **Status:** The switcher lists every awake tab in a grid that grows to fit, and the reported
 extension errors are fixed; verified. See section 17.
@@ -91,12 +91,12 @@ explicit custom CSS is preserved, including any colors it overrides.
 2. **Whole-UI Dark/Custom Theming:** Global dark theme engine (neutral dark grey, `#141414`) with
    purple accents (`#68039B` / `#8819c9`) shared across the Vomnibar, HUD notices, Help Dialog, and
    key badges.
-3. **Visual Tab Switcher (rebuilt after TabGlance):** A black (or liquid glass) panel of tab cards
-   over a lightly blurred page; the cards follow the system's light or dark theme. `Alt+Q` shows the
-   10 most recently used tabs (cards per row and rows are settings) with the previous tab selected;
-   releasing Alt switches. Cards have a preview or a letter tile, the title and the site, and a `×`
-   to close. Previews are captured when a page has settled and kept by URL in local storage (session
-   storage for incognito). TabGlance has no license, so this is Brovim's own code, not a copy.
+3. **Visual Tab Switcher:** A black (or liquid glass) panel of tab cards over a lightly blurred
+   page; the cards follow the system's light or dark theme. `Alt+Q` shows the 10 most recently used
+   tabs (cards per row and rows are settings) with the previous tab selected; releasing Alt
+   switches. Cards have a preview or a letter tile, the title and the site, and a `×` to close.
+   Previews are captured when a page has settled and kept by URL in local storage (session storage
+   for incognito).
 4. **Curated Search Engine Defaults:** Pre-configured ready-to-use search keywords in
    `lib/settings.js` (`yt` for YouTube, `gh` for GitHub, `w` for Wikipedia, `r` for Reddit, and
    `ddg` for DuckDuckGo). No Google keyword.
@@ -191,9 +191,9 @@ An audit of this report and `TODOS.md` against the code found these problems, al
 19. **Dropped `T` key to open tab switcher.** `T` has been unmapped from `defaultKeyMappings` in
     `commands.js`.
 20. **Tab switcher membership & auto-switch.** Following the user's final confirmation, the list
-    includes every open tab in the window, ordered by recency (TabGlance-style); unvisited tabs
-    follow by lastAccessed. No numeric cap. Releasing `Alt` switches to the selected tab; Enter also
-    confirms a selection.
+    includes every open tab in the window, ordered by recency; unvisited tabs follow by
+    lastAccessed. No numeric cap. Releasing `Alt` switches to the selected tab; Enter also confirms
+    a selection.
 21. **Vomnibar `omni` excludes active tabs; limited to history and web search.**
     `completionSources.tabs` was removed from the `omni` completer. Typing in `o`/`O` now focuses
     strictly on URLs, browsing history, domain completions, and web search queries (typing words
@@ -234,15 +234,15 @@ Previously maintained in `TODOS.md`; this report is now the canonical project re
 
 ---
 
-### 3. Visual Tab Switcher (TabGlance-style)
+### 3. Visual Tab Switcher
 
 - [x] **Snapshot Caching Service:** The page's content script waits until it has settled (no visible
       DOM change, layout shift or new largest paint for 800ms, at most 4.8s) after loading, coming
       into view, a URL change or a long scroll, and just before the switcher opens. The background
       captures it, downscales it to 480px and keeps the newest 60 by URL in `chrome.storage.local`
       (incognito: `chrome.storage.session`). Never captured while Brovim's UI is showing.
-- [x] **Preview Grid UI:** TabGlance-style panel: 5 cards per row, 2 rows, a scroll hint when cards
-      overflow; a click outside closes it.
+- [x] **Preview Grid UI:** A panel of 5 cards per row, 2 rows, a scroll hint when cards overflow; a
+      click outside closes it.
 - [x] **Card Components:** Preview (4:3), two-line title, site name, and a `×` close button.
 - [x] **Fallback Cards:** The site's first letter on a color derived from the site.
 - [x] **Keyboard Navigation:**
@@ -457,11 +457,10 @@ keyboard behavior. The 19 intentional feature removals remain in place.
   denial is respected; users must allow clipboard access in their site permissions to use `p`/`P`.
 - **Invalidated extension contexts:** URL/focus checks handle invalidation both before and during
   their background request. Existing tabs shut down old handlers after the extension is replaced.
-- **Recent-tab switcher:** rebuilt after TabGlance's UI and behavior: the 10 most recently used tabs
-  in the current window (its default 5x2 grid), the active tab first, with links opened in the
-  background right after the current tab. Closing a card refills the grid from the older tabs. Tab
-  bar order, liquid glass, layout and preview settings live in Options › Tab switcher. Two-tab
-  windows swap directly by default.
+- **Recent-tab switcher:** the 10 most recently used tabs in the current window (its default 5x2
+  grid), the active tab first, with links opened in the background right after the current tab.
+  Closing a card refills the grid from the older tabs. Tab bar order, liquid glass, layout and
+  preview settings live in Options › Tab switcher. Two-tab windows swap directly by default.
 - **Fast browser-wide switching:** quick Alt+Q taps activate the previous eligible tab without
   creating a preview frame. Holding Alt on ordinary websites opens the in-page grid; thumbnails load
   separately so navigation does not wait for them. Protected pages switch directly. The separate
@@ -474,9 +473,10 @@ keyboard behavior. The 19 intentional feature removals remain in place.
   mirror preserves visited-tab history across extension reloads; browser startup clears the mirror
   so filtering remains scoped to the current session.
 - **Actual Helium shortcut:** Alt+Q is assigned to Brovim in the running browser profile. The
-  previous TabGlance assignment was removed through the browser shortcut settings. Applied this
-  update to the live browser while preserving nine visit records. Native Alt+Q switched without
-  creating a window, and the destination website had the new content scripts without a refresh.
+  conflicting assignment from another extension was removed through the browser shortcut settings.
+  Applied this update to the live browser while preserving nine visit records. Native Alt+Q switched
+  without creating a window, and the destination website had the new content scripts without a
+  refresh.
 - **Settings redesign:** grouped sections, sidebar navigation, responsive cards, clearer new-tab
   choices, actual shortcut assignment, a shortcut-management button, live hint-color previews, and
   explicit unsaved/saved feedback. Desktop and narrow mobile layouts are verified.
@@ -596,11 +596,11 @@ installation. The current packages are under `dist/chrome-store`, `dist/chrome-c
 
 ## 12. First-Opening Thumbnails and Performance (November 4, 2026)
 
-The user requested thumbnails on first load, refreshed each time, with TabGlance's behavior and
-switching speed checked. Existing locally saved previews now accompany the first tab-list response
-from a preloaded memory cache. A slow storage read or screenshot never holds up the grid or keys.
-Only the displayed cards' images are included (at most 18), so a large window does not send every
-saved image on each opening. Missing images still load asynchronously.
+The user requested thumbnails on first load, refreshed each time, with switching speed checked.
+Existing locally saved previews now accompany the first tab-list response from a preloaded memory
+cache. A slow storage read or screenshot never holds up the grid or keys. Only the displayed cards'
+images are included (at most 18), so a large window does not send every saved image on each opening.
+Missing images still load asynchronously.
 
 Visible pages get a preview after their first paint, even while slower resources are loading,
 followed by a settled refresh. Returning to a tab refreshes it even when its previous capture is
@@ -653,8 +653,7 @@ guarantees. The first-opening check blocks the separate image-loading response t
 draw already has cached thumbnails; its rapid reopenings also cover the focus race. A delayed-image
 fixture proves early capture happens before full page load and is refined afterward.
 
-Like [TabGlance's documented local cache](https://github.com/just2d/tabglance#privacy), previews
-stay on the device. Chrome's
+Previews stay on the device. Chrome's
 [captureVisibleTab API](https://developer.chrome.com/docs/extensions/reference/api/tabs#method-captureVisibleTab)
 captures only the active tab in a window. A tab with no saved preview therefore gets its first
 screenshot when viewed; background tabs are never activated just to collect images. Incognito
@@ -682,17 +681,15 @@ regressions reproduced both classes before the fixes.
   after navigation. The previous code produced the screenshot's missing-receiver rejection in the
   service worker; the same browser regression now produces none.
 
-### TabGlance ordering comparison
+### Tab ordering
 
-Compared Brovim with TabGlance **1.5.13**, both the installed extension files and the package
-downloaded from Chrome's official update service. TabGlance's cycling mode puts the active tab at
-the first card and preselects the next card. Brovim keeps that behavior. The user-reported late
-WhatsApp position led to three independently reproduced ordering fixes:
+Brovim's cycling mode puts the active tab at the first card and preselects the next card. The
+user-reported late WhatsApp position led to three independently reproduced ordering fixes:
 
 1. Newly created background tabs without an `openerTabId` were never added to recency. They fell
    behind every recorded visit even when newly opened. All new background tabs now rank just after
-   the current tab, matching TabGlance. A real-browser regression includes a WhatsApp-style excluded
-   URL and confirms the card is second, ahead of an older visited tab.
+   the current tab. A real-browser regression includes a WhatsApp-style excluded URL and confirms
+   the card is second, ahead of an older visited tab.
 2. A delayed window-focus query could register the former active tab after a newer activation,
    reversing their order. A revision guard discards the stale result.
 3. Browser startup could load storage, replay new activations, then erase those activations during
@@ -1033,8 +1030,8 @@ switcher script were verified against the source.
   shown. The MV3 service worker usually stops before the user clicks, so the click did nothing, and
   with no focused window it threw. The listener is now registered at startup and opens the project
   page in a new tab.
-- **License:** `LICENSE` (MIT) names MR-5OBOT as the copyright holder and keeps the earlier MIT
-  notice that the license requires in every copy. The store packages include it.
+- **License:** no license file. The earlier MIT notice, which that license requires in every copy,
+  is kept at the top of `lib/utils.js`, so the store packages include it.
 - **Version 1.0.0:** Brovim's first release. Settings migration keys on whether `settingsVersion`
   exists, not on its value, so moving from 2.4.2 to 1.0.0 keeps existing settings; that downgrade
   shows no upgrade notification.

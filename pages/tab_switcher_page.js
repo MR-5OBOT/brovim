@@ -374,7 +374,7 @@ function endCycle() {
 }
 
 // If the browser or another app takes the focus, possibly without delivering the Alt release,
-// what the user wanted is unknown, so cancel, like TabGlance.
+// what the user wanted is unknown, so cancel.
 function guardFocus() {
   clearInterval(focusGuard);
   let focused = false;

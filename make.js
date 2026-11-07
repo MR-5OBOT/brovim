@@ -18,7 +18,7 @@ async function shell(procName, argsArray = []) {
   // NOTE: Does drake's `sh` function work on Windows? If so, that can replace this function.
   if (Deno.build.os == "windows") {
     // if win32, prefix arguments with "/c {original command}"
-    // e.g. "mkdir c:\git\vimium" becomes "cmd.exe /c mkdir c:\git\vimium"
+    // e.g. "mkdir c:\git\brovim" becomes "cmd.exe /c mkdir c:\git\brovim"
     argsArray.unshift("/c", procName);
     procName = "cmd.exe";
   }
@@ -181,6 +181,7 @@ async function buildStorePackage() {
     ".*",
     "build_scripts",
     "dist",
+    "helium",
     "docs",
     "make.js",
     "deno.json",

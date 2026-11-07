@@ -1,8 +1,8 @@
 # Brovim
 
-Brovim is a browser extension for keyboard-driven browsing in the spirit of Vim: link hints, a
-Vomnibar, a visual tab switcher with thumbnails, a dark theme with purple accents, and ready-made
-search engine keywords.
+Brovim is a browser extension for keyboard-driven browsing with Vim-style keys: link hints, a
+Vomnibar, a visual tab switcher with thumbnails, dark mode for light websites, a dark theme with
+purple accents, and ready-made search engine keywords.
 
 ## Install from source
 
@@ -15,6 +15,15 @@ search engine keywords.
 Temporary Add-on", and pick any file in this directory.
 
 The Options page opens from the help dialog (type `?`) or from the extension's details page.
+
+**Helium setup:** `helium/shortcuts.json` holds your Helium keyboard shortcuts (the defaults
+removed, such as `Ctrl+Tab`, `Ctrl+T` and `Alt+D`, plus `Ctrl+X` to close a tab and `Alt+S` for
+Settings). On a new machine or profile, start Helium once, close it, then run
+`deno run -A helium/setup.js`. It applies those shortcuts and adds `--extensions-on-chrome-urls` to
+`~/.config/helium-browser-flags.conf` so Brovim also runs on Helium's own pages. After changing
+shortcuts in `chrome://settings/system/shortcuts`, run `deno run -A helium/setup.js save` to copy
+them back into the file. Use `--profile <dir>` for a profile other than
+`~/.config/net.imput.helium/Default`.
 
 ## Key bindings
 
@@ -46,6 +55,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `i` `gi`        | Insert mode, focus the first text input                         |
 | `Alt+Z`         | Return focus to the page and recover scrolling                  |
 | `zi` `zo` `z0`  | Zoom in / out / reset                                           |
+| `Alt+D`         | Dark mode for light websites on / off                           |
 
 Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
 example `map J scrollDown count=5`.
@@ -60,10 +70,9 @@ Brovim runs on every site by default. Add excluded sites in Options or the toolb
 
 ### Tab switcher
 
-The switcher works like TabGlance's: a grid of tab previews, most recently used first. Sleeping
-unpinned tabs (discarded, frozen, or not loaded since the browser restarted) and hidden tabs are
-excluded. Pinned tabs stay eligible while sleeping and wake only when selected; awake background
-tabs remain available.
+The switcher is a grid of tab previews, most recently used first. Sleeping unpinned tabs (discarded,
+frozen, or not loaded since the browser restarted) and hidden tabs are excluded. Pinned tabs stay
+eligible while sleeping and wake only when selected; awake background tabs remain available.
 
 The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
 reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its
@@ -83,10 +92,10 @@ and wheel input do not operate the switcher; there are no close buttons.
 
 In shortcut order, the current tab comes first, then tabs used this session (new background tabs
 come right after the current tab, including tabs created without an opener), then the rest by when
-they were last used. This is also how TabGlance's cycling grid places the current tab. Options › Tab
-switcher offers tab bar order instead, fewer cards per row, a liquid glass panel (off by default),
-direct swapping with two tabs (on by default), and the preview settings below. Change the shortcut
-at `chrome://extensions/shortcuts`; if another extension already uses it, assign it to Brovim there.
+they were last used. Options › Tab switcher offers tab bar order instead, fewer cards per row, a
+liquid glass panel (off by default), direct swapping with two tabs (on by default), and the preview
+settings below. Change the shortcut at `chrome://extensions/shortcuts`; if another extension already
+uses it, assign it to Brovim there.
 
 Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
 after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the
@@ -128,6 +137,20 @@ packages omit the Chromium-only host permission. See
 
 Recency order survives extension reloads and resets when the browser starts a new session. Existing
 website tabs recover their Brovim controls automatically after an extension update.
+
+### Dark mode
+
+Press `Alt+D` on any page to turn dark mode on or off in every tab. Light websites go dark; photos
+and videos are not inverted, and pages that already have a dark theme are left alone. Options › Dark
+mode sets brightness, contrast, sepia and grayscale, and lists sites that should never be darkened
+(one per line, like `example.com`; subdomains are included).
+
+`Alt+D` is a page key like `<a-p>`: it works when the page has the focus, not while you type in a
+text field. Browsers keep `Alt+D` for the address bar, so it can't be a browser-wide extension
+shortcut. Use `map <key> toggleDarkMode` to choose another key.
+
+Dark mode inverts the page with a CSS filter. Background images set in a site's stylesheets stay
+inverted.
 
 ### Search engines
 
@@ -201,7 +224,3 @@ its keyboard events stay off your normal browser session.
 
 See [REPORT.md](REPORT.md) for the consolidated roadmap, implementation history, and verification
 results.
-
-## License
-
-MIT. See [LICENSE](LICENSE).

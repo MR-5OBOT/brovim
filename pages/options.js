@@ -4,6 +4,13 @@ import { Commands, KeyMappingsParser } from "../background_scripts/commands.js";
 import * as userSearchEngines from "../background_scripts/user_search_engines.js";
 
 const options = {
+  darkModeBrightness: "number",
+  darkModeContrast: "number",
+  darkModeEnabled: "boolean",
+  darkModeExcludedSites: "string",
+  darkModeGrayscale: "number",
+  darkModeSepia: "number",
+  darkModeSkipDarkPages: "boolean",
   enableInternalPages: "boolean",
   filterLinkHints: "boolean",
   grabBackFocus: "boolean",
@@ -41,6 +48,7 @@ export async function init() {
   const onUpdated = () => {
     maintainLinkHintsView();
     updateHintPreview();
+    updateRangeLabels();
     saveButton.disabled = false;
     saveButton.textContent = "Save changes";
     document.querySelector("#save-status").textContent = "Unsaved changes";
@@ -189,6 +197,12 @@ function updateHintPreview() {
   }
 }
 
+function updateRangeLabels() {
+  for (const range of document.querySelectorAll("input[type=range]")) {
+    range.nextElementSibling.textContent = `${range.value}%`;
+  }
+}
+
 export function getOptionEl(optionName) {
   return document.querySelector(`*[name="${optionName}"]`);
 }
@@ -241,6 +255,7 @@ function setFormFromSettings(settings) {
   document.querySelector("#upload-backup").value = "";
   maintainLinkHintsView();
   updateHintPreview();
+  updateRangeLabels();
 }
 
 function getSettingsFromForm() {
@@ -470,5 +485,9 @@ if (!testEnv) {
     DomUtils.injectUserCss();
     await Commands.init();
     await init();
+    // Alt+D changes dark mode while this page is open. Show it, so saving doesn't undo it.
+    Settings.addEventListener("change", () => {
+      getOptionEl("darkModeEnabled").checked = Settings.get("darkModeEnabled");
+    });
   });
 }
