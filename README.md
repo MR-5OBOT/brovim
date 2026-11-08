@@ -140,7 +140,8 @@ Previews are taken after the first paint when a page loads or you return to a ta
 after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the
 grid's first draw; opening and cycling never wait for a new capture or for storage. Captures are
 deferred while Brovim's own UI is on screen. Previews are saved by page address on this device (the
-5 most recent by default, with a maximum of 10), so they survive browser restarts. This screenshot
+15 most recent by default, with options for 30 or 50 and a 6 MB cache limit), so they survive
+browser restarts. Existing 5- or 10-preview settings upgrade to 15 automatically. This screenshot
 cache does not limit the tab list or browsing history. Incognito previews are kept only until the
 browser closes. A tab without a saved preview shows its site's first letter until you view it:
 Chrome can capture only the active tab in a window.

@@ -2318,6 +2318,12 @@ try {
     const id = await tabId(other);
     // Simulate a cached preview and then a cache miss at the background storage boundary.
     await worker.evaluate((oldUrl) => {
+      globalThis.savedPreviewListHandler = sendRequestHandlers.getOpenTabsWithScreenshots;
+      sendRequestHandlers.getOpenTabsWithScreenshots = async (request) =>
+        (await globalThis.savedPreviewListHandler(request)).map((tab) => ({
+          ...tab,
+          screenshot: null,
+        }));
       globalThis.savedPreviewHandler = sendRequestHandlers.getTabScreenshots;
       sendRequestHandlers.getTabScreenshots = ({ urls }) =>
         urls.map((url) =>
@@ -2345,6 +2351,8 @@ try {
       await key(["Escape"]);
     } finally {
       await worker.evaluate(() => {
+        sendRequestHandlers.getOpenTabsWithScreenshots = globalThis.savedPreviewListHandler;
+        delete globalThis.savedPreviewListHandler;
         sendRequestHandlers.getTabScreenshots = globalThis.savedPreviewHandler;
         delete globalThis.savedPreviewHandler;
       });
@@ -2557,6 +2565,12 @@ try {
   await check("preview navigation does not wait for thumbnails to load", async () => {
     await fresh();
     await worker.evaluate(() => {
+      globalThis.originalGetScreenshotList = sendRequestHandlers.getOpenTabsWithScreenshots;
+      sendRequestHandlers.getOpenTabsWithScreenshots = async (request) =>
+        (await globalThis.originalGetScreenshotList(request)).map((tab) => ({
+          ...tab,
+          screenshot: null,
+        }));
       globalThis.originalGetScreenshots = sendRequestHandlers.getTabScreenshots;
       globalThis.thumbnailRequestPending = false;
       sendRequestHandlers.getTabScreenshots = () =>
@@ -2587,6 +2601,8 @@ try {
     } finally {
       await worker.evaluate(() => {
         globalThis.finishThumbnailRequest?.([]);
+        sendRequestHandlers.getOpenTabsWithScreenshots = globalThis.originalGetScreenshotList;
+        delete globalThis.originalGetScreenshotList;
         sendRequestHandlers.getTabScreenshots = globalThis.originalGetScreenshots;
         delete globalThis.originalGetScreenshots;
         delete globalThis.finishThumbnailRequest;

@@ -19,6 +19,7 @@ let tabs = []; // The visual order, fixed for this gesture, with pins in the lea
 let layout = { columns: 8, rows: 1 }; // The grid's size for these tabs; see gridLayout.
 let selectedIndex = 0;
 let selectedCard = null;
+let cardsById = new Map();
 let visiblePage = -1;
 let isAltCycling = false;
 let shortcut = Utils.parseBrowserShortcut();
@@ -40,9 +41,19 @@ const requests = new Map();
 function sendRequest(message) {
   return new Promise((resolve, reject) => {
     const id = ++requestId;
-    requests.set(id, { resolve, reject });
+    requests.set(id, { resolve, reject, handler: message.handler });
     UIComponentMessenger.postMessage({ name: "request", id, message });
   });
+}
+
+// A hidden gesture no longer needs its reads. Release their promises and tab/image references
+// even if the background never replies; writes (including a pending close) still finish normally.
+function cancelPendingReads() {
+  for (const [id, request] of requests) {
+    if (!["getOpenTabsWithScreenshots", "getTabScreenshots"].includes(request.handler)) continue;
+    requests.delete(id);
+    request.resolve(null);
+  }
 }
 
 // A layout setting, or its default if the stored value is out of range.
@@ -57,6 +68,7 @@ const columnSetting = () => layoutSetting("tabSwitcherColumns", 3, 8);
 async function fetchTabs(options = {}) {
   const currentActivation = ++activation;
   await Settings.onLoaded();
+  if (currentActivation !== activation) return;
   let list = [];
   try {
     list = await sendRequest({
@@ -85,6 +97,9 @@ async function fetchTabs(options = {}) {
     screenshot: tab.screenshot ??
       (previousTabs.get(tab.id)?.url === tab.url ? previousTabs.get(tab.id).screenshot : null),
   }));
+  // Warm previews already arrived with the list. Only a cold/missing cache entry needs another
+  // request; otherwise every opening transfers the same image data twice through both ports.
+  const missingScreenshots = allTabs.filter((_tab, i) => !list[i].screenshot);
   panel.classList.toggle("glass", Settings.get("tabSwitcherGlass") === true);
   chooseTabs();
   if (tabs.length < 2) {
@@ -100,7 +115,7 @@ async function fetchTabs(options = {}) {
   sendRequest({ handler: "setTabSwitcherOverlay", id: overlayId, showing: true }).catch(() => {});
   postPanel();
   guardFocus();
-  loadScreenshots(currentActivation, tabs);
+  loadScreenshots(currentActivation, missingScreenshots);
 }
 
 const pageSize = () => layout.columns * layout.rows;
@@ -121,6 +136,7 @@ function gridLayout(count) {
 }
 
 async function loadScreenshots(currentActivation, tabsToLoad) {
+  if (tabsToLoad.length === 0) return;
   const screenshots = await sendRequest({
     handler: "getTabScreenshots",
     urls: tabsToLoad.map((tab) => tab.url),
@@ -129,14 +145,21 @@ async function loadScreenshots(currentActivation, tabsToLoad) {
   await Promise.all(tabsToLoad.map(async (tab, i) => {
     const screenshot = screenshots[i];
     if (!screenshot || tab.screenshot === screenshot) return;
-    tab.screenshot = screenshot;
-    const card = [...grid.children].find((el) => el.dataset.id == tab.id);
-    if (!card) return;
+    const entry = cardsById.get(tab.id);
+    if (!entry) return;
     const img = createImage(screenshot);
     // Decode before replacing the visible preview, avoiding a blank frame during image loading.
-    await img.decode().catch(() => {});
-    if (currentActivation === activation && card.parentElement === grid) {
-      card.querySelector(".card-thumb").firstElementChild.replaceWith(img);
+    try {
+      await img.decode();
+    } catch {
+      return; // Keep the letter tile or previous preview if the image is corrupt.
+    }
+    if (
+      currentActivation === activation && cardsById.get(tab.id) === entry
+    ) {
+      entry.card.querySelector(".card-thumb").firstElementChild.replaceWith(img);
+      entry.screenshot = screenshot;
+      tab.screenshot = screenshot;
     }
   }));
 }
@@ -145,8 +168,14 @@ function render() {
   grid.classList.toggle("few", tabs.length < layout.columns);
   // On the panel, so that extra columns can widen it as well as the grid.
   panel.style.setProperty("--columns", Math.min(layout.columns, tabs.length));
-  grid.replaceChildren(...tabs.map(createCard));
-  selectedCard = null;
+  const cards = tabs.map(createCard);
+  cardsById = new Map(tabs.map((tab) => [tab.id, cardsById.get(tab.id)]));
+  // Keep decoded images and card nodes across opens, closes and resizes. Reorder only the nodes
+  // that moved, and remove cards for tabs that disappeared.
+  for (let i = 0; i < cards.length; i++) {
+    if (grid.children[i] !== cards[i]) grid.insertBefore(cards[i], grid.children[i] ?? null);
+  }
+  while (grid.children.length > cards.length) grid.lastElementChild.remove();
   visiblePage = -1;
   updateSelection();
   postPanel();
@@ -177,6 +206,21 @@ function sizePanel() {
 }
 
 function createCard(tab, index) {
+  const existing = cardsById.get(tab.id);
+  if (existing && existing.url === tab.url && existing.screenshot === tab.screenshot) {
+    const card = existing.card;
+    card.id = `tab-card-${index}`;
+    if (existing.title !== tab.title) {
+      card.querySelector(".card-title").textContent = tab.title;
+      const host = hostname(tab.url);
+      card.setAttribute("aria-label", host ? `${tab.title} — ${host}` : tab.title);
+      if (!tab.screenshot) {
+        card.querySelector(".card-thumb").replaceChildren(letterTile(tab, host));
+      }
+      existing.title = tab.title;
+    }
+    return card;
+  }
   const host = hostname(tab.url);
   const card = document.createElement("div");
   card.className = "tab-card";
@@ -196,6 +240,7 @@ function createCard(tab, index) {
   site.className = "card-host";
   site.textContent = host || tab.url;
   card.append(thumb, title, site);
+  cardsById.set(tab.id, { card, url: tab.url, title: tab.title, screenshot: tab.screenshot });
   return card;
 }
 
@@ -204,6 +249,7 @@ function createImage(src) {
   img.src = src;
   img.alt = "";
   img.draggable = false;
+  img.decoding = "async";
   return img;
 }
 
@@ -219,9 +265,10 @@ function letterTile(tab, host) {
 }
 
 // The first character as the reader sees it, such as a whole emoji.
+const segmenter = Intl.Segmenter ? new Intl.Segmenter() : null;
 function firstLetter(text) {
-  const first = Intl.Segmenter
-    ? new Intl.Segmenter().segment(text)[Symbol.iterator]().next().value?.segment
+  const first = segmenter
+    ? segmenter.segment(text)[Symbol.iterator]().next().value?.segment
     : Array.from(text)[0];
   return first?.toUpperCase() ?? "";
 }
@@ -347,11 +394,11 @@ async function closeTab(index) {
     ? preferredIndex
     : Math.max(0, Math.min(index, tabs.length - 1));
   render();
-  loadScreenshots(activation, tabs.filter((t) => !t.screenshot));
 }
 
 function hide() {
   activation++;
+  cancelPendingReads();
   visible = false;
   isAltCycling = false;
   clearInterval(focusGuard);
@@ -448,6 +495,7 @@ UIComponentMessenger.registerHandler((event) => {
       break;
     }
     case "activate":
+      cancelPendingReads();
       visible = true;
       closing = null;
       isAltCycling = event.data.isAltCycle ?? false;
@@ -477,6 +525,7 @@ UIComponentMessenger.registerHandler((event) => {
       isAltCycling = false;
       clearInterval(focusGuard);
       activation++;
+      cancelPendingReads();
       endCycle();
       break;
   }

@@ -2,6 +2,51 @@ import "./test_helper.js";
 import "../../lib/settings.js";
 
 context("settings", () => {
+  should("upgrade old preview limits on load, save and backup import", async () => {
+    try {
+      for (const limit of [5, 10]) {
+        await chrome.storage.sync.set({
+          settingsVersion: "1.0.0",
+          tabSwitcherMaxThumbnails: limit,
+        });
+        await Settings.load();
+        assert.equal(15, Settings.get("tabSwitcherMaxThumbnails"));
+        await Settings.set("smoothScroll", false);
+        await Settings.load();
+        assert.equal(15, Settings.get("tabSwitcherMaxThumbnails"));
+        assert.equal(
+          15,
+          Settings.validateBackup({
+            settingsVersion: "1.0.0",
+            tabSwitcherMaxThumbnails: limit,
+          }).tabSwitcherMaxThumbnails,
+        );
+      }
+    } finally {
+      await Settings.clear();
+    }
+  });
+
+  should("keep legacy preview limits importable and reject invalid values", () => {
+    for (const [oldLimit, expected] of [[10, 15], [12, 15], [20, 30], [40, 50], [240, 50]]) {
+      assert.equal(
+        expected,
+        Settings.validateBackup({
+          settingsVersion: "1.0.0",
+          tabSwitcherMaxThumbnails: oldLimit,
+        }).tabSwitcherMaxThumbnails,
+      );
+    }
+    for (const invalid of [0, 6, -10, 15.5, "15"]) {
+      assert.throwsError(() =>
+        Settings.validateBackup({
+          settingsVersion: "1.0.0",
+          tabSwitcherMaxThumbnails: invalid,
+        })
+      );
+    }
+  });
+
   context("v2.0 migration", () => {
     setup(async () => {
       // Prior to Brovim 2.0.0, the settings values were encoded as JSON strings.

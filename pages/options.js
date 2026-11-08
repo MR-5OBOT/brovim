@@ -233,8 +233,8 @@ function setFormFromSettings(settings) {
         el.value = value;
         break;
       case "select":
-        el.value = optionName === "tabSwitcherMaxThumbnails" && Number(value) > 10
-          ? "10"
+        el.value = optionName === "tabSwitcherMaxThumbnails" && Number(value) > 50
+          ? "50"
           : String(value);
         if (el.selectedIndex < 0) el.value = String(Settings.defaultOptions[optionName]);
         break;

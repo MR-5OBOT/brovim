@@ -20,18 +20,18 @@ context("options page", () => {
     assert.equal(settings.keyMappings, field.value);
   });
 
-  should("default glass off and offer five or ten saved screenshots", async () => {
+  should("default glass off and offer fifteen, thirty or fifty saved screenshots", async () => {
     assert.isFalse(optionsPage.getOptionEl("tabSwitcherGlass").checked);
-    assert.equal("5", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
+    assert.equal("15", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
     assert.equal(
-      ["5", "10"],
+      ["15", "30", "50"],
       [...optionsPage.getOptionEl("tabSwitcherMaxThumbnails").options].map((option) =>
         option.value
       ),
     );
     await Settings.set("tabSwitcherMaxThumbnails", 240);
     await optionsPage.init();
-    assert.equal("10", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
+    assert.equal("50", optionsPage.getOptionEl("tabSwitcherMaxThumbnails").value);
   });
 
   should("save the browser-page switch and include it in a settings backup", async () => {
@@ -170,7 +170,7 @@ context("options page", () => {
       }));
       assert.equal(90, Settings.get("scrollStepSize"));
       assert.isFalse(Settings.get("smoothScroll"));
-      assert.equal(10, Settings.get("tabSwitcherMaxThumbnails"));
+      assert.equal(50, Settings.get("tabSwitcherMaxThumbnails"));
       assert.equal(undefined, Settings.get("unknownOption"));
     });
 

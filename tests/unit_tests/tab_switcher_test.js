@@ -907,6 +907,43 @@ context("Tab switcher previews and order", () => {
     assert.isFalse(pageKey("https://a.com/#/inbox") == pageKey("https://a.com/#/sent"));
   });
 
+  should("retain fifteen visited previews after the worker reloads", async () => {
+    await Settings.onLoaded();
+    await Settings.set(
+      "tabSwitcherMaxThumbnails",
+      Settings.defaultOptions.tabSwitcherMaxThumbnails,
+    );
+    const urls = Array.from({ length: 15 }, (_, i) => `https://retained-preview.example/${i}`);
+    for (const [i, url] of urls.entries()) {
+      await storeThumbnail(url, false, `normal-${i}`);
+      await storeThumbnail(url, true, `private-${i}`);
+    }
+    const reloaded = await import("../../background_scripts/thumbnails.js?retention-reload");
+    await reloaded.warmThumbnailCaches();
+    assert.equal(urls.map((_, i) => `normal-${i}`), await reloaded.findThumbnails(urls, false));
+    assert.equal(urls.map((_, i) => `private-${i}`), await reloaded.findThumbnails(urls, true));
+  });
+
+  should("keep the byte cap when retaining more previews", async () => {
+    stub(chrome.storage.local, "get", () => Promise.resolve({}));
+    let stored;
+    stub(chrome.storage.local, "set", (items) => {
+      stored = items.tabThumbnails;
+      return Promise.resolve();
+    });
+    const bounded = await import("../../background_scripts/thumbnails.js?byte-cap");
+    const preview = "x".repeat(2 * 1024 * 1024);
+    for (let i = 0; i < 4; i++) {
+      await bounded.storeThumbnail(`https://large-preview.example/${i}`, false, preview);
+    }
+    assert.equal(3, Object.keys(stored).length);
+    assert.equal(undefined, stored["https://large-preview.example/0"]);
+    assert.equal(
+      6 * 1024 * 1024,
+      Object.values(stored).reduce((sum, value) => sum + value.length, 0),
+    );
+  });
+
   should("keep the newest previews by URL, with incognito ones apart", async () => {
     await Settings.onLoaded();
     await Settings.set("tabSwitcherMaxThumbnails", 2);
@@ -931,17 +968,17 @@ context("Tab switcher previews and order", () => {
   });
 
   should(
-    "cap imported preview limits at ten and trim immediately when lowered to five",
+    "cap imported preview limits at fifty and trim immediately when lowered to fifteen",
     async () => {
       await Settings.onLoaded();
       await Settings.set("tabSwitcherMaxThumbnails", 240);
-      const urls = Array.from({ length: 12 }, (_, i) => `https://preview-cap.example/${i}`);
+      const urls = Array.from({ length: 55 }, (_, i) => `https://preview-cap.example/${i}`);
       try {
         for (const url of urls) await storeThumbnail(url, false, url);
-        assert.equal(10, (await findThumbnails(urls, false)).filter(Boolean).length);
-        await Settings.set("tabSwitcherMaxThumbnails", 5);
+        assert.equal(50, (await findThumbnails(urls, false)).filter(Boolean).length);
+        await Settings.set("tabSwitcherMaxThumbnails", 15);
         await trimThumbnailCaches();
-        assert.equal(urls.slice(-5), (await findThumbnails(urls, false)).filter(Boolean));
+        assert.equal(urls.slice(-15), (await findThumbnails(urls, false)).filter(Boolean));
       } finally {
         await Settings.set(
           "tabSwitcherMaxThumbnails",

@@ -34,8 +34,12 @@ export async function warmThumbnailCaches() {
 
 function trimCache(cache) {
   const limit = Math.min(
-    10,
-    Math.max(1, Math.round(Number(Settings.get("tabSwitcherMaxThumbnails"))) || 5),
+    50,
+    Math.max(
+      1,
+      Math.round(Number(Settings.get("tabSwitcherMaxThumbnails"))) ||
+        Settings.defaultOptions.tabSwitcherMaxThumbnails,
+    ),
   );
   let bytes = 0;
   for (const preview of cache.values()) bytes += preview.length;
