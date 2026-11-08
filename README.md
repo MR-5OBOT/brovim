@@ -47,6 +47,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `b` `B`         | Vomnibar: bookmarks (this tab / new tab)                        |
 | `ge`            | Edit the current URL                                            |
 | `Alt+Q`         | Visual tab switcher, Alt+Tab style (browser shortcut)           |
+| `Alt+E`         | Search browser settings, extensions and internal pages          |
 | `x` `X`         | Close tab / restore closed tab                                  |
 | `<<` `>>`       | Move the tab left / right                                       |
 | `<a-p>` `<a-m>` | Pin / mute the tab                                              |
@@ -67,7 +68,30 @@ return focus to the page, leave temporary Brovim modes and rediscover the scroll
 browser shortcut with no custom mapping required; change it in the browser's extension-shortcut
 settings. Typing keeps its normal focus until you leave the editor.
 
-Brovim runs on every site by default. Add excluded sites in Options or the toolbar popup.
+Brovim runs on every site by default. Add excluded sites in Options or the toolbar popup. **Keep
+focus on the page** is on by default for new settings: websites cannot auto-focus a text field
+before your first interaction. An existing saved preference remains respected.
+
+### Browser pages
+
+Press **Alt+E**, type `extensions`, `performance`, `downloads`, `settings`, or another browser page,
+then press Enter. The palette appears centered like `o`/`O`, focuses its search input immediately,
+and **always opens the result in a new tab**. Arrow keys, Tab and Ctrl+J/K move through results;
+Escape closes it. Searches only match the built-in browser-page list.
+
+**Browser: Automatic** uses the browser's exposed identity and falls back to common Chromium pages.
+If a browser hides its identity, select Helium or Brave to include its specific pages. The choice is
+saved on this device. Helium's keyboard-shortcuts page and Brave's Shields/filter pages are
+included. The palette targets Chromium browsers; Firefox-specific destinations are not included.
+
+If a browser page blocks overlays, or the address bar owns focus, the same centered palette opens in
+a temporary extension tab. Choosing a result or pressing Escape closes that temporary tab. The
+source page stays unchanged. No separate browser window opens.
+
+If the browser already uses Alt+E, assign Brovim's **Search browser settings, extensions and
+internal pages** command at `chrome://extensions/shortcuts` (or `brave://extensions/shortcuts`).
+This is a one-time manual conflict fix. `helium/shortcuts.json` removes Alt+E from Helium's native
+menu; that backup is specific to Helium and is applied by `helium/setup.js` while Helium is closed.
 
 ### Text selection
 
@@ -78,10 +102,10 @@ boundaries, and `gg`/`G` for the start/end of the document. Arrow keys and Home/
 current line and clears the highlight too.
 
 Press `c` to position the caret without extending the selection, then `v` to select from there. `v`
-also switches between caret and visual mode; `o` swaps the selection's active end. `V` selects whole
-lines. Escape exits and clears the highlight, including after copying; clicking an editor returns
-control to the page. When there is no existing selection, `v` starts caret mode at visible page
-text; press `v` again to extend it. Text fields keep their normal typing behavior.
+also switches between caret and visual mode. `V` selects whole lines. Escape exits and clears the
+highlight, including after copying; clicking an editor returns control to the page. When there is no
+existing selection, `v` starts caret mode at visible page text; press `v` again to extend it. Text
+fields keep their normal typing behavior.
 
 ### Tab switcher
 
@@ -99,8 +123,8 @@ When the screen has no room for another row while cards stay readable, it adds c
 (widening the panel), so every tab has a cell. All rows fit in the frame without scrolling. Only
 past that limit does keyboard navigation advance to another page; a page indicator shows where you
 are. Pinned tabs occupy the leading cells in tab-bar order, including while sleeping or inactive. A
-quick tap always swaps to the last-used tab. Holding starts at that tab's visible cell; further
-presses move to the next cell, wrapping from the last cell back to cell 0. Closing a card moves the
+quick tap swaps to the last-used tab. Holding starts at that tab's visible cell; further presses
+move to the next cell, wrapping from the last cell back to cell 0. Closing a card moves the
 following cards up. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches, `x`, Delete or
 Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle clicks, touch
 and wheel input do not operate the switcher; there are no close buttons.
@@ -121,14 +145,19 @@ cache does not limit the tab list or browsing history. Incognito previews are ke
 browser closes. A tab without a saved preview shows its site's first letter until you view it:
 Chrome can capture only the active tab in a window.
 
-On pages that block extension scripts, including browser pages when access is unavailable, the
-shortcut switches directly using your chosen order. Further presses while held continue the original
-list instead of bouncing between two tabs; the grid resumes on the next page that supports it.
-Protected pages cannot report key releases, so abandoned fallback gestures expire after three
-seconds of inactivity. The switcher never opens a separate window. The shortcut also works on
-excluded sites and while an input is focused. Unresponsive pages fall back to direct switching, as
-do sandboxed pages (raw.githubusercontent.com, for example): a page served in a sandbox passes it on
-to Brovim's frames, so the grid, Vomnibar, HUD and help can't open there.
+Browser pages use **the same tap, hold and release behavior as websites**. Where Chromium permits
+Brovim's scripts (including Helium's Extensions page with the launch flag below), holding shows the
+grid and releasing selects the highlighted tab. Quick taps switch automatically, including before
+the grid finishes loading. This is hardcoded with no new setting and works even when ordinary
+browser-page mappings are off. The existing two-tab quick-swap option applies everywhere.
+
+Pages that block extension scripts use direct switching in your chosen order. Further presses while
+held continue the original list; the grid resumes on the next page that supports it. Abandoned
+direct-switch gestures expire after three seconds of inactivity. The switcher never opens a separate
+window. The shortcut also works on excluded sites and while an input is focused. Unresponsive pages
+fall back to direct switching, as do sandboxed pages (raw.githubusercontent.com, for example): a
+page served in a sandbox passes it on to Brovim's frames, so the grid, Vomnibar, HUD and help can't
+open there.
 
 `Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
 active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`
@@ -204,6 +233,7 @@ The build and test tasks need [Deno](https://deno.com):
 ./make.js test-lifecycle # real incognito window and background-worker recovery
 ./make.js test-native # actual Alt+Q events on an isolated X server (Linux)
 ./make.js test-internal-pages # browser-page permission and on/off checks
+./make.js test-browser-navigation # browser-page palette and protected-page grid
 ./make.js package     # store zips in dist/
 ```
 

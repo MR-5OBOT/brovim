@@ -725,8 +725,8 @@ try {
       await page.evaluate(() => {
         const editor = document.querySelector("#editor");
         editor.addEventListener("blur", () => editor.focus());
-        editor.focus();
       });
+      await page.click("#editor");
       await page.keyboard.type("j");
       assert(
         await page.$eval("#editor", (el) => el.textContent.includes("j")),
@@ -1235,6 +1235,28 @@ try {
     }, { id, start, end });
   };
   const selectedText = () => page.evaluate(() => getSelection().toString());
+  const reverseVisualSelection = () =>
+    page.evaluate(() => {
+      const selection = getSelection();
+      const roots = [];
+      const collect = (root) => {
+        for (const element of root.querySelectorAll("*")) {
+          if (element.shadowRoot) {
+            roots.push(element.shadowRoot);
+            collect(element.shadowRoot);
+          }
+        }
+      };
+      collect(document);
+      const range = selection.getComposedRanges?.({ shadowRoots: roots })[0] ||
+        selection.getRangeAt(0);
+      selection.setBaseAndExtent(
+        range.endContainer,
+        range.endOffset,
+        range.startContainer,
+        range.startOffset,
+      );
+    });
   const visualModeName = async () => {
     const id = await tabId();
     return await worker.evaluate(async (id) => {
@@ -1282,8 +1304,9 @@ try {
     assert(await selectedText() === "a", "b did not move the caret back a word");
     await key(["v", "l"]);
     assert(await selectedText() === "al", "v/l did not start and extend selection");
-    await key(["o", "l"]);
-    assert(await selectedText() === "l", "o did not swap the active selection end");
+    await key(["o"]);
+    assert(await selectedText() === "al", "Removed visual o changed the selection");
+    assert(await visualModeName() === "visual", "Removed visual o left selection mode");
     await key(["c"]);
     assert(await visualModeName() === "caret", "c did not return to caret mode");
     await key(["v"]);
@@ -1368,7 +1391,7 @@ try {
 
   await check("visual selection respects editors and recovers after page replacement", async () => {
     await visualFixture();
-    await page.focus("#visual-input");
+    await page.click("#visual-input");
     await page.keyboard.type("vVcy");
     assert(
       await page.$eval("#visual-input", (el) => el.value) === "vVcy",
@@ -1401,7 +1424,8 @@ try {
     await selectVisualText("words", 0, 4);
     await key(["v", "e"]);
     assert(await selectedText() === "café naïve", "Word movement broke at markup or accented text");
-    await key(["o", "ArrowRight"]);
+    await reverseVisualSelection();
+    await key(["ArrowRight"]);
     assert(await selectedText() === "afé naïve", "Arrow movement broke a reversed selection");
     await key(["Escape"]);
   });
@@ -1422,7 +1446,8 @@ try {
       await selectedText() === "shadow",
       `Shadow text did not extend to a word end: ${await selectedText()}`,
     );
-    await key(["o", "l"]);
+    await reverseVisualSelection();
+    await key(["l"]);
     assert(await selectedText() === "hadow", "Swapping ends lost the shadow selection");
     await key(["y"]);
     await page.waitForFunction(async () => await navigator.clipboard.readText() === "hadow");
@@ -1459,7 +1484,8 @@ try {
     assert(await selectedText() === "alpha ", "0 did not move to the line start");
     await key(["$"]);
     assert(await selectedText() === "bravo charlie delta", "$ did not move to the line end");
-    await key(["o", "Home"]);
+    await reverseVisualSelection();
+    await key(["Home"]);
     assert(
       await selectedText() === "alpha bravo charlie delta",
       "Home did not extend the opposite end",
@@ -2356,7 +2382,7 @@ try {
   );
 
   await check(
-    "browser shortcuts switch directly on protected pages without opening windows",
+    "browser shortcuts retain direct two-tab swaps on protected pages without opening windows",
     async () => {
       for (const url of ["chrome://extensions/", "chrome://newtab/", "about:blank"]) {
         const source = await worker.evaluate(async (url) => {

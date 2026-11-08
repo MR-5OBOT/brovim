@@ -136,8 +136,7 @@ class Movement {
     }
   }
 
-  // Swap the anchor node/offset and the focus node/offset. This allows us to work with both ends of
-  // the selection, and implements "o" for visual mode.
+  // Swap the anchor and focus for internal line-selection movements.
   reverseSelection() {
     const { anchorNode, anchorOffset, focusNode, focusOffset } = this.endpoints();
     if (anchorNode && focusNode) {
@@ -218,7 +217,7 @@ class Movement {
     const range = document.createRange();
     range.setStart(focusNode, focusOffset);
     range.collapse(true);
-    if (range.getBoundingClientRect().height) scrollRangeIntoView(range);
+    if (range.getBoundingClientRect().height) FindMode.scrollRangeIntoView(range);
   }
 }
 
@@ -484,9 +483,6 @@ VisualMode.prototype.movements = {
       this.movement.collapseSelectionToFocus();
     }
     return new CaretMode().init();
-  },
-  "o"() {
-    return this.movement.reverseSelection();
   },
 };
 

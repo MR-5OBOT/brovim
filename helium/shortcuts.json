@@ -344,7 +344,8 @@
   },
   "40021": {
     "removed": [
-      "Alt+KeyF"
+      "Alt+KeyF",
+      "Alt+KeyE"
     ]
   },
   "40023": {

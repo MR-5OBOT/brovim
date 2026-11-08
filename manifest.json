@@ -107,6 +107,13 @@
     "default_popup": "pages/action.html"
   },
   "commands": {
+    "open_browser_pages": {
+      "suggested_key": {
+        "default": "Alt+E",
+        "mac": "Alt+E"
+      },
+      "description": "Search browser settings, extensions and internal pages"
+    },
     "focus_page": {
       "suggested_key": {
         "default": "Alt+Z",
@@ -125,6 +132,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "pages/browser_pages.html",
         "pages/vomnibar_page.html",
         "pages/tab_switcher_page.html",
         "content_scripts/vimium.css",

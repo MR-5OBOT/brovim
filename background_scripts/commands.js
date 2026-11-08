@@ -403,6 +403,7 @@ const defaultKeyMappings = {
   "N": "performBackwardsFind",
 
   // Vomnibar
+  "<a-e>": "openBrowserPages",
   "o": "Vomnibar.activate",
   "O": "Vomnibar.activateInNewTab",
   "b": "Vomnibar.activateBookmarks",

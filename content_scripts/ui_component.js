@@ -116,7 +116,7 @@ class UIComponent {
             this.iframeFrameId = event.data.iframeFrameId;
             break;
           case "hide":
-            return this.hide();
+            return this.hide(event.data.refocus);
           default:
             this.messageHandler?.(event);
         }

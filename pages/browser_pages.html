@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="color-scheme" content="dark">
+    <title>Browser pages</title>
+    <link rel="stylesheet" href="vomnibar_page.css">
+    <link rel="stylesheet" href="browser_pages.css">
+    <script type="module" src="browser_pages.js"></script>
+  </head>
+  <body>
+    <div id="vomnibar">
+      <div id="vomnibar-search-area"><input id="search" type="text" placeholder="Search browser pages" aria-label="Search browser pages" autocomplete="off" role="combobox" aria-controls="results" aria-expanded="true" aria-autocomplete="list"></div>
+      <ul id="results" role="listbox" aria-label="Browser pages"></ul>
+      <p id="status" role="status" hidden></p>
+      <footer>
+        <span>Enter opens in a new tab · Esc closes</span>
+        <label>Browser <select id="profile"><option value="auto">Automatic</option><option value="helium">Helium</option><option value="brave">Brave</option><option value="chrome">Chrome</option><option value="edge">Edge</option><option value="chromium">Chromium</option></select></label>
+      </footer>
+    </div>
+  </body>
+</html>

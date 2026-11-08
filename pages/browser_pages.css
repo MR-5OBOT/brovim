@@ -1,0 +1,48 @@
+html {
+  color-scheme: dark;
+  background: transparent;
+}
+body {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+body.standalone {
+  min-height: 100vh;
+  background: #111;
+}
+#vomnibar {
+  width: min(680px, calc(100% - 48px));
+}
+#vomnibar ul {
+  display: block;
+  max-height: min(400px, max(0px, calc(100vh - 160px)));
+}
+#vomnibar li {
+  cursor: pointer;
+}
+#status {
+  padding: 0 16px;
+  font-size: 13px;
+  color: #ccc;
+}
+footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  color: #999;
+  font-size: 11px;
+  border-top: 1px solid #242424;
+}
+select {
+  color: #ddd;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 3px;
+}

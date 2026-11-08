@@ -119,7 +119,8 @@ class GrabBackFocus extends Mode {
         console.log("An auto-focusing action on this page was blocked by Brovim.");
       }
     }
-    element.blur();
+    // A page may refocus an editor synchronously from its blur handler.
+    DomUtils.focusPage();
     return this.suppressEvent;
   }
 }
@@ -342,9 +343,20 @@ globalThis.lastFocusedInput = (function () {
 })();
 
 const messageHandlers = {
+  openBrowserPages(request) {
+    // Browser chrome (e.g. the address bar) cannot reliably hand focus to an embedded input.
+    if (!document.hasFocus() || !DomUtils.canHostExtensionFrames()) return false;
+    Vomnibar.activateBrowserPages(request.targetTabId);
+    return true;
+  },
   async recoverPageFocus() {
     HintCoordinator.exit({ isSuccess: false });
-    const visibleUi = [HelpDialog.helpUI, Vomnibar.vomnibarUI, TabSwitcher.tabSwitcherUI]
+    const visibleUi = [
+      HelpDialog.helpUI,
+      Vomnibar.vomnibarUI,
+      Vomnibar.browserPagesUI,
+      TabSwitcher.tabSwitcherUI,
+    ]
       .filter((ui) => ui?.showing);
     TabSwitcher.cancel(TabSwitcher.currentRequestId);
     await Promise.all(visibleUi.map((ui) => ui.hide(false)));
@@ -377,9 +389,6 @@ const messageHandlers = {
     }
   },
   async openTabSwitcher({ requestId, ...options }) {
-    if (location.protocol === "chrome:" && !Settings.get("enableInternalPages")) {
-      return { opened: false };
-    }
     if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
       return { opened: false };
     }
@@ -461,6 +470,7 @@ async function handleMessage(request, sender) {
         "checkEnabledAfterURLChange",
         "refreshEnabledState",
         "recoverPageFocus",
+        "openBrowserPages",
         "runInTopFrame",
         "openTabSwitcher",
         "cancelTabSwitcher",

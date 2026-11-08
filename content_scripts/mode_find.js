@@ -81,6 +81,16 @@ class PostFindMode extends SuppressPrintable {
 }
 
 class FindMode extends Mode {
+  // Programmatically injected files have separate script scopes. Cross-file callers use the
+  // exported class instead of reaching for local helpers.
+  static enterPostFindMode() {
+    return newPostFindMode();
+  }
+
+  static scrollRangeIntoView(range) {
+    return scrollRangeIntoView(range);
+  }
+
   constructor(options) {
     super();
 

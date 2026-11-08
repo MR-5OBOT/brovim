@@ -19,6 +19,7 @@ import {
 } from "./tab_switcher.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 import { initializeInternalPages } from "./internal_pages.js";
+import { initializeBrowserPages, openBrowserPages } from "./browser_pages.js";
 import { getTabSwitcherData, isSleeping, switchToPreviousRecentTab } from "./recent_tabs.js";
 import {
   captureThumbnail,
@@ -99,6 +100,7 @@ chrome.webNavigation.onHistoryStateUpdated.addListener(onURLChange); // history.
 chrome.webNavigation.onReferenceFragmentUpdated.addListener(onURLChange); // Hash changed.
 
 if (!globalThis.isUnitTests) {
+  initializeBrowserPages();
   if (!bgUtils.isFirefox()) initializeInternalPages();
   warmThumbnailCaches();
   Settings.addEventListener("change", () => trimThumbnailCaches().catch(() => {}));
@@ -129,6 +131,8 @@ if (!globalThis.isUnitTests) {
       openTabSwitcher(tab).catch((error) => console.warn("Could not open tab switcher:", error));
     } else if (command === "focus_page") {
       focusPage(tab).catch((error) => console.warn("Could not focus page:", error));
+    } else if (command === "open_browser_pages") {
+      openBrowserPages(tab).catch((error) => console.warn("Could not open browser pages:", error));
     }
   });
 }
@@ -296,6 +300,9 @@ function nextZoomLevel(currentZoom, steps) {
 // These are commands which are bound to keystrokes which must be handled by the background page.
 // They are mapped in commands.js.
 const BackgroundCommands = {
+  openBrowserPages(request) {
+    return openBrowserPages(request.tab);
+  },
   async removeTab({ count, tab }) {
     await forCountTabs(count, tab, (tab) => {
       // In Firefox, Ctrl-W will not close a pinned tab, but on Chrome, it will. We try to be

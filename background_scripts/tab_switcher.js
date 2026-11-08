@@ -113,7 +113,7 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   const requestId = crypto.randomUUID();
   const options = { shortcut, cycle: selection, expectedOverlayId };
   let missingReceiver = false;
-  if (/^(https?|file):/i.test(tab.url || "")) {
+  if (/^(https?|file|chrome|brave|edge|about):/i.test(tab.url || "")) {
     try {
       if (await askPageToOpen(tab, requestId, options)) {
         if (cycle) {
@@ -127,7 +127,7 @@ async function showTabSwitcher(tab, expectedOverlayId) {
     }
     if (missingReceiver) {
       const repaired = await Promise.race([
-        ensureContentScripts(tab.id),
+        ensureContentScripts(tab.id, { forBrowserShortcut: true }),
         new Promise((resolve) => setTimeout(() => resolve(false), 250)),
       ]);
       if (repaired) {

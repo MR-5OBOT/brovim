@@ -482,9 +482,8 @@ if (globalThis.window != null) {
   const recordKeyboardEvent = forTrusted((event) => TabSwitcher.recordKeyboardEvent(event));
   globalThis.addEventListener("keydown", recordKeyboardEvent, true);
   globalThis.addEventListener("keyup", recordKeyboardEvent, true);
-  // The background opens the grid only on these pages.
-  if (DomUtils.isTopFrame() && /^(https?|file):$/.test(location.protocol)) {
+  if (DomUtils.isTopFrame()) {
     globalThis.addEventListener("keydown", forTrusted((event) => TabSwitcher.warmUp(event)), true);
-    TabPreview.init();
+    if (/^(https?|file):$/.test(location.protocol)) TabPreview.init();
   }
 }

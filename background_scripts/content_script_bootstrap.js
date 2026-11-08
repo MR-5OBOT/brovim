@@ -5,14 +5,20 @@ const pending = new Map();
 
 // Recover already-open website tabs after an install or extension reload. A marker prevents
 // reinjecting the libraries into a current context and redeclaring their top-level constants.
-export function ensureContentScripts(tabId) {
-  if (pending.has(tabId)) return pending.get(tabId);
-  const loading = injectIfMissing(tabId).finally(() => pending.delete(tabId));
+export function ensureContentScripts(tabId, { forBrowserShortcut = false } = {}) {
+  if (pending.has(tabId)) {
+    const loading = pending.get(tabId);
+    // A normal-page refresh may have declined injection while browser-page mappings were off.
+    return forBrowserShortcut
+      ? loading.then((ready) => ready || ensureContentScripts(tabId, { forBrowserShortcut: true }))
+      : loading;
+  }
+  const loading = injectIfMissing(tabId, forBrowserShortcut).finally(() => pending.delete(tabId));
   pending.set(tabId, loading);
   return loading;
 }
 
-async function injectIfMissing(tabId) {
+async function injectIfMissing(tabId, forBrowserShortcut) {
   try {
     const [state] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -23,7 +29,10 @@ async function injectIfMissing(tabId) {
       }),
     });
     await Settings.onLoaded();
-    if (state?.result.url?.startsWith("chrome://") && !Settings.get("enableInternalPages")) {
+    if (
+      !forBrowserShortcut && state?.result.url?.startsWith("chrome://") &&
+      !Settings.get("enableInternalPages")
+    ) {
       return false;
     }
     if (state?.result.ready || state?.result.started) return true;

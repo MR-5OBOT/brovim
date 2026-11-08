@@ -247,6 +247,7 @@ try {
 
       const selectionPage = await browser.newPage();
       try {
+        selectionPage.on("pageerror", (error) => errors.push(error.message));
         await browser.defaultBrowserContext().overridePermissions(origin, [
           "clipboard-read",
           "clipboard-write",
@@ -261,6 +262,32 @@ try {
           while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
           active?.blur();
         });
+        await selectionPage.waitForFunction(() => {
+          const containsName = (root) =>
+            [...root.querySelectorAll("*")].some((element) =>
+              element.shadowRoot
+                ? containsName(element.shadowRoot)
+                : element.textContent.trim() === "Brovim" &&
+                  element.getBoundingClientRect().width > 0
+            );
+          return containsName(document);
+        });
+        await selectionPage.keyboard.press("/");
+        const findElement = await selectionPage.waitForSelector(
+          ":root >>> iframe.vimium-hud-frame",
+        );
+        const findFrame = await findElement.contentFrame();
+        await findFrame.waitForFunction(() => document.activeElement.id === "hud-find-input");
+        await selectionPage.keyboard.type("brovim");
+        await findFrame.waitForFunction(() =>
+          /[1-9]/.test(document.querySelector("#hud-match-count").textContent)
+        );
+        await selectionPage.keyboard.press("Enter");
+        await selectionPage.keyboard.press("v");
+        await selectionPage.keyboard.press("ArrowRight");
+        await selectionPage.keyboard.press("Escape");
+        assert(errors.length === 0, errors.join("\n"));
+        pass("Find Enter and visual movement share helpers across injected script scopes");
         const selectExtensionName = () =>
           selectionPage.waitForFunction(() => {
             const visit = (node) => {

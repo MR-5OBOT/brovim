@@ -109,6 +109,21 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
 const origin = `http://127.0.0.1:${server.addr.port}`;
 const errors = [];
 let browser;
+const testProfile = await Deno.makeTempDir({ prefix: "brovim-native-" });
+await Deno.mkdir(`${testProfile}/Default`);
+// Free Alt+E using the checked-in Helium menu entry. Keep Ctrl+L for the address-bar fixture.
+await Deno.writeTextFile(
+  `${testProfile}/Default/Preferences`,
+  JSON.stringify({
+    helium: {
+      browser: {
+        custom_accelerators: {
+          "40021": JSON.parse(await Deno.readTextFile(`${root}/helium/shortcuts.json`))["40021"],
+        },
+      },
+    },
+  }),
+);
 let passed = 0;
 const pass = (name) => {
   passed++;
@@ -119,6 +134,7 @@ try {
     executablePath: Deno.env.get("PUPPETEER_EXECUTABLE_PATH") || undefined,
     headless: false,
     enableExtensions: [root],
+    userDataDir: testProfile,
     env: { ...Deno.env.toObject(), DISPLAY: display, WAYLAND_DISPLAY: "" },
     args: ["--ozone-platform=x11"],
     defaultViewport: { width: 1280, height: 900 },
@@ -133,14 +149,71 @@ try {
   await worker.evaluate(() => {
     globalThis.nativeCommands = 0;
     globalThis.nativeFocusCommands = 0;
+    globalThis.nativeBrowserPageCommands = 0;
     chrome.commands.onCommand.addListener((command) => {
       if (command === "open_tab_switcher") nativeCommands++;
       if (command === "focus_page") nativeFocusCommands++;
+      if (command === "open_browser_pages") nativeBrowserPageCommands++;
     });
   });
+  // Exercise the browser's supported manual conflict resolution in this disposable profile.
+  const shortcuts = await browser.newPage();
+  await shortcuts.goto("chrome://extensions/shortcuts");
+  await shortcuts.evaluate(async (extensionId) => {
+    await chrome.developerPrivate.updateExtensionCommand({
+      extensionId,
+      commandName: "open_browser_pages",
+      keybinding: "Alt+E",
+    });
+  }, await worker.evaluate(() => chrome.runtime.id));
+  await until(
+    () =>
+      worker.evaluate(async () =>
+        (await chrome.commands.getAll()).find((command) => command.name === "open_browser_pages")
+          ?.shortcut === "Alt+E"
+      ),
+    "Manual Alt+E assignment did not take effect",
+  );
+  await shortcuts.close();
   const source = await browser.newPage();
-  source.setDefaultTimeout(5000);
+  source.setDefaultTimeout(10000);
   await source.goto(`${origin}/source?title=Brovim%20Native%20Source`);
+  await source.bringToFront();
+  await keys("focus:Brovim Native Source");
+  await keys("down:Alt_L", "tap:e", "up:Alt_L");
+  await source.waitForFunction(
+    () =>
+      [...document.documentElement.children].some((element) =>
+        element.shadowRoot?.querySelector("iframe.browser-pages-frame.vimium-ui-component-visible")
+      ),
+    { polling: 20 },
+  );
+  const browserPalette = source.frames().find((frame) =>
+    frame.url().includes("/pages/browser_pages.html")
+  );
+  await browserPalette.waitForFunction(() =>
+    document.hasFocus() && document.activeElement?.id === "search"
+  );
+  assert(
+    await worker.evaluate(() => nativeBrowserPageCommands) >= 1,
+    "Alt+E missed the native browser command",
+  );
+  await keys("tap:Escape");
+  pass("Native Alt+E opens a focused palette on its first use");
+  await keys("down:Control_L", "tap:l", "up:Control_L", "down:Alt_L", "tap:e", "up:Alt_L");
+  const paletteTarget = await browser.waitForTarget((target) =>
+    target.url().includes("/pages/browser_pages.html?tab=")
+  );
+  const standalonePalette = await paletteTarget.page();
+  await standalonePalette.waitForFunction(() =>
+    document.hasFocus() && document.activeElement?.id === "search"
+  );
+  await keys("tap:Escape");
+  await until(
+    () => Promise.resolve(standalonePalette.isClosed()),
+    "Address-bar palette did not close",
+  );
+  pass("Native Alt+E from the address bar uses the focused temporary palette tab");
   for (let i = 0; i < 20; i++) {
     const peer = await browser.newPage();
     await peer.goto(`${origin}/peer-${i}?title=Native${i}`);
@@ -270,11 +343,119 @@ try {
     "Protected handoff lost the final selection",
   );
   pass("Native protected-page handoff continues beyond two tabs and commits correctly");
+  await browser.close();
+  browser = await puppeteer.launch({
+    executablePath: Deno.env.get("PUPPETEER_EXECUTABLE_PATH") || undefined,
+    headless: false,
+    enableExtensions: [root],
+    userDataDir: testProfile,
+    env: { ...Deno.env.toObject(), DISPLAY: display, WAYLAND_DISPLAY: "" },
+    args: ["--ozone-platform=x11", "--extensions-on-chrome-urls"],
+    defaultViewport: { width: 1280, height: 900 },
+  });
+  browser.on("targetcreated", async (target) => {
+    if (target.type() === "page") {
+      (await target.page())?.on("pageerror", (error) => errors.push(error.message));
+    }
+  });
+  const internalWorker = await (await browser.waitForTarget((target) =>
+    target.type() === "service_worker"
+  )).worker();
+  await internalWorker.evaluate(() => Settings.onLoaded());
+  const internalPage = await browser.newPage();
+  internalPage.setDefaultTimeout(5000);
+  await internalPage.goto("chrome://extensions/");
+  const internalId = await internalWorker.evaluate(async () =>
+    (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+  );
+  for (let i = 0; i < 2; i++) {
+    await internalWorker.evaluate(
+      (url) => chrome.tabs.create({ url, pinned: true }),
+      `${origin}/internal-peer-${i}`,
+    );
+  }
+  const readyInternal = (id) =>
+    until(() =>
+      internalWorker.evaluate(async (tabId) => {
+        try {
+          const [state] = await chrome.scripting.executeScript({
+            target: { tabId },
+            func: () =>
+              !!globalThis.brovimContentScriptsLoaded && typeof normalMode !== "undefined",
+          });
+          return state?.result;
+        } catch {
+          return false;
+        }
+      }, id), "Internal-page content scripts did not initialize");
+  await readyInternal(internalId);
+  const previousInternal = () =>
+    internalWorker.evaluate(async (id) => {
+      const tab = await chrome.tabs.get(id);
+      return (await sendRequestHandlers.getOpenTabsWithScreenshots({
+        tab,
+        includeScreenshots: false,
+      })).find((candidate) => candidate.id !== id).id;
+    }, internalId);
+  await internalPage.bringToFront();
+  const heldTarget = await previousInternal();
+  await keys("focus:Extensions", "down:Alt_L", "tap:q");
+  const internalGrid = await switcher(internalPage);
+  assert(
+    await internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, internalId),
+    "Holding Alt switched before release",
+  );
+  assert(
+    Number(await internalGrid.$eval(".selected", (card) => card.dataset.id)) === heldTarget,
+    "Extensions grid selected the wrong tab",
+  );
+  await keys("up:Alt_L");
+  await until(
+    () => internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, heldTarget),
+    "Extensions grid did not switch on Alt release",
+  );
+  pass("Native held Alt+Q on Extensions shows the grid and release selects without another press");
+  for (const cold of [false, true]) {
+    await internalPage.bringToFront();
+    if (cold) {
+      await internalPage.reload();
+      await readyInternal(internalId);
+    }
+    const targetId = await previousInternal();
+    await keys("focus:Extensions", "down:Alt_L", "tap:q", "up:Alt_L");
+    await until(
+      () => internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, targetId),
+      "Quick Extensions Alt+Q did not switch automatically",
+    );
+    pass(
+      `Native quick Alt+Q on ${
+        cold ? "freshly reloaded" : "warm"
+      } Extensions switches automatically`,
+    );
+  }
+  await internalWorker.evaluate(() => Settings.set("enableInternalPages", false));
+  await internalPage.bringToFront();
+  const disabledTarget = await previousInternal();
+  await keys("focus:Extensions", "down:Alt_L", "tap:q");
+  await switcher(internalPage);
+  await keys("up:Alt_L");
+  await until(
+    () => internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, disabledTarget),
+    "Browser-page option disabled the universal switcher",
+  );
+  assert(
+    await internalWorker.evaluate(() => Settings.get("enableInternalPages")) === false,
+    "Switcher changed the normal browser-page setting",
+  );
+  pass(
+    "Native Extensions switcher works with browser-page mappings off and keeps their setting unchanged",
+  );
   assert(errors.length === 0, errors.join("\n"));
   pass("No uncaught errors in native shortcut fixture pages");
 } finally {
   await keys("up:q", "up:Shift_L", "up:Alt_L").catch(() => {});
   await browser?.close();
+  await Deno.remove(testProfile, { recursive: true });
   await server.shutdown();
 }
 console.log(`Native shortcut checks: ${passed} passed`);

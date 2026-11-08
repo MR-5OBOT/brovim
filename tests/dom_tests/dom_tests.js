@@ -1190,6 +1190,15 @@ context("GrabBackFocus", () => {
     assert.isFalse(DomUtils.isEditable(document.activeElement));
   });
 
+  should("release an auto-focused input that refocuses itself on blur", () => {
+    const input = document.getElementById("input");
+    input.addEventListener("blur", () => input.focus());
+    initializeModeState();
+    input.focus();
+    assert.isFalse(DomUtils.isEditable(document.activeElement));
+    assert.isFalse(input.inert);
+  });
+
   should("exit on a key event", () => {
     initializeModeState();
     sendKeyboardEvent("a");

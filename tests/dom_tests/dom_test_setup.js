@@ -9,5 +9,7 @@ globalThis.shoulda = shoulda;
 document.addEventListener("DOMContentLoaded", async () => {
   isEnabledForUrl = true;
   await Settings.onLoaded();
+  // Focus tests set focus programmatically. GrabBackFocus has its own explicit-on coverage.
+  Settings._settings.grabBackFocus = false;
   await HUD.init();
 });

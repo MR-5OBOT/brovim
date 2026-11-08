@@ -449,6 +449,11 @@ task("test-internal-pages", [], async () => {
   await shell("deno", ["run", "-A", "tests/browser_tests/internal_pages_test.js"]);
 });
 
+desc("Test the browser-page palette and protected-page tab switcher");
+task("test-browser-navigation", [], async () => {
+  await shell("deno", ["run", "-A", "tests/browser_tests/browser_navigation_test.js"]);
+});
+
 desc("Check code formatting and lint issues");
 task("check", [], async () => {
   await shell("deno", ["fmt", "--check"]);

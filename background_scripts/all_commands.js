@@ -145,7 +145,7 @@ const allCommands = [
     name: "enterVisualMode",
     desc: "Select page text with Vim keys",
     details: "Use h/j/k/l, w/b/e, 0/$ and gg/G to adjust the selection; y copies it. " +
-      "Press c to position the caret, v to resume selecting, o to swap ends, or Escape to exit.",
+      "Press c to position the caret, v to resume selecting, or Escape to exit.",
     group: "navigation",
     noRepeat: true,
   },
@@ -194,6 +194,15 @@ const allCommands = [
 
   //
   // Vomnibar
+  {
+    name: "openBrowserPages",
+    desc: "Search browser settings and internal pages",
+    details: "Search extensions, settings, performance, downloads and other browser pages. " +
+      "Enter opens the selected browser page in a new tab.",
+    group: "navigation",
+    background: true,
+    noRepeat: true,
+  },
   //
 
   {

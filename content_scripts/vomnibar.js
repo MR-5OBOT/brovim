@@ -49,6 +49,20 @@ const Vomnibar = {
     });
   },
 
+  activateBrowserPages(targetTabId) {
+    HelpDialog.abort();
+    if (this.vomnibarUI?.showing) this.vomnibarUI.hide(false);
+    if (this.browserPagesUI?.showing) {
+      this.browserPagesUI.hide();
+      return;
+    }
+    if (!this.browserPagesUI) {
+      this.browserPagesUI = new UIComponent();
+      this.browserPagesUI.load("pages/browser_pages.html", "browser-pages-frame");
+    }
+    this.browserPagesUI.show({ name: "activate", targetTabId }, { sourceFrameId: 0, focus: true });
+  },
+
   init() {
     if (!this.vomnibarUI) {
       this.vomnibarUI = new UIComponent();
@@ -64,6 +78,7 @@ const Vomnibar = {
   //     newTab: Optional. Whether to open the result in a new tab.
   //     keyword: A keyword which will scope the search to a UserSearchEngine.
   open(sourceFrameId, vomnibarShowOptions) {
+    if (this.browserPagesUI?.showing) this.browserPagesUI.hide(false);
     this.init();
     // The Vomnibar cannot coexist with the help dialog (it causes focus issues).
     HelpDialog.abort();

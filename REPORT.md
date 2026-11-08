@@ -1051,10 +1051,10 @@ and 7 native shortcut checks passed. Firefox was not rerun for this change.
 
 `/phrase`, Enter, `v`, Vim movements and `y` now select and copy page text. Copying clears the
 highlight immediately and removes every selection range; `y`, `Y` and Enter share this behavior. `V`
-selects whole lines, `c` positions the caret, `v` switches caret/visual mode, `o` swaps ends, and
-Escape exits and clears the highlight, including after copying, existing search selections and
-pending movement prefixes. Arrow keys, Home/End and Enter-to-copy are also supported. Without an
-existing selection, `v` starts a caret at visible text. Inputs keep normal typing.
+selects whole lines, `c` positions the caret, `v` switches caret/visual mode, and Escape exits and
+clears the highlight, including after copying, existing search selections and pending movement
+prefixes. Arrow keys, Home/End and Enter-to-copy are also supported. Without an existing selection,
+`v` starts a caret at visible text. Inputs keep normal typing.
 
 Implementation:
 
@@ -1075,3 +1075,55 @@ in Helium/Chromium. All three distribution packages built with the new script in
 Twelve internal-page checks also passed, including clipboard contents, immediate copy cleanup and
 Escape cleanup on the actual Extensions page's shadow DOM with Helium's existing internal-page
 override. Firefox runtime tests were not run for this change.
+
+## 22. Browser-page Navigation and Selection Corrections (November 8, 2026)
+
+- Alt+E searches a local catalog of browser-owned pages, including settings, extensions,
+  performance, downloads, history and extension shortcuts. Helium, Brave and Edge have
+  profile-specific entries or destinations; Automatic uses exposed browser identity, with a manual
+  profile override.
+- The palette shares the existing centered Vomnibar layout, focuses its input on opening, and always
+  opens selected results in a new tab. Its footer reflects that behavior. Protected pages and
+  browser chrome focus use a temporary extension tab, closed after selection or Escape.
+- Removed Alt+E from Helium's native-menu shortcut backup. Other browsers retain the agreed manual
+  extension-shortcut assignment when a conflict exists; Helium's preference backup is not imported
+  into Brave.
+- Alt+Q uses the same controller on websites and browser pages: a quick tap switches to the previous
+  tab; holding shows the grid, and releasing selects. Escape cancels. Quick releases during startup
+  also switch automatically. The existing two-tab swap option applies everywhere; no new setting or
+  special first-tap behavior is added. Real keyboard tests cover warm and freshly reloaded
+  Extensions pages.
+- The browser-page grid is independent of ordinary browser-page mappings. When Chromium allows
+  injection, the shortcut can bootstrap its controls without changing that preference. Pages which
+  forbid scripts retain the normal direct-switch fallback. The tab switcher opens no extra tab or
+  window; Alt+E's protected-page search palette still uses its temporary extension tab.
+- Removed visual-selection `o`; kept `c`, `v`, `V`, movements, copying and immediate highlight
+  cleanup.
+- Keep focus on the page defaults to true. Explicit existing preferences remain respected.
+  Refocusing editors are guarded during automatic focus recovery to avoid synchronous blur/focus
+  recursion.
+- Fixed the real Extensions-page `newPostFindMode` ReferenceError and a related selection scrolling
+  helper reference: cross-file calls now go through exported FindMode methods, which work when
+  Chromium injects each file in a separate script scope.
+- The DotRobot keyd mapping now uses Caps+Shift+4 (`$`) for End. Caps+4 is no longer End; both
+  cheatsheet rows were corrected. The Caps+gg/G additions remain purged.
+
+Live browser verification uses Helium. Catalog tests cover other Chromium profiles; Brave, Edge and
+Firefox runtime behavior is not claimed as tested. Brave's performance destination follows its
+[System settings documentation](https://support.brave.app/hc/en-us/articles/13383683902733-How-do-I-use-the-Memory-and-Energy-Saver-features-in-Brave);
+Edge's follows
+[Microsoft's documented route](https://learn.microsoft.com/en-us/troubleshoot/microsoft-edge/performance/edge-high-cpu-memory).
+
+Validation: formatting/lint, 333 unit tests, 102 DOM tests, 101 installed-browser checks, 13
+internal-page checks, 10 browser-navigation checks, 14 real-shortcut checks and 7 lifecycle checks
+passed in isolated Helium profiles. Chrome Store, Chromium developer and Firefox packages were
+rebuilt. The installed keyd config matches the repository, `keyd check` passes, and the service is
+active. The installed tools listed in the earlier workflow report remain present, the optional tools
+remain uninstalled, Hyprland reports no configuration errors, the kbptr self-check passes, and the
+removed Caps+gg/G bindings remain absent from keyd, Kitty and active tmux bindings.
+
+Every bundled file in all three ZIPs was compared byte-for-byte with its source (apart from each
+platform's generated manifest). Six additional browser-navigation checks passed against the
+extracted Chrome Store package, which intentionally omits the internal-page override permission.
+DotRobot's concurrent removal of its docs directory was preserved; its stale README report link was
+removed.

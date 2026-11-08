@@ -203,7 +203,8 @@ body.vimium-find-mode ::selection {
   background: #ff9632;
 }
 
-iframe.vomnibar-frame {
+iframe.vomnibar-frame,
+iframe.browser-pages-frame {
   background-color: transparent;
   padding: 0px;
   overflow: hidden;
@@ -220,7 +221,8 @@ iframe.vomnibar-frame {
   z-index: 2147483647;
 }
 
-iframe.vomnibar-frame.vimium-ui-component-visible {
+iframe.vomnibar-frame.vimium-ui-component-visible,
+iframe.browser-pages-frame.vimium-ui-component-visible {
   animation: vimium-fade-in 0.12s ease-out;
 }
 
