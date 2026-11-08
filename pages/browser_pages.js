@@ -1,4 +1,4 @@
-import { browserProfiles, detectBrowserProfile, filterBrowserPages } from "../lib/browser_pages.js";
+import { detectBrowserProfile, filterBrowserPages } from "../lib/browser_pages.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 import "../lib/utils.js";
 
@@ -38,7 +38,9 @@ document.body.classList.toggle("standalone", standalone);
 document.body.classList.toggle("embedded", embedded);
 
 const saved = (await chrome.storage.local.get("browserPagesProfile")).browserPagesProfile;
-profileSelect.value = browserProfiles.includes(saved) ? saved : "auto";
+profileSelect.value = [...profileSelect.options].some((option) => option.value === saved)
+  ? saved
+  : "auto";
 const profile = () => profileSelect.value === "auto" ? detected : profileSelect.value;
 
 function render() {
