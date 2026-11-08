@@ -18,6 +18,28 @@ context("options page", () => {
     assert.isTrue(Settings.defaultOptions.keyMappings.length > 0);
     assert.equal(Settings.defaultOptions.keyMappings, settings.keyMappings);
     assert.equal(settings.keyMappings, field.value);
+    assert.equal(
+      settings.darkModeExcludedSites,
+      optionsPage.getOptionEl("darkModeExcludedSites").value,
+    );
+  });
+
+  should("preserve edits and a cleared native-theme exclusion list after saving", async () => {
+    const field = optionsPage.getOptionEl("darkModeExcludedSites");
+    assert.isTrue(field.value.split("\n").includes("mail.google.com"));
+    assert.isTrue(field.value.split("\n").includes("web.whatsapp.com"));
+    assert.isTrue(field.value.split("\n").includes("youtube.com"));
+    field.value = "example.com\nmail.google.com";
+    await optionsPage.saveOptions();
+    await Settings.load();
+    await optionsPage.init();
+    assert.equal("example.com\nmail.google.com", field.value);
+    field.value = "";
+    await optionsPage.saveOptions();
+    await Settings.load();
+    await optionsPage.init();
+    assert.equal("", field.value);
+    assert.equal("", Settings.get("darkModeExcludedSites"));
   });
 
   should("default glass off and offer fifteen, thirty or fifty saved screenshots", async () => {
