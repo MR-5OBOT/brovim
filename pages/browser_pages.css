@@ -13,9 +13,6 @@ body.standalone {
   min-height: 100vh;
   background: #111;
 }
-#vomnibar {
-  width: min(680px, calc(100% - 48px));
-}
 #vomnibar ul {
   display: block;
   max-height: min(400px, max(0px, calc(100vh - 160px)));

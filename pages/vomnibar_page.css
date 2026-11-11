@@ -24,7 +24,8 @@ ul {
   display: block;
   position: relative;
   box-sizing: border-box;
-  width: min(680px, calc(100% - 48px));
+  /* ~42% of the viewport, kept between 360px and 580px, never wider than the screen minus a margin */
+  width: min(580px, max(42vw, 360px), 100% - 32px);
   min-width: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #e6e6e6;
