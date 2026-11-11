@@ -304,6 +304,8 @@ const TabSwitcher = {
   // none before it has drawn it.
   seesShortcutKeys() {
     if (!this.painted || !document.hasFocus()) return false;
+    // The PDF viewer keeps the keys from the page (whose focused element reads as the body), and
+    // a page can't give them back to it once it has taken them: only a click can.
     if (document.contentType === "application/pdf") return false;
     const focused = DomUtils.deepActiveElement();
     if (!["IFRAME", "FRAME", "EMBED", "OBJECT"].includes(focused?.tagName)) return true;

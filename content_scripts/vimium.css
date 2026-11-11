@@ -248,10 +248,12 @@ iframe.tab-switcher-frame {
   z-index: 2147483647;
 }
 
-/* The page behind the switcher is blurred a touch. */
+/* The page behind the switcher is blurred a touch. The switcher fades in quickly, as one piece
+   with that blur; its selection moves without animation, to keep up with fast cycling. */
 iframe.tab-switcher-frame.vimium-ui-component-visible {
   /* In dark mode the frame's reverse filter also flips this backdrop; flip it back first. */
   backdrop-filter: blur(2px) saturate(1.05) var(--brovim-reverse-filter,);
+  animation: vimium-fade-in 0.1s ease-out;
 }
 
 /* Liquid glass: the page under the switcher's panel, blurred and refracted. The switcher's content
@@ -261,6 +263,7 @@ iframe.tab-switcher-frame.vimium-ui-component-visible {
   z-index: 2147483646;
   border-radius: 12px;
   pointer-events: none;
+  animation: vimium-fade-in 0.1s ease-out;
   backdrop-filter: blur(12px) saturate(1.9) brightness(1.12) contrast(1.06);
   backdrop-filter: blur(12px) saturate(1.9) brightness(1.12) contrast(1.06)
     url(#brovim-glass-refraction);
@@ -276,6 +279,13 @@ iframe.tab-switcher-frame.vimium-ui-component-visible {
 
 iframe.vimium-ui-component-hidden + .tab-switcher-backdrop {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  iframe.tab-switcher-frame.vimium-ui-component-visible,
+  .tab-switcher-backdrop {
+    animation: none;
+  }
 }
 
 div.vimium-flash {

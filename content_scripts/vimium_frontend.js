@@ -480,11 +480,15 @@ const messageHandlers = {
   },
   // The tab that a gesture left couldn't show the grid, so the background switched here.
   // - handoff: show the grid here while the shortcut is held: "held" if the tab that was left saw
-  //   it held past the tap window, "unknown" if it couldn't tell. Absent if no page can tell a
-  //   hold from a tap: the next press shows the grid.
+  //   it held past the tap window, "unknown" if it couldn't tell, "verdict" to wait for the frozen
+  //   tab it left to say (tabSwitcherHeld). Absent if no page can tell a hold from a tap: the next
+  //   press shows the grid.
+  // Returns whether this page sees the shortcut's modifier, and so ends the gesture on release.
   rememberTabSwitcherCycle({ cycle, shortcut, handoff }) {
     TabSwitcher.rememberCycle(cycle, shortcut);
-    if (!handoff || !DomUtils.isTopFrame() || TabSwitcher.cycle?.id !== cycle.id) return;
+    const watching = DomUtils.isTopFrame() && TabSwitcher.seesShortcutKeys();
+    if (!handoff || handoff === "verdict" || !DomUtils.isTopFrame()) return { watching };
+    if (TabSwitcher.cycle?.id !== cycle.id) return { watching };
     // A tap's release reaches this page within the usual tap window: the switch is all it wanted.
     messageHandlers.openTabSwitcher({
       requestId: crypto.randomUUID(),
@@ -492,6 +496,29 @@ const messageHandlers = {
       cycle,
       showDelay: handoff === "held" ? 0 : TabSwitcher.showDelayMs,
     });
+    return { watching };
+  },
+  // The frozen tab a gesture left says whether the shortcut was still held when it switched here.
+  tabSwitcherHeld({ cycleId, held }) {
+    if (!DomUtils.isTopFrame() || TabSwitcher.cycle?.id !== cycleId) return;
+    // A release after the switch reached this page.
+    if (!held || TabSwitcher.modifierReleased()) return TabSwitcher.endCycle();
+    messageHandlers.openTabSwitcher({
+      requestId: crypto.randomUUID(),
+      shortcut: TabSwitcher.shortcut,
+      cycle: TabSwitcher.cycle,
+      showDelay: 0,
+    });
+  },
+  // Answers at once unless the page is frozen. See pagePulse in the background.
+  tabSwitcherPing() {
+    return true;
+  },
+  // Asked of a frozen page the background switched away from: was the shortcut still held? Keys
+  // that arrived during the freeze are handled before this.
+  async heldTabSwitcherShortcut() {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return { held: TabSwitcher.modifierHeld() };
   },
   // Whether this page shows the switcher's grid itself, and wakes the background as the
   // shortcut's modifier goes down. See checkFrontTab in the background.
@@ -552,6 +579,9 @@ async function handleMessage(request, sender) {
         "openTabSwitcher",
         "cancelTabSwitcher",
         "rememberTabSwitcherCycle",
+        "tabSwitcherHeld",
+        "tabSwitcherPing",
+        "heldTabSwitcherShortcut",
         "tabSwitcherKey",
         "showsTabSwitcher",
         "restoreFrameFocus",

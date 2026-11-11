@@ -119,9 +119,10 @@ letter to move through the same list; release the modifier to switch. Adding Shi
 Shift is already part of your assigned shortcut.
 
 A tap never shows the grid: it appears about a tenth of a second after the shortcut, as desktop
-Alt+Tab switchers do, and a release before then just switches. The grid opens over whatever you were
-doing and gives the focus back when it closes, so a text field you were typing in, on the page or
-inside an embedded page, is still ready when you cancel or come back to the tab.
+Alt+Tab switchers do, and a release before then just switches. The grid fades in quickly, and its
+selection moves without delay as you cycle. The grid opens over whatever you were doing and gives
+the focus back when it closes, so a text field you were typing in, on the page or inside an embedded
+page, is still ready when you cancel or come back to the tab.
 
 The grid lists every eligible tab, 8 cards per row by default: each further 8 tabs start a new row.
 When the screen has no room for another row while cards stay readable, it adds columns instead
@@ -170,13 +171,17 @@ any of its page is drawn. Before that (its server hasn't answered, or the page w
 stylesheet), the browser shows nothing and gives the page no keys, so the grid opens on the previous
 tab. Brovim keeps its background running while such a tab is in front, so this works on the first
 press; if the browser stopped it anyway, a press switches without a grid, which shows on your next
-press. A gesture that moved on without a grid ends after three seconds without a press. The switcher
-never opens a separate window, and the shortcut also works on excluded sites and while an input is
-focused.
+press. When the tab a gesture moved to can't see the keys either (two PDFs, say), a press within 0.4
+s of the last one continues a held gesture, and a slower one is a new tap: taps flip between the
+two, and quick presses while holding walk on through the list. The switcher never opens a separate
+window, and the shortcut also works on excluded sites and while an input is focused.
 
-A busy page (YouTube stalls for hundreds of milliseconds at a time) answers late, never wrongly: the
-grid or the switch follows as soon as the page responds. Only a page that gives no answer for two
-seconds counts as hung and is left by a direct switch.
+A page frozen for more than 0.2 s (YouTube stalls for hundreds of milliseconds while it loads) can't
+tell a tap from a hold until the freeze ends. The press switches to the previous tab at once, which
+is all a tap wants. If the shortcut was held, the grid opens there as soon as the frozen page
+catches up, or at your next press, and `Esc` returns to the frozen tab. A page busy only for a
+moment answers in time and shows the grid itself. Only a page that gives no answer for two seconds
+counts as hung.
 
 `Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
 active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`

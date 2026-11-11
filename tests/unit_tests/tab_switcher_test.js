@@ -901,6 +901,115 @@ context("configured switcher shortcut", () => {
     },
   );
 
+  should(
+    "switch at once from a frozen page, and show the grid there only if it was held",
+    async () => {
+      const tabs = [831, 832, 833].map((id, index) => ({
+        id,
+        index,
+        windowId: 893,
+        active: index === 0,
+        url: "https://busy.example/",
+      }));
+      stub(
+        chrome.tabs,
+        "query",
+        (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+      );
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        return Promise.resolve(tabs.find((t) => t.id === id));
+      });
+      const sent = [];
+      let verdict;
+      stub(chrome.tabs, "sendMessage", (id, message) => {
+        sent.push([id, message.handler, message.handoff ?? message.held]);
+        // The source is frozen: nothing it is asked gets an answer until it catches up.
+        if (id === 831 && message.handler === "tabSwitcherPing") return new Promise(() => {});
+        if (id === 831 && message.handler === "heldTabSwitcherShortcut") {
+          return new Promise((resolve) => verdict = resolve);
+        }
+        if (message.handler === "rememberTabSwitcherCycle") {
+          return Promise.resolve({ watching: true });
+        }
+        return Promise.resolve();
+      });
+      await bgUtils.tabRecency.init();
+      const press = async (held) => {
+        for (const tab of tabs) tab.active = tab.id === 831;
+        for (const id of [833, 832, 831]) bgUtils.tabRecency.register(id);
+        sent.length = 0;
+        const pressed = performance.now();
+        await Promise.race([
+          SwitcherCommands.openTabSwitcher(tabs[0]),
+          new Promise((resolve) => setTimeout(resolve, 1000)),
+        ]);
+        // It switched as soon as the page failed to answer, without asking it for the grid.
+        assert.isTrue(performance.now() - pressed < 500);
+        assert.isTrue(tabs[1].active);
+        assert.isFalse(sent.some(([, handler]) => handler === "openTabSwitcher"));
+        assert.equal(
+          [832, "rememberTabSwitcherCycle", "verdict"],
+          sent.find(([, handler]) => handler === "rememberTabSwitcherCycle"),
+        );
+        // The page catches up and says whether the shortcut was still held at the switch.
+        verdict({ held });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        return sent.at(-1);
+      };
+      try {
+        assert.equal([832, "tabSwitcherHeld", true], await press(true));
+        SwitcherCommands.endTabSwitcherCycle(893);
+        assert.equal([832, "tabSwitcherHeld", false], await press(false));
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(893);
+      }
+    },
+  );
+  should(
+    "count a press on tabs that can't see the modifier as held only if it comes quickly",
+    async () => {
+      const tabs = [841, 842, 843, 844].map((id, index) => ({
+        id,
+        index,
+        windowId: 894,
+        active: index === 0,
+        url: "https://protected.example/",
+      }));
+      stub(
+        chrome.tabs,
+        "query",
+        (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+      );
+      // No page can see the keys: nothing answers.
+      stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+      const selected = [];
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        bgUtils.tabRecency.register(id);
+        selected.push(id);
+        return Promise.resolve(tabs.find((t) => t.id === id));
+      });
+      let now = 10_000;
+      stub(performance, "now", () => now);
+      await bgUtils.tabRecency.init();
+      for (const id of [844, 843, 842, 841]) bgUtils.tabRecency.register(id);
+      const press = () => SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
+      try {
+        await press();
+        // Quick: the modifier is still held, so the gesture walks on.
+        now += 300;
+        await press();
+        // Slow: a new tap, back to the tab before this one.
+        now += 700;
+        await press();
+        assert.equal([842, 843, 842], selected);
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(894);
+      }
+    },
+  );
+
   should("keep a frozen order through protected-page hops, then reset after release", async () => {
     const tabs = [801, 802, 803, 804].map((id, index) => ({
       id,

@@ -152,11 +152,13 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
     return late(() => new Response("", { headers: { "content-type": "text/javascript" } }));
   }
   if (pathname === "/stalling") {
-    // Like YouTube: the page's main thread stalls just as the shortcut arrives.
+    // Like YouTube while it loads: the page's main thread stalls for `ms` from the moment the
+    // modifier goes down, so it is still stalled when the shortcut arrives.
+    const ms = Number(searchParams.get("ms") || 1200);
     return new Response(
       `<!doctype html><title>${title}</title><h1>${title}</h1><script>addEventListener("keydown", (event) => {
         if (event.key !== "Alt" || event.repeat) return;
-        setTimeout(() => { const end = performance.now() + 700; while (performance.now() < end); }, 60);
+        setTimeout(() => { const end = performance.now() + ${ms}; while (performance.now() < end); });
       }, true)</script>`,
       { headers: { "content-type": "text/html" } },
     );
@@ -246,7 +248,17 @@ try {
   await shortcuts.close();
   const source = await browser.newPage();
   source.setDefaultTimeout(10000);
-  await source.goto(`${origin}/source?title=Brovim%20Native%20Source`);
+  // Chromium can supersede the first navigations while it installs the extension, or hold them past
+  // the timeout; so does the last commit, in about a third of launches.
+  for (let attempt = 1;; attempt++) {
+    try {
+      await source.goto(`${origin}/source?title=Brovim%20Native%20Source`);
+      break;
+    } catch (error) {
+      if (attempt === 4 || !/net::ERR_ABORTED|Navigation timeout/.test(error.message)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
   await source.bringToFront();
   await keys("focus:Brovim Native Source");
   await keys("down:Alt_L", "tap:e", "up:Alt_L");
@@ -476,47 +488,83 @@ try {
   assert(!await gridVisible(embedding), "A quick tap inside an embedded page left a grid open");
   pass("Native quick Alt+Q while typing in an embedded page switches tabs");
 
+  // A page frozen for 1.2 s from the moment Alt goes down: the press switches at once.
   const stalling = await browser.newPage();
   stalling.setDefaultTimeout(5000);
-  await stalling.goto(`${origin}/stalling?title=Stalling`);
+  await stalling.goto(`${origin}/stalling?title=Stalling&ms=1200`);
   await stalling.bringToFront();
   await keys("focus:Stalling");
   await until(() => stalling.evaluate(() => document.hasFocus()), "Stalling page has no focus");
   const stallingId = await activeTabId();
-  // Twice: one slow answer must not cost the page its grid for good.
+  // Hold: the previous tab shows the grid once the frozen page confirms the hold; Escape returns.
+  // Twice: one slow answer must not cost the page anything.
   for (let round = 0; round < 2; round++) {
+    const held = performance.now();
     await keys("down:Alt_L", "sleep:50", "tap:q");
-    await switcher(stalling);
-    assert(
-      await activeTabId() === stallingId,
-      "A held shortcut on a stalling page switched tabs instead of showing the grid",
+    await until(
+      async () => await activeTabId() === typingId,
+      "Holding Alt+Q on a frozen page did not switch tabs",
     );
+    assert(
+      performance.now() - held < 1000,
+      `Holding Alt+Q on a frozen page waited for it: ${Math.round(performance.now() - held)} ms`,
+    );
+    await switcher(typing);
     await keys("tap:Escape", "up:Alt_L");
-    await until(async () => !await gridVisible(stalling), "Escape did not close the grid");
+    await until(
+      async () => await activeTabId() === stallingId,
+      "Escape did not return to the frozen page",
+    );
+    await until(async () => !await gridVisible(typing), "Escape did not close the grid");
+    // Let the page's freeze from this round end.
+    await new Promise((resolve) => setTimeout(resolve, 1300));
   }
-  pass("Native held Alt+Q on a page that stalls waits for it and shows the grid, every time");
+  pass("Native held Alt+Q on a frozen page switches at once, and the previous tab shows the grid");
+  // Tap: it switches before the freeze ends, and no grid shows anywhere.
+  await typing.evaluate(() => globalThis.gridSeen = false);
+  const tapped = performance.now();
   await tap();
   await until(
-    async () => await activeTabId() !== stallingId,
-    "A quick tap on a stalling page did not switch tabs",
+    async () => await activeTabId() === typingId,
+    "A quick tap on a frozen page did not switch tabs",
   );
-  assert(!await gridVisible(stalling), "A quick tap on a stalling page left a grid open");
-  pass("Native quick Alt+Q on a page that stalls switches once the page answers");
+  assert(
+    performance.now() - tapped < 1000,
+    `A quick tap on a frozen page waited for it: ${Math.round(performance.now() - tapped)} ms`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  assert(!await typing.evaluate(() => gridSeen), "A quick tap on a frozen page showed the grid");
+  assert(!await gridVisible(stalling), "A quick tap on a frozen page left a grid open");
+  pass("Native quick Alt+Q on a frozen page switches before the freeze ends");
+  // A page busy for a moment still answers in time: the grid shows on it, as on any page.
+  await stalling.goto(`${origin}/stalling?title=Stalling&ms=100`);
+  await stalling.bringToFront();
+  await keys("focus:Stalling");
+  await until(() => stalling.evaluate(() => document.hasFocus()), "Stalling page has no focus");
+  await keys("down:Alt_L", "sleep:50", "tap:q");
+  await switcher(stalling);
+  assert(await activeTabId() === stallingId, "Holding Alt+Q on a busy page switched tabs");
+  await keys("tap:Escape", "up:Alt_L");
+  await until(async () => !await gridVisible(stalling), "Escape did not close the grid");
+  pass("Native held Alt+Q on a page busy for a moment shows the grid on it");
 
   const document = await browser.newPage();
   await document.goto(`${origin}/document.pdf`);
   await document.bringToFront();
   await keys("focus:document.pdf");
-  const documentId = await activeTabId();
-  // The PDF viewer keeps its keys: Brovim can't see the release, so every press switches.
+  // The PDF viewer keeps its keys: a press switches to the previous tab, which shows the grid
+  // while the shortcut is held.
   await new Promise((resolve) => setTimeout(resolve, 500));
   await keys("down:Alt_L", "tap:q");
   await until(
-    async () => await activeTabId() !== documentId,
-    "Alt+Q on a PDF did not switch tabs",
+    async () => await activeTabId() === stallingId,
+    "Alt+Q on a PDF did not move to the previous tab",
   );
+  await switcher(stalling);
   await keys("up:Alt_L");
-  pass("Native Alt+Q on a PDF switches tabs directly");
+  // Release selects the tab it moved to; let that settle before the next check.
+  await until(async () => !await gridVisible(stalling), "Releasing Alt left the grid open");
+  pass("Native held Alt+Q on a PDF shows the grid on the previous tab");
   await document.close();
 
   // A slow network. Whether or not a loading tab can show the grid, holding the shortcut shows it.
@@ -642,6 +690,35 @@ try {
     "Protected handoff lost the final selection",
   );
   pass("Native protected-page handoff continues beyond two tabs and commits correctly");
+  // Two tabs Brovim can't run on, one after the other: neither sees Alt go up. Taps a moment
+  // apart flip between them; quick presses while holding walk on through the list.
+  const versionId = await worker.evaluate(async () =>
+    (await chrome.tabs.query({ url: "chrome://version/" }))[0].id
+  );
+  const urlsPage = await browser.newPage();
+  await urlsPage.goto("chrome://chrome-urls/");
+  await protectedPage.bringToFront();
+  await urlsPage.bringToFront();
+  await keys("focus:Chrome URLs");
+  const urlsId = await activeTabId();
+  await tap();
+  await until(async () => await activeTabId() === versionId, "A tap did not reach Version");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  await tap();
+  await until(
+    async () => await activeTabId() === urlsId,
+    "A second tap a moment later did not flip back between two protected pages",
+  );
+  pass("Native taps flip between two pages Brovim can't run on");
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  await keys("down:Alt_L", "sleep:20", "tap:q", "sleep:150", "tap:q", "sleep:50", "up:Alt_L");
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  const walked = await activeTabId();
+  assert(
+    walked !== urlsId && walked !== versionId,
+    "Quick presses while holding did not walk on through the list",
+  );
+  pass("Native quick presses while holding walk on from two pages Brovim can't run on");
   await browser.close();
   browser = await puppeteer.launch({
     executablePath: Deno.env.get("PUPPETEER_EXECUTABLE_PATH") || undefined,

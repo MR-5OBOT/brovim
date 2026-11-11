@@ -91,8 +91,16 @@ body {
   display: none;
 }
 
+/* The cards fade in with the frame around them, rather than appearing a moment after its dimming. */
 #panel.ready {
   opacity: 1;
+  transition: opacity 0.1s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #panel.ready {
+    transition: none;
+  }
 }
 
 #panel.glass {

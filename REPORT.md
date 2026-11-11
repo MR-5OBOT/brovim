@@ -1283,3 +1283,48 @@ the previous tab, which shows the grid.
 
 The browser suite's failures in this round were test races, fixed as listed above. With the fixes,
 it passed 101 of 101 checks in two consecutive full runs.
+
+## 25. Frozen Pages, Two Tabs Without the Grid, and a Smoother Grid (November 11, 2026)
+
+The user asked to fix the two behaviours kept in section 24 and to make switching, the grid and
+cycling smoother. This section supersedes section 24's "Trade-offs the user kept".
+
+- **Frozen pages.** A press first asks the page for an answer, which takes a few milliseconds on a
+  responsive page. With no answer within 0.2 s the page is frozen, and the background switches to
+  the previous tab at once: a tap takes about 0.2 s instead of waiting out the freeze. The tab it
+  moved to then waits. If it sees the release, the gesture ends. If the frozen page catches up and
+  reports the shortcut still held, or another press arrives, it shows the grid. Escape returns to
+  the frozen tab. A hold during a freeze longer than 0.2 s now moves to the previous tab first, and
+  the grid follows there. A page busy only for a moment still answers in time and shows the grid
+  itself.
+- **Two tabs that can't see the keys.** When the tab a gesture moved to can't see the shortcut's
+  modifier, a press continues the held gesture only within 0.4 s of the last one; a slower press is
+  a new tap. Taps between two PDFs now flip back and forth, and quick presses while holding still
+  walk the list. Tabs that see the modifier end the gesture themselves, as before.
+- **PDFs showing the grid themselves** (approved alongside) was built and withdrawn. The PDF viewer
+  is not reachable from the page at all (no element, no frame), so once the page took the keyboard
+  for a gesture, only a click could give it back: the PDF's arrow keys, Space and Page Down would
+  stop working after every Alt+Q. A hold on a PDF still shows the grid on the previous tab.
+- **Smoother grid.** The grid, its cards and the dimmed page behind it fade in over 0.1 s instead of
+  appearing at once. The selection still moves without animation, so fast cycling keeps up. A
+  reduced-motion preference turns the fade off.
+
+### Verification
+
+Real keys in isolated Helium: a hold on a page frozen for 1.2 s switches at once and the previous
+tab shows the grid; a tap there switches before the freeze ends, with no grid anywhere; a page busy
+for 0.1 s shows the grid itself. Taps 0.7 s apart flip between two PDFs (PDF2 → PDF1 → PDF2 → PDF1)
+and between two protected pages, and quick presses while holding walk on. The grid's opacity goes
+from 0 to 1 over about 0.1 s. Loading tabs behave as in section 24: grids in 127–178 ms, taps in
+75–93 ms, no flashes.
+
+Formatting and lint, 384 unit tests (two new: the frozen-page switch and the 0.4 s rule, each
+failing without its fix), 102 DOM tests, 101 browser checks, 29 real-shortcut checks in three
+consecutive runs (three new: a page busy for a moment, and taps and quick presses between two
+protected pages; the frozen-page and PDF checks rewritten for the new behaviour), 7 lifecycle, 13
+internal-page and 10 browser-navigation checks pass. Packages were rebuilt. In Firefox 159 the
+package passes the 9 lifecycle checks, and real Alt+Q presses hold, select, tap and hand on from
+`about:robots` as before.
+
+Test fixes: the native test retries its first navigation like the browser suite. Its PDF check now
+waits for the grid it hands on to close, which otherwise raced with the next check.
