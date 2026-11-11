@@ -299,6 +299,20 @@ function getValidationErrors() {
   const results = {};
   let text, parsed;
 
+  for (const [name, type] of Object.entries(options)) {
+    if (type !== "number") continue;
+    const el = getOptionEl(name);
+    const value = parseFloat(el.value);
+    if (
+      !Number.isFinite(value) || el.validity.rangeUnderflow || el.validity.rangeOverflow ||
+      (name === "scrollStepSize" && value <= 0)
+    ) {
+      results[name] = name === "scrollStepSize"
+        ? "Enter a scroll size greater than zero."
+        : "Enter a number within the field's limits.";
+    }
+  }
+
   // keyMappings field.
   text = getOptionEl("keyMappings").value.trim();
   parsed = KeyMappingsParser.parse(text);
@@ -338,7 +352,7 @@ function addValidationMessage(el, message) {
   const messageEl = document.createElement("div");
   messageEl.classList.add("validation-message");
   messageEl.textContent = message;
-  exampleEl.after(messageEl);
+  (exampleEl ?? el).after(messageEl);
 }
 
 // Returns true if there are errors, false otherwise.

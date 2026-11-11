@@ -26,9 +26,36 @@ context("UIComponent", () => {
   teardown(() => {
     // MessageChannel ports must be closed, or our test process will never terminate. See
     // https://github.com/facebook/react/issues/26608
-    for (const port of c?.messageChannelPorts) {
+    for (const port of c?.messageChannelPorts ?? []) {
       port.close();
     }
+  });
+
+  should("handle a document without a head, such as an SVG page", () => {
+    document.head.remove();
+    c = new UIComponent();
+    c.iframeElement = document.createElement("iframe");
+    c.handleDarkReaderFilter();
+    assert.isFalse(c.iframeElement.classList.contains("vimium-reverse-dark-reader-filter"));
+  });
+
+  should("join a page that is still arriving only when asked to", async () => {
+    // The page is still being parsed, and will be for a while: a slow network.
+    stub(DomUtils, "isReady", () => false);
+    stub(DomUtils, "documentReady", () => new Promise(() => {}));
+    const waiting = new UIComponent();
+    waiting.load("example.html", "example-class");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.isFalse(waiting.shadowDOM.host.isConnected);
+    assert.isFalse(waiting.detached);
+    c = new UIComponent();
+    const loading = c.load("example.html", "example-class", null, { early: true });
+    assert.isTrue(c.shadowDOM.host.isConnected);
+    await loading;
+    assert.isFalse(c.detached);
+    // Some pages rebuild their whole document, throwing away what was added to it.
+    c.shadowDOM.host.remove();
+    assert.isTrue(c.detached);
   });
 
   should("focus the frame when showing", async () => {

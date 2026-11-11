@@ -1312,9 +1312,11 @@ const LocalHints = {
   getElementFromPoint(x, y, root, stack) {
     if (root == null) root = document;
     if (stack == null) stack = [];
-    const element = root.elementsFromPoint
-      ? root.elementsFromPoint(x, y)[0]
-      : root.elementFromPoint(x, y);
+    // We only need the top hit. Asking for the whole stack makes hundreds of visible hints
+    // repeatedly traverse every layer underneath them on long pages.
+    const element = root.elementFromPoint
+      ? root.elementFromPoint(x, y)
+      : root.elementsFromPoint(x, y)[0];
 
     if (stack.includes(element)) return element;
 
@@ -1413,8 +1415,8 @@ const LocalHints = {
         rect.top + (rect.height * 0.5),
       );
       const hasIntersection = elementFromMiddlePoint &&
-        (hint.element.contains(elementFromMiddlePoint) ||
-          elementFromMiddlePoint.contains(hint.element));
+        (DomUtils.containsComposed(hint.element, elementFromMiddlePoint) ||
+          DomUtils.containsComposed(elementFromMiddlePoint, hint.element));
       if (hasIntersection) return true;
 
       // Handle image maps
@@ -1433,7 +1435,8 @@ const LocalHints = {
         for (const horizontalCoord of horizontalCoords) {
           const elementFromPoint = LocalHints.getElementFromPoint(horizontalCoord, verticalCoord);
           const hasIntersection = elementFromPoint &&
-            (hint.element.contains(elementFromPoint) || elementFromPoint.contains(hint.element));
+            (DomUtils.containsComposed(hint.element, elementFromPoint) ||
+              DomUtils.containsComposed(elementFromPoint, hint.element));
           if (hasIntersection) return true;
         }
       }

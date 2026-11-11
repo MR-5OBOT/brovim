@@ -2,6 +2,32 @@
 import assert from "node:assert/strict";
 import { apply, save } from "./setup.js";
 
+Deno.test("a missing --profile argument fails without modifying the default profile", async () => {
+  const dir = await Deno.makeTempDir();
+  const profile = `${dir}/net.imput.helium/Default`;
+  const original = JSON.stringify({ unchanged: true });
+  await Deno.mkdir(profile, { recursive: true });
+  await Deno.writeTextFile(`${profile}/Preferences`, original);
+  try {
+    for (const args of [["--profile"], ["save", "--profile"]]) {
+      const result = await new Deno.Command(Deno.execPath(), {
+        args: ["run", "-A", new URL("./setup.js", import.meta.url).pathname, ...args],
+        env: { XDG_CONFIG_HOME: dir },
+        stdout: "piped",
+        stderr: "piped",
+      }).output();
+      assert.equal(result.code, 1);
+      assert.match(
+        new TextDecoder().decode(result.stderr),
+        /--profile requires a profile directory/,
+      );
+      assert.equal(await Deno.readTextFile(`${profile}/Preferences`), original);
+    }
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});
+
 Deno.test("apply sets the shortcuts and the flag once, keeps other prefs, and waits for Helium to close", async () => {
   const dir = await Deno.makeTempDir();
   const profile = `${dir}/Default`;

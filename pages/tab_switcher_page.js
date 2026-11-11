@@ -24,6 +24,8 @@ let visiblePage = -1;
 let isAltCycling = false;
 let shortcut = Utils.parseBrowserShortcut();
 let cycleId = null;
+// The tab where a gesture began, when it began on another tab: one that couldn't show the grid.
+let sourceId = null;
 let overlayId = null;
 let shiftIsDown = false;
 let visible = false;
@@ -396,6 +398,16 @@ async function closeTab(index) {
   render();
 }
 
+// Closes the grid without switching. A gesture that began on another tab returns to it: that tab
+// couldn't show the grid, so the gesture moved here to show it.
+function cancel() {
+  const source = sourceId != null && tabs.find((tab) => tab.id === sourceId && !tab.active);
+  hide();
+  if (source) {
+    sendRequest({ handler: "selectSpecificTab", id: source.id, awakeOnly: true }).catch(() => {});
+  }
+}
+
 function hide() {
   activation++;
   cancelPendingReads();
@@ -466,7 +478,7 @@ function handleKeydown(event) {
   if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
   if (event.key === "Escape") {
     event.preventDefault();
-    hide();
+    cancel();
     return;
   }
   const action = keyAction(event);
@@ -501,6 +513,7 @@ UIComponentMessenger.registerHandler((event) => {
       isAltCycling = event.data.isAltCycle ?? false;
       shortcut = event.data.shortcut ?? Utils.parseBrowserShortcut();
       cycleId = event.data.cycle?.id ?? null;
+      sourceId = event.data.cycle?.sourceId ?? null;
       overlayId = event.data.overlayId ?? null;
       shiftIsDown = event.data.reverse === true;
       // Hide the previous list until the fresh one (in the new recency order) is rendered.

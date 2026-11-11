@@ -109,11 +109,15 @@ class TabRecency {
   }
 
   async saveToStorage() {
-    const recency = structuredClone(this.tabIdToCounter);
-    await Promise.all([
-      chrome.storage.session.set({ tabRecency: recency }),
-      chrome.storage.local.set({ brovimSessionTabRecency: recency }),
-    ]);
+    try {
+      const recency = structuredClone(this.tabIdToCounter);
+      await Promise.all([
+        chrome.storage.session.set({ tabRecency: recency }),
+        chrome.storage.local.set({ brovimSessionTabRecency: recency }),
+      ]);
+    } catch {
+      // Storage operations can fail if the browser or extension is shutting down.
+    }
   }
 
   async resetForBrowserStartup() {

@@ -342,7 +342,52 @@ globalThis.lastFocusedInput = (function () {
   return () => recentlyFocusedElement;
 })();
 
+// Chromium clears an embedded page's focused element when a frame of another site, such as the
+// tab switcher's, takes the focus. Each frame remembers the element it lost that way, and takes it
+// back when the top frame's UIComponent closes and says so (restoreFrameFocus).
+const FrameFocus = {
+  blurred: null, // The element that last lost the focus,
+  blurredAt: 0, // and when.
+  taken: null, // The element that had the focus when this frame last lost it.
+  restoreUntil: 0,
+
+  init() {
+    globalThis.addEventListener(
+      "blur",
+      forTrusted((event) => {
+        if (event.target !== window) {
+          this.blurred = event.target;
+          this.blurredAt = performance.now();
+        } else {
+          // The element loses the focus first, in the same moment.
+          this.taken = performance.now() - this.blurredAt < 100 ? this.blurred : null;
+        }
+      }),
+      true,
+    );
+    globalThis.addEventListener(
+      "focus",
+      forTrusted((event) => {
+        if (event.target === window && performance.now() < this.restoreUntil) this.restore();
+      }),
+      true,
+    );
+  },
+
+  restore() {
+    this.restoreUntil = 0;
+    const nothingFocused = (document.activeElement ?? document.body) === document.body;
+    if (nothingFocused && this.taken?.isConnected) this.taken.focus({ preventScroll: true });
+  },
+};
+
 const messageHandlers = {
+  restoreFrameFocus() {
+    if (DomUtils.isTopFrame()) return;
+    // The frame's focus and this message arrive in either order.
+    if (document.hasFocus()) FrameFocus.restore();
+    else FrameFocus.restoreUntil = performance.now() + 500;
+  },
   openBrowserPages(request) {
     // Browser chrome (e.g. the address bar) cannot reliably hand focus to an embedded input.
     if (!document.hasFocus() || !DomUtils.canHostExtensionFrames()) return false;
@@ -389,16 +434,26 @@ const messageHandlers = {
     }
   },
   async openTabSwitcher({ requestId, ...options }) {
+    // The page can't show the grid: the background switches tabs, and the next tab shows it.
     if (document.fullscreenElement && document.fullscreenElement !== document.documentElement) {
       return { opened: false };
     }
     // No grid on a sandboxed page: the background switches tabs directly instead.
     if (!DomUtils.canHostExtensionFrames()) return { opened: false };
     try {
-      const result = await Utils.promiseWithTimeout(
+      const result = await Promise.race([
         TabSwitcher.activateFromBrowserShortcut(requestId, options),
-        800,
-      );
+        // The grid's frame hasn't started. The background switches directly until it does.
+        Utils.eventLoopTime(800).then(() => null),
+      ]);
+      if (!result) {
+        TabSwitcher.suspend(requestId);
+        // Long past a tap: if the shortcut is still held, the next tab shows the grid at once.
+        return {
+          opened: false,
+          held: TabSwitcher.seesShortcutKeys() && TabSwitcher.modifierHeld(),
+        };
+      }
       if (result.cancelled) return result;
       if (!result.opened || TabSwitcher.currentRequestId !== requestId) return { opened: false };
       if (result.quickSwitch) return { opened: true };
@@ -423,8 +478,30 @@ const messageHandlers = {
   cancelTabSwitcher({ requestId }) {
     TabSwitcher.cancel(requestId);
   },
-  rememberTabSwitcherCycle({ cycle, shortcut }) {
+  // The tab that a gesture left couldn't show the grid, so the background switched here.
+  // - handoff: show the grid here while the shortcut is held: "held" if the tab that was left saw
+  //   it held past the tap window, "unknown" if it couldn't tell. Absent if no page can tell a
+  //   hold from a tap: the next press shows the grid.
+  rememberTabSwitcherCycle({ cycle, shortcut, handoff }) {
     TabSwitcher.rememberCycle(cycle, shortcut);
+    if (!handoff || !DomUtils.isTopFrame() || TabSwitcher.cycle?.id !== cycle.id) return;
+    // A tap's release reaches this page within the usual tap window: the switch is all it wanted.
+    messageHandlers.openTabSwitcher({
+      requestId: crypto.randomUUID(),
+      shortcut,
+      cycle,
+      showDelay: handoff === "held" ? 0 : TabSwitcher.showDelayMs,
+    });
+  },
+  // Whether this page shows the switcher's grid itself, and wakes the background as the
+  // shortcut's modifier goes down. See checkFrontTab in the background.
+  showsTabSwitcher() {
+    return DomUtils.isTopFrame() && TabSwitcher.painted && DomUtils.canHostExtensionFrames() &&
+      document.contentType !== "application/pdf";
+  },
+  // From an embedded page of this tab: see TabSwitcher.reportKeyboardEvent.
+  tabSwitcherKey({ event }) {
+    if (DomUtils.isTopFrame()) TabSwitcher.recordKeyboardEvent(event, true);
   },
   // The tab became active. Also tells the background that this page captures its own preview.
   startTabPreview() {
@@ -475,6 +552,9 @@ async function handleMessage(request, sender) {
         "openTabSwitcher",
         "cancelTabSwitcher",
         "rememberTabSwitcherCycle",
+        "tabSwitcherKey",
+        "showsTabSwitcher",
+        "restoreFrameFocus",
         "startTabPreview",
         "canCaptureTabPreview",
       ].includes(request.handler));
@@ -611,6 +691,7 @@ const HelpDialog = {
 const testEnv = globalThis.window == null;
 if (!testEnv) {
   initWindowIsFocused();
+  if (!DomUtils.isTopFrame()) FrameFocus.init();
   initializePreDomReady();
 }
 

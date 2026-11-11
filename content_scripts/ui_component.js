@@ -18,6 +18,12 @@ class UIComponent {
   // These are the focus options set when show() is invoked. We store them while the UIComponent
   // is visible so we know how to revert focus once it's dismissed.
   focusOptions = {};
+  // True while show() moves the focus into the iframe.
+  takingFocus = false;
+  // True once the component has been added to the page.
+  attached = false;
+  // What had the focus when a component with the restoreFocus option was shown.
+  previousFocus = null;
   shadowDOM;
   // When we open ports to the iframe using MessageChannel, we save them so that our unit tests can
   // close the ports. See ui_component_test.js for details.
@@ -26,8 +32,11 @@ class UIComponent {
   // - iframeUrl:
   // - className: the CSS class to add to the iframe.
   // - messageHandler: optional; a function to handle messages from the iframe's page.
-  async load(iframeUrl, className, messageHandler) {
-    if (this.iframeFrameElement) throw new Error("init should only be called once.");
+  // - early: add the frame to a page that is still arriving, rather than once it has all been
+  //   parsed. On a slow network that can be many seconds away. For components which a browser
+  //   shortcut opens, whatever the page is doing.
+  async load(iframeUrl, className, messageHandler, { early = false } = {}) {
+    if (this.iframeElement) throw new Error("init should only be called once.");
     this.messageHandler = messageHandler;
     const isDomTests = iframeUrl.includes("?dom_tests=true");
     this.iframeElement = DomUtils.createElement("iframe");
@@ -75,9 +84,15 @@ class UIComponent {
     // The frame couldn't start here. Don't load it, so the component simply never shows.
     if (!DomUtils.canHostExtensionFrames()) return;
     this.iframeElement.src = chrome.runtime.getURL(iframeUrl);
-    await DomUtils.documentReady();
-    this.handleDarkReaderFilter();
+    if (early && !DomUtils.isReady()) {
+      // The head that DarkReader writes to may not have been parsed yet.
+      DomUtils.documentReady().then(() => this.handleDarkReaderFilter());
+    } else {
+      await DomUtils.documentReady();
+      this.handleDarkReaderFilter();
+    }
     document.documentElement.appendChild(shadowWrapper);
+    this.attached = true;
 
     const secret = (await chrome.storage.session.get("vimiumSecret")).vimiumSecret;
     const { port1, port2 } = new MessageChannel();
@@ -101,7 +116,9 @@ class UIComponent {
             globalThis.addEventListener(
               "focus",
               forTrusted((event) => {
-                if ((event.target === window) && this.focusOptions.focus) {
+                // Taking the focus from another frame (an embedded page, a PDF) focuses this
+                // window for an instant on the way. That isn't the user returning to the page.
+                if ((event.target === window) && this.focusOptions.focus && !this.takingFocus) {
                   this.hide(false);
                 }
                 // Continue propagating the event.
@@ -124,6 +141,12 @@ class UIComponent {
     });
   }
 
+  // Whether the page has since thrown the component away. Pages that rebuild their whole
+  // document (some frameworks do, after an error) remove everything that was added to it.
+  get detached() {
+    return this.attached && !this.shadowDOM.host.isConnected;
+  }
+
   // This ensures that Brovim's UI elements (HUD, Vomnibar) honor the browser's light/dark theme
   // preference, even when the user is also using the DarkReader extension. DarkReader is the most
   // popular dark mode Chrome extension in use as of 2020.
@@ -141,6 +164,7 @@ class UIComponent {
 
     reverseFilterIfExists();
 
+    if (!document.head) return; // SVG/XML documents can have no HTML head to observe.
     const observer = new MutationObserver(reverseFilterIfExists);
     observer.observe(document.head, { characterData: true, subtree: true, childList: true });
   }
@@ -167,16 +191,28 @@ class UIComponent {
   // - focusOptions: optional. {
   //     focus: whether the UIComponent should be focused once it's ready.
   //     sourceFrameId: which frame should the focus when this component is dismissed.
+  //     restoreFocus: return the focus to the element that had it (a text field, an embedded
+  //       page) rather than to the frame. For components that a browser shortcut opens over
+  //       whatever the user was doing.
   //   }
   async show(messageData = {}, focusOptions = {}) {
     if (focusOptions) {
-      Utils.assertType({ focus: "boolean", sourceFrameId: "number" }, focusOptions);
+      Utils.assertType(
+        { focus: "boolean", sourceFrameId: "number", restoreFocus: "boolean" },
+        focusOptions,
+      );
     }
     this.focusOptions = focusOptions;
     await this.postMessage(messageData);
     this.setIframeVisible(true);
     if (this.focusOptions.focus) {
-      this.iframeElement.focus();
+      this.previousFocus = this.focusOptions.restoreFocus ? DomUtils.deepActiveElement() : null;
+      this.takingFocus = true;
+      try {
+        this.iframeElement.focus();
+      } finally {
+        this.takingFocus = false;
+      }
     }
     this.showing = true;
   }
@@ -189,8 +225,23 @@ class UIComponent {
     this.showing = false;
     this.setIframeVisible(false);
     if (this.focusOptions.focus) {
+      const previous = this.previousFocus;
+      this.previousFocus = null;
+      // Hand the focus back only while it is still this component's to give.
+      const hadFocus = previous && DomUtils.deepActiveElement() === this.iframeElement;
       this.iframeElement.blur();
-      if (shouldRefocusOriginalFrame) {
+      if (hadFocus) previous.focus({ preventScroll: true });
+      const restored = hadFocus && previous !== document.body &&
+        DomUtils.deepActiveElement() === previous;
+      if (restored && ["IFRAME", "FRAME"].includes(previous.tagName)) {
+        // An embedded page has the focus again, but not the element in it that had it: see
+        // FrameFocus.
+        chrome.runtime.sendMessage({
+          handler: "sendMessageToFrames",
+          message: { handler: "restoreFrameFocus" },
+        });
+      }
+      if (shouldRefocusOriginalFrame && !restored) {
         if (this.focusOptions.sourceFrameId != null) {
           chrome.runtime.sendMessage({
             handler: "sendMessageToFrames",

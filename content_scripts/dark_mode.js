@@ -46,7 +46,7 @@ const DarkMode = {
   --brovim-reverse-filter: ${reverse};
 }
 :is(dialog:modal, [popover]:popover-open) { filter: ${filter} !important; }
-img:not([src*=".svg"]), video, svg image, embed, object, iframe[src*="youtube"],
+img:not([src*=".svg"]):not([src*="image/svg+xml"]), video, svg image, embed, object, iframe[src*="youtube"],
 iframe[src*="vimeo"], [style*="url("]:not(html, body) {
   filter: ${reverse} !important;
 }

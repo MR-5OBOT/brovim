@@ -89,6 +89,20 @@ context("options page", () => {
     assert.isTrue(messageEls[0].innerHTML.includes(el.value));
   });
 
+  should("reject empty and out-of-range scroll sizes without disabling page controls", async () => {
+    const field = optionsPage.getOptionEl("scrollStepSize");
+    for (const value of ["", "0", "-1", "not a number"]) {
+      field.value = value;
+      await optionsPage.saveOptions();
+      assert.equal(Settings.defaultOptions.scrollStepSize, Settings.get("scrollStepSize"));
+      assert.isTrue(field.classList.contains("validation-error"));
+    }
+    field.value = "90";
+    await optionsPage.saveOptions();
+    assert.equal(90, Settings.get("scrollStepSize"));
+    assert.isFalse(field.classList.contains("validation-error"));
+  });
+
   should("show exclusion rule editor for exclusion rules", async () => {
     const rule = {
       passKeys: "",

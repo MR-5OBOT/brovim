@@ -105,6 +105,30 @@ context("tab switcher page", () => {
     },
   );
 
+  should("return to a handed-off gesture's first tab when it is cancelled", async () => {
+    const selections = () =>
+      messages.filter((request) => request.message?.handler === "selectSpecificTab")
+        .map((request) => request.message.id);
+    // The gesture began on tab 1, which couldn't show the grid, and moved on to tab 2.
+    for (const tab of list) tab.active = tab.id === 2;
+    await receive({
+      name: "activate",
+      overlayId: `overlay-${instance}`,
+      isAltCycle: true,
+      cycle: { id: "carried", sourceId: 1, tabIds: [1, 2, 3, 4], selectedId: 2, previousId: 2 },
+    });
+    await flush();
+    assert.isTrue(panel.classList.contains("ready"));
+    await press("Escape");
+    assert.equal([1], selections());
+    // A grid shown where its gesture began cancels without switching.
+    messages.length = 0;
+    for (const tab of list) tab.active = tab.id === 1;
+    await open();
+    await press("Escape");
+    assert.equal([], selections());
+  });
+
   should("fetch only missing previews and retain existing images after closing a tab", async () => {
     list[0].screenshot = null;
     await open();

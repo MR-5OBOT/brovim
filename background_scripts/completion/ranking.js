@@ -135,7 +135,7 @@ export const RegexpCache = {
   },
 
   clear() {
-    this.cache = {};
+    this.cache = Object.create(null);
   },
 
   // Get rexexp for `string` from cache, creating it if necessary.

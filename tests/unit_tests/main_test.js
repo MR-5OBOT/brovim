@@ -3,6 +3,32 @@ import { withPromise } from "./test_helper.js";
 import "../../lib/settings.js";
 import "../../background_scripts/main.js";
 
+context("search destination", () => {
+  should("search in the source tab after it loses the focus", async () => {
+    let info;
+    stub(chrome.search, "query", (query) => info = query);
+    await sendRequestHandlers.launchSearchQuery({ query: "search words", tabId: 42 });
+    assert.equal({ text: "search words", tabId: 42 }, info);
+  });
+
+  should("create new search tabs beside the source tab in its window", async () => {
+    let config, info;
+    stub(chrome.tabs, "create", (details) => {
+      config = details;
+      return Promise.resolve({ id: 88 });
+    });
+    stub(chrome.search, "query", (query) => info = query);
+    await sendRequestHandlers.launchSearchQuery({
+      query: "search words",
+      openInNewTab: true,
+      tab: { id: 42, windowId: 7, index: 3 },
+    });
+    assert.equal(7, config.windowId);
+    assert.equal(4, config.index);
+    assert.equal({ text: "search words", tabId: 88 }, info);
+  });
+});
+
 context("Mute tab groups", () => {
   let tabs;
 

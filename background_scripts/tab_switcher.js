@@ -8,12 +8,27 @@ const overlays = new Map();
 
 export function setTabSwitcherOverlay(tab, id, showing) {
   if (!id) return;
-  if (showing && tab.active) overlays.set(tab.windowId, { tabId: tab.id, id });
-  else if (overlays.get(tab.windowId)?.id === id) overlays.delete(tab.windowId);
+  if (showing && tab.active) {
+    overlays.set(tab.windowId, { tabId: tab.id, id });
+    // The tab a gesture switched to showed its grid itself: the grid owns the gesture now.
+    const cycle = cycles.get(tab.windowId);
+    if (cycle?.currentId === tab.id) {
+      cycle.overlay = true;
+      clearTimeout(cycle.timer);
+    }
+  } else if (overlays.get(tab.windowId)?.id === id) overlays.delete(tab.windowId);
 }
 // Protected browser pages cannot report modifier releases. Expire abandoned fallback gestures;
 // web pages end them explicitly on release. Visible overlays own their own focus/release handling.
 const fallbackIdleMs = 3000;
+// How long a page may take to answer the shortcut before it counts as hung.
+const unresponsiveMs = 2000;
+// When no page could see the keys, the tab a press switches to shows the grid only if the switch
+// came this soon after the press. A release while no page had the focus would be lost, and the
+// grid would wait for it; people let go of the modifier later than this after pressing the letter.
+const handoffMs = 60;
+// A press that had to start the stopped background arrives late, by about that much.
+const workerStartMs = 250;
 
 export function endTabSwitcherCycle(windowId, id) {
   const cycle = cycles.get(windowId);
@@ -32,40 +47,80 @@ export async function commitTabSwitcherCycle(tab, selection) {
   return true;
 }
 
+// A press on a tab that can't show the grid hands its gesture on only from a running background
+// (see handoffMs). Pages that show the grid wake the background as the shortcut's modifier goes
+// down. While a tab that can't is in front, keep the background running instead: any extension
+// call restarts the browser's 30 s countdown to stopping it.
+let keepRunning = null;
+
+// - tabId: the tab now in front.
+export async function checkFrontTab(tabId) {
+  const shows = await chrome.tabs.sendMessage(tabId, { handler: "showsTabSwitcher" }, {
+    frameId: 0,
+  }).then((answer) => answer === true, () => false);
+  // Another tab may have come to the front while this one answered.
+  const front = (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (front?.id !== tabId) return;
+  if (shows) stopRunning();
+  else keepRunning ??= setInterval(() => chrome.runtime.getPlatformInfo(), 20_000);
+}
+
+function stopRunning() {
+  clearInterval(keepRunning);
+  keepRunning = null;
+}
+
 chrome.tabs.onActivated.addListener(({ tabId, windowId }) => {
   if (overlays.get(windowId)?.tabId !== tabId) overlays.delete(windowId);
   const cycle = cycles.get(windowId);
   if (cycle && cycle.currentId !== tabId) endTabSwitcherCycle(windowId);
+  checkFrontTab(tabId).catch(() => {});
 });
 chrome.windows.onFocusChanged.addListener((windowId) => {
   for (const id of overlays.keys()) if (id !== windowId) overlays.delete(id);
   for (const id of cycles.keys()) if (id !== windowId) endTabSwitcherCycle(id);
+  // No shortcut reaches a browser without the focus.
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return stopRunning();
+  chrome.tabs.query({ active: true, windowId })
+    .then(([tab]) => tab && checkFrontTab(tab.id)).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   for (const [windowId, overlay] of overlays) {
     if (overlay.tabId === tabId) overlays.delete(windowId);
   }
 });
-chrome.tabs.onUpdated.addListener((tabId, change) => {
+chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
+  // A page that finished loading, or replaced the one in front, may show the grid itself now.
+  if (tab?.active && (change.status === "complete" || change.url)) {
+    checkFrontTab(tabId).catch(() => {});
+  }
   if (change.status !== "loading") return;
   for (const [windowId, overlay] of overlays) {
     if (overlay.tabId === tabId) overlays.delete(windowId);
   }
 });
+if (!globalThis.isUnitTests) {
+  // The background can start while such a tab is in front: for a preview capture, say.
+  chrome.tabs.query({ active: true, lastFocusedWindow: true })
+    .then(([tab]) => tab && checkFrontTab(tab.id)).catch(() => {});
+}
 
 export function openTabSwitcher(tab) {
   const overlay = tab && overlays.get(tab.windowId);
+  // In a service worker, the time since it started.
+  const pressedAt = performance.now();
   const opening = pendingOpen.then(() => {
     // Commands already queued for a grid belong to that gesture. A release or Escape must not
     // let them open a new grid (or quick-swap again) on the newly active tab.
     if (overlay && overlays.get(tab.windowId)?.id !== overlay.id) return;
-    return showTabSwitcher(tab, overlay?.id);
+    return showTabSwitcher(tab, overlay?.id, pressedAt);
   });
   pendingOpen = opening.catch(() => {});
   return opening;
 }
 
-async function showTabSwitcher(tab, expectedOverlayId) {
+async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.now()) {
+  const pressedOn = tab?.id;
   // Commands queued during a protected-page hop can carry an obsolete tab snapshot.
   tab = (await chrome.tabs.query(
     tab ? { active: true, windowId: tab.windowId } : {
@@ -74,6 +129,13 @@ async function showTabSwitcher(tab, expectedOverlayId) {
     },
   ))[0];
   if (!tab) return;
+  // A press waits its turn behind the one before it, which a busy page can take a second to
+  // answer. If that earlier press has since switched tabs, this one was meant for the tab that was
+  // left; acting on the new tab would switch a second time. A held gesture walking through pages
+  // that can't show the grid is the exception: each of its presses moves on from the last.
+  if (pressedOn != null && pressedOn !== tab.id && cycles.get(tab.windowId)?.currentId !== tab.id) {
+    return;
+  }
   await Settings.onLoaded();
   const { tabs, previousId } = await getTabSwitcherData(tab.windowId);
   if (expectedOverlayId && overlays.get(tab.windowId)?.id !== expectedOverlayId) return;
@@ -113,15 +175,15 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   const requestId = crypto.randomUUID();
   const options = { shortcut, cycle: selection, expectedOverlayId };
   let missingReceiver = false;
-  if (/^(https?|file|chrome|brave|edge|about):/i.test(tab.url || "")) {
+  // The page's answer, if it gave one.
+  let answer;
+  // Brovim's own full-page UI (Options/Commands) already loads the content scripts. It can show
+  // the same grid as a website; other extensions' pages remain protected by the browser.
+  const ownPage = /^(chrome|moz)-extension:/i.test(tab.url || "") &&
+    tab.url.startsWith(chrome.runtime.getURL(""));
+  if (ownPage || /^(https?|file|chrome|brave|edge|about):/i.test(tab.url || "")) {
     try {
-      if (await askPageToOpen(tab, requestId, options)) {
-        if (cycle) {
-          cycle.overlay = true;
-          clearTimeout(cycle.timer);
-        }
-        return;
-      }
+      answer = await askPageToOpen(tab, requestId, options);
     } catch {
       missingReceiver = true;
     }
@@ -132,15 +194,16 @@ async function showTabSwitcher(tab, expectedOverlayId) {
       ]);
       if (repaired) {
         try {
-          if (await askPageToOpen(tab, requestId, options)) {
-            if (cycle) {
-              cycle.overlay = true;
-              clearTimeout(cycle.timer);
-            }
-            return;
-          }
+          answer = await askPageToOpen(tab, requestId, options);
         } catch { /* The page may have navigated during recovery. */ }
       }
+    }
+    if (answer?.opened) {
+      if (cycle) {
+        cycle.overlay = true;
+        clearTimeout(cycle.timer);
+      }
+      return;
     }
     chrome.tabs.sendMessage(tab.id, { handler: "cancelTabSwitcher", requestId }, { frameId: 0 })
       .catch(() => {});
@@ -170,12 +233,14 @@ async function showTabSwitcher(tab, expectedOverlayId) {
   cycle.timer = setTimeout(() => endTabSwitcherCycle(tab.windowId, cycle.id), fallbackIdleMs);
   try {
     await chrome.tabs.update(cycle.currentId, { active: true });
-    // Do not open a grid on arrival: a quick tap may already have released on the protected page.
-    // Just observe release here, and resume the same list if the next command is still held.
+    // The tab switched to shows the grid while the shortcut is held, and sees the release that
+    // ends a tap. See rememberTabSwitcherCycle in the content scripts.
+    const quick = pressedAt >= workerStartMs && performance.now() - pressedAt <= handoffMs;
     await chrome.tabs.sendMessage(cycle.currentId, {
       handler: "rememberTabSwitcherCycle",
       cycle: snapshot(cycle),
       shortcut,
+      handoff: answer?.held ? "held" : quick ? "unknown" : undefined,
     }, { frameId: 0 }).catch(() => {});
   } catch {
     endTabSwitcherCycle(tab.windowId, cycle.id);
@@ -201,6 +266,8 @@ function snapshot(cycle) {
   };
 }
 
+// The page's answer: { opened, held }. held: the page couldn't show the grid, but saw the
+// shortcut's modifier held past the tap window.
 async function askPageToOpen(tab, requestId, options) {
   const wasVisible = !!options.expectedOverlayId || overlays.get(tab.windowId)?.tabId === tab.id;
   let timeout;
@@ -209,12 +276,16 @@ async function askPageToOpen(tab, requestId, options) {
       chrome.tabs.sendMessage(tab.id, { handler: "openTabSwitcher", requestId, ...options }, {
         frameId: 0,
       }),
-      new Promise((resolve) => timeout = setTimeout(() => resolve(null), 350)),
+      // Only a page that is hung gives no answer. A busy one (YouTube stalls for hundreds of
+      // milliseconds at a time) answers late, and only it knows whether the modifier is still
+      // held: switching away on a guess would take a held grid for a tap.
+      new Promise((resolve) => timeout = setTimeout(() => resolve(null), unresponsiveMs)),
     ]);
     // A slow acknowledgement of a repeat must not cancel a live grid and activate its MRU
     // fallback. The page owns selection until release/Escape, even while its replies are late.
-    return wasVisible || response?.opened === true ||
+    const opened = wasVisible || response?.opened === true ||
       (response == null && overlays.get(tab.windowId)?.tabId === tab.id);
+    return { opened, held: response?.held === true };
   } finally {
     clearTimeout(timeout);
   }

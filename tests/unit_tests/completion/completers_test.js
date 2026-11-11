@@ -37,6 +37,23 @@ context("bookmark completer", () => {
     completer = new BookmarkCompleter();
   });
 
+  should("retry after a bookmark API failure instead of caching its rejected promise", async () => {
+    let calls = 0;
+    stub(
+      chrome.bookmarks,
+      "getTree",
+      () =>
+        ++calls === 1
+          ? Promise.reject(new Error("Temporary bookmark failure"))
+          : Promise.resolve([bookmark1]),
+    );
+    await completer.refresh().catch(() => {});
+    await completer.refresh().catch(() => {});
+    assert.equal(2, calls);
+    const results = await filterCompleter(completer, ["mark2"]);
+    assert.equal([bookmark2.url], results.map((suggestion) => suggestion.url));
+  });
+
   should("flatten a list of bookmarks with inorder traversal", async () => {
     const result = await completer.traverseBookmarks([bookmark1, bookmark3]);
     assert.equal([bookmark1, bookmark2, bookmark3], result);
@@ -80,6 +97,23 @@ context("bookmark completer", () => {
 });
 
 context("HistoryCache", () => {
+  should("retry after a history API failure", async () => {
+    stub(HistoryCache, "history", null);
+    stub(HistoryCache, "chromeHistoryPromise", null);
+    let calls = 0;
+    stub(chrome, "history", {
+      search: () =>
+        ++calls === 1
+          ? Promise.reject(new Error("Temporary history failure"))
+          : Promise.resolve([{ url: "https://recovered.example", title: "Recovered" }]),
+      onVisited: { addListener() {}, removeListener() {} },
+      onVisitRemoved: { addListener() {}, removeListener() {} },
+    });
+    await HistoryCache.onLoaded().catch(() => {});
+    await HistoryCache.onLoaded().catch(() => {});
+    assert.equal(2, calls);
+    assert.equal("Recovered", HistoryCache.history[0].title);
+  });
   const compare = (a, b) => a - b;
   context("binary search", () => {
     should("insert the first visit into an empty history without comparing a missing entry", () => {
@@ -204,6 +238,47 @@ context("HistoryCache", () => {
       onVisitedListener(first);
       assert.equal([first], HistoryCache.history);
     });
+  });
+});
+
+context("domain completion visit accounting", () => {
+  let completer, visited, removed;
+  const first = { url: "https://count.example/first", lastVisitTime: 1 };
+  const second = { url: "https://count.example/second", lastVisitTime: 2 };
+  setup(() => {
+    stub(HistoryCache, "history", [first, second]);
+    visited = [];
+    removed = [];
+    stub(chrome, "history", {
+      onVisited: { addListener: (fn) => visited.push(fn) },
+      onVisitRemoved: { addListener: (fn) => removed.push(fn) },
+    });
+    completer = new DomainCompleter();
+  });
+
+  should("load once and install one listener per event during overlapping queries", async () => {
+    await Promise.all([
+      filterCompleter(completer, ["count"]),
+      filterCompleter(completer, ["count"]),
+    ]);
+    assert.equal(1, visited.length);
+    assert.equal(1, removed.length);
+  });
+
+  should("stop suggesting a deleted domain even after repeated visits", async () => {
+    await filterCompleter(completer, ["count"]);
+    for (let i = 0; i < 4; i++) visited[0]({ ...first, lastVisitTime: 10 + i });
+    removed[0]({ urls: [first.url, second.url] });
+    assert.equal([], await filterCompleter(completer, ["count"]));
+  });
+
+  should("ignore removals for uncached or already removed URLs", async () => {
+    await filterCompleter(completer, ["count"]);
+    removed[0]({ urls: ["https://count.example/missing", first.url, first.url] });
+    const results = await filterCompleter(completer, ["count"]);
+    assert.equal(["https://count.example"], results.map((result) => result.url));
+    removed[0]({ urls: [second.url] });
+    assert.equal([], await filterCompleter(completer, ["count"]));
   });
 });
 

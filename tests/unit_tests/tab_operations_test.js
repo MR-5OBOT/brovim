@@ -3,6 +3,12 @@ import "../../lib/settings.js";
 import * as to from "../../background_scripts/tab_operations.js";
 
 context("TabOperations openurlInCurrentTab", () => {
+  should("keep a search in the requesting tab when another tab becomes active", async () => {
+    let query;
+    stub(chrome.search, "query", (info) => query = info);
+    await to.openUrlInCurrentTab({ url: "source tab search", tabId: 42 });
+    assert.equal({ text: "source tab search", tabId: 42 }, query);
+  });
   should("open a regular URL", async () => {
     let url = null;
     stub(chrome.tabs, "update", (_id, args) => {
@@ -58,6 +64,36 @@ context("TabOperations openurlInCurrentTab", () => {
     const sender = { frameId: 5, url: "https://attacker.example.com/iframe.html" };
     await to.openUrlInCurrentTab({ url }, sender);
     assert.isFalse(called);
+  });
+});
+
+context("TabOperations openUrlInNewWindow", () => {
+  let config, query;
+  setup(() => {
+    stub(chrome.windows, "create", (details) => {
+      config = details;
+      return Promise.resolve({ id: 7, tabs: [{ id: 42 }] });
+    });
+    stub(chrome.search, "query", (details) => {
+      query = details;
+      return Promise.resolve();
+    });
+  });
+
+  should("open URLs with the window's focused option", async () => {
+    await to.openUrlInNewWindow({ url: "https://example.com", active: false });
+    assert.equal({ focused: false, url: "https://example.com" }, config);
+  });
+
+  should("omit the special new-tab URL and focus by default", async () => {
+    await to.openUrlInNewWindow({ url: UrlUtils.chromeNewTabUrl });
+    assert.equal({ focused: true }, config);
+  });
+
+  should("send searches to the new window's tab", async () => {
+    await to.openUrlInNewWindow({ url: "new window search" });
+    assert.equal({ focused: true }, config);
+    assert.equal({ text: "new window search", tabId: 42 }, query);
   });
 });
 

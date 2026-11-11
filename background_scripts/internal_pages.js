@@ -1,3 +1,4 @@
+import "../lib/utils.js";
 import "../lib/settings.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 

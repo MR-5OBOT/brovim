@@ -531,9 +531,11 @@ const sendRequestHandlers = {
     });
   },
 
-  launchSearchQuery({ query, openInNewTab }) {
-    const disposition = openInNewTab ? "NEW_TAB" : "CURRENT_TAB";
-    chrome.search.query({ disposition, text: query });
+  launchSearchQuery({ query, openInNewTab, tab, tabId }) {
+    // The user can change tabs/windows while the Vomnibar hides. Keep the search in its source
+    // window, or in the specific new tab we create there, rather than whichever tab is active.
+    if (openInNewTab) return TabOperations.openUrlInNewTab({ url: query, tab });
+    return chrome.search.query({ text: query, tabId });
   },
 
   selectSpecificTab,
@@ -556,7 +558,8 @@ const sendRequestHandlers = {
   // Eligible tabs in the window, in the switcher's order (the active tab first).
   async getOpenTabsWithScreenshots({ tab, windowId, includeScreenshots = true }) {
     const { tabs, previousId } = await getTabSwitcherData(windowId ?? tab.windowId);
-    const urls = tabs.map((t) => t.url);
+    // A tab whose first page hasn't arrived yet has only the address it is loading.
+    const urls = tabs.map((t) => t.url || t.pendingUrl || "");
     const screenshots = includeScreenshots === "cached"
       ? getCachedThumbnails(urls, tab?.incognito)
       : includeScreenshots
@@ -566,7 +569,7 @@ const sendRequestHandlers = {
       id: t.id,
       index: t.index,
       title: t.title || "Untitled",
-      url: t.url || "",
+      url: urls[i],
       favIconUrl: t.favIconUrl || "",
       active: t.active,
       lastUsed: t.id === previousId,
@@ -638,19 +641,23 @@ const sendRequestHandlers = {
       };
 
       // The tab can be gone by now (closed, or replaced by a prerendered or discarded copy).
-      // setIcon reports that through lastError, not a rejection, so only a callback consumes it.
-      chrome.action.setIcon(
-        { path: iconSet[whichIcon], tabId: sender.tab.id },
-        () => chrome.runtime.lastError,
-      );
+      // Check that the tab still exists before setting its icon.
+      chrome.tabs.get(sender.tab.id).then((tab) => {
+        if (!tab) return;
+        chrome.action.setIcon(
+          { path: iconSet[whichIcon], tabId: sender.tab.id },
+          () => chrome.runtime.lastError,
+        );
+      }).catch(() => {});
     }
 
     const response = Object.assign({
       isFirefox: bgUtils.isFirefox(),
       firefoxVersion: await bgUtils.getFirefoxVersion(),
       frameId: sender.frameId,
-      // Lets the page warm up the switcher when the shortcut's modifier goes down.
-      tabSwitcherShortcut: isTopFrame ? await getTabSwitcherShortcut() : null,
+      // Lets the page warm up the switcher when the shortcut's modifier goes down, and embedded
+      // pages report that modifier to it.
+      tabSwitcherShortcut: await getTabSwitcherShortcut(),
     }, enabledState);
 
     return response;
@@ -693,7 +700,7 @@ Utils.addChromeRuntimeOnMessageListener(
     Utils.debugLog(
       "main.js: onMessage:%ourl:%otab:%oframe:%o",
       request.handler,
-      sender.url.replace(/https?:\/\//, ""),
+      sender.url ? sender.url.replace(/https?:\/\//, "") : "",
       sender.tab?.id,
       sender.frameId,
       // request // Often useful for debugging.
@@ -717,20 +724,20 @@ Utils.addChromeRuntimeOnMessageListener(
 // Remove chrome.storage.local/findModeRawQueryListIncognito if there are no remaining
 // incognito-mode windows. Since the common case is that there are none to begin with, we first
 // check whether the key is set at all.
-chrome.tabs.onRemoved.addListener(function () {
-  chrome.storage.session.get("findModeRawQueryListIncognito", function (items) {
-    if (items.findModeRawQueryListIncognito) {
-      return chrome.windows != null
-        ? chrome.windows.getAll(null, function (windows) {
-          for (const window of windows) {
-            if (window.incognito) return;
-          }
-          // There are no remaining incognito-mode tabs, and findModeRawQueryListIncognito is set.
-          return chrome.storage.session.remove("findModeRawQueryListIncognito");
-        })
-        : undefined;
+chrome.tabs.onRemoved.addListener(async function () {
+  try {
+    const items = await chrome.storage.session.get("findModeRawQueryListIncognito");
+    if (items?.findModeRawQueryListIncognito) {
+      const windows = await chrome.windows?.getAll();
+      for (const window of windows ?? []) {
+        if (window.incognito) return;
+      }
+      // There are no remaining incognito-mode tabs, and findModeRawQueryListIncognito is set.
+      await chrome.storage.session.remove("findModeRawQueryListIncognito");
     }
-  });
+  } catch {
+    // Windows or storage may be unavailable during browser shutdown.
+  }
 });
 
 // Convenience function for development use.

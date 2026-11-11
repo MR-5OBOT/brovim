@@ -1,3 +1,4 @@
+import "../../lib/utils.js";
 import * as searchEngines from "./search_engines.js";
 
 // This is a wrapper class for completion engines. It handles the case where a custom search engine

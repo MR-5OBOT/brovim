@@ -118,6 +118,11 @@ reassigned) to switch directly to the previous tab. Hold its modifier to see the
 letter to move through the same list; release the modifier to switch. Adding Shift moves back unless
 Shift is already part of your assigned shortcut.
 
+A tap never shows the grid: it appears about a tenth of a second after the shortcut, as desktop
+Alt+Tab switchers do, and a release before then just switches. The grid opens over whatever you were
+doing and gives the focus back when it closes, so a text field you were typing in, on the page or
+inside an embedded page, is still ready when you cancel or come back to the tab.
+
 The grid lists every eligible tab, 8 cards per row by default: each further 8 tabs start a new row.
 When the screen has no room for another row while cards stay readable, it adds columns instead
 (widening the panel), so every tab has a cell. All rows fit in the frame without scrolling. Only
@@ -152,13 +157,26 @@ grid and releasing selects the highlighted tab. Quick taps switch automatically,
 the grid finishes loading. This is hardcoded with no new setting and works even when ordinary
 browser-page mappings are off. The existing two-tab quick-swap option applies everywhere.
 
-Pages that block extension scripts use direct switching in your chosen order. Further presses while
-held continue the original list; the grid resumes on the next page that supports it. Abandoned
-direct-switch gestures expire after three seconds of inactivity. The switcher never opens a separate
-window. The shortcut also works on excluded sites and while an input is focused. Unresponsive pages
-fall back to direct switching, as do sandboxed pages (raw.githubusercontent.com, for example): a
-page served in a sandbox passes it on to Brovim's frames, so the grid, Vomnibar, HUD and help can't
-open there.
+Where a tab can't show the grid, a press switches to the previous tab at once, which is all a tap
+wants. If you're still holding the modifier a moment later, the grid appears there, for the same
+gesture: repeat the letter to move, release to switch, or press `Esc` to return to the tab you
+started on. That covers pages that block extension scripts (the Web Store, `view-source:` and error
+pages), sandboxed pages (raw.githubusercontent.com, for example: their sandbox passes on to Brovim's
+frames, so the grid, Vomnibar, HUD and help can't open there), the PDF viewer, fullscreen video,
+embedded pages Brovim can't run in, and the address bar when it has the focus.
+
+It covers tabs still loading on a slow network, too. A loading tab shows the grid itself as soon as
+any of its page is drawn. Before that (its server hasn't answered, or the page waits for a script or
+stylesheet), the browser shows nothing and gives the page no keys, so the grid opens on the previous
+tab. Brovim keeps its background running while such a tab is in front, so this works on the first
+press; if the browser stopped it anyway, a press switches without a grid, which shows on your next
+press. A gesture that moved on without a grid ends after three seconds without a press. The switcher
+never opens a separate window, and the shortcut also works on excluded sites and while an input is
+focused.
+
+A busy page (YouTube stalls for hundreds of milliseconds at a time) answers late, never wrongly: the
+grid or the switch follows as soon as the page responds. Only a page that gives no answer for two
+seconds counts as hung and is left by a direct switch.
 
 `Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
 active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`
@@ -267,9 +285,11 @@ BROVIM_NATIVE_DISPLAY=:91 ./make.js test-native
 kill "$brovim_xvfb_pid"
 ```
 
-This checks accelerator delivery, rapid cycling through the grid, reverse cycling, modifier release
-and protected-page handoff. It refuses the desktop display, including equivalent screen aliases, so
-its keyboard events stay off your normal browser session.
+This checks accelerator delivery, rapid cycling through the grid, reverse cycling, modifier release,
+protected-page handoff, taps and holds while typing (on the page and in an embedded page), a page
+that stalls, a PDF, a new tab's address bar, and tabs still loading on a slow network. It refuses
+the desktop display, including equivalent screen aliases, so its keyboard events stay off your
+normal browser session.
 
 See [REPORT.md](REPORT.md) for the consolidated roadmap, implementation history, and verification
 results.

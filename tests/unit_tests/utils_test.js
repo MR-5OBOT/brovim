@@ -70,6 +70,44 @@ context("forTrusted", () => {
   });
 });
 
+context("SimpleCache", () => {
+  let cache, tasks;
+  setup(() => {
+    tasks = [];
+    stub(Utils, "nextTick", (fn) => tasks.push(fn));
+    cache = new SimpleCache(1000, 2);
+  });
+
+  should("treat prototype names as ordinary keys", () => {
+    for (const key of ["constructor", "__proto__", "toString"]) {
+      assert.isFalse(cache.has(key));
+      cache.set(key, key);
+      assert.equal(key, cache.get(key));
+    }
+  });
+
+  should("coalesce maintenance during a burst of cache reads", () => {
+    cache.set("query", "result");
+    for (let i = 0; i < 2000; i++) assert.equal("result", cache.get("query"));
+    assert.equal(1, tasks.length);
+    tasks.shift()();
+    cache.get("query");
+    assert.equal(1, tasks.length);
+  });
+
+  should("retain recent entries across rotations and clear them immediately", () => {
+    cache.set("old", 1);
+    cache.set("recent", 2);
+    cache.rotate(true);
+    assert.equal(2, cache.get("recent"));
+    cache.rotate(true);
+    assert.isFalse(cache.has("old"));
+    assert.equal(2, cache.get("recent"));
+    cache.clear();
+    assert.isFalse(cache.has("recent"));
+  });
+});
+
 context("decodeURIByParts", () => {
   should("decode javascript: URLs", () => {
     assert.equal("foobar", Utils.decodeURIByParts("foobar"));

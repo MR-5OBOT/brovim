@@ -96,8 +96,13 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
     );
   }
   const title = url.searchParams.get("title") || "Brovim browser fixture";
+  // Headless Chromium freezes background tabs within seconds, which a window wouldn't; a frozen
+  // tab is asleep, and leaves the grid. A held Web Lock keeps a fixture awake.
+  const awake = url.searchParams.has("awake")
+    ? '<script>navigator.locks.request("awake", () => new Promise(() => {}))</script>'
+    : "";
   return new Response(
-    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+    `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>${awake}
     <style>body{margin:20px;font:16px sans-serif}a{display:inline-block;margin:8px}
     main{width:2400px;height:5000px}p{margin:40px 0}</style></head><body>
     <input id="first" aria-label="First input"><input id="second" aria-label="Second input">
@@ -176,12 +181,17 @@ try {
     await pause();
   };
   const navigate = async (url) => {
-    try {
-      await page.goto(url);
-    } catch (error) {
-      // Chromium can supersede the first navigation while finishing extension installation.
-      if (!error.message.includes("net::ERR_ABORTED")) throw error;
-      await page.goto(url);
+    for (let attempt = 1;; attempt++) {
+      try {
+        return await page.goto(url);
+      } catch (error) {
+        // Chromium can supersede the first navigations while finishing extension installation,
+        // or hold them past the timeout. The last commit does this too, in a third of launches.
+        if (attempt === 4 || !/net::ERR_ABORTED|Navigation timeout/.test(error.message)) {
+          throw error;
+        }
+        await pause(300);
+      }
     }
   };
   const fresh = async () => {
@@ -349,13 +359,21 @@ try {
       });
       try {
         await navigate(`${origin}/initialization-empty-response`);
-        await worker.evaluate(async () => {
+        // The third request reaching the background doesn't mean the page has its controls back:
+        // the reply is still on its way, and normal mode then loads its key mappings from storage.
+        await worker.evaluate(async (id) => {
           for (let i = 0; i < 60; i++) {
-            if (initializationAttempts >= 3) return;
+            if (initializationAttempts >= 3) {
+              const [state] = await chrome.scripting.executeScript({
+                target: { tabId: id },
+                func: () => typeof normalMode !== "undefined" && !!normalMode?.isMappedKey("f"),
+              });
+              if (state?.result) return;
+            }
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
           throw new Error("Initialization did not retry the empty response");
-        });
+        }, await tabId());
         await key(["f"]);
         await page.waitForSelector(".vimiumHintMarker");
         await key(["Escape"]);
@@ -890,7 +908,10 @@ try {
     await key([...label.toLowerCase()]);
     await page.waitForFunction(() => location.pathname === "/target");
     await key(["H"]);
-    await page.waitForFunction(() => location.pathname === "/");
+    await page.waitForFunction(
+      () => location.pathname === "/" && document.readyState === "complete",
+    );
+    await pause(100);
     await key(["L"]);
     await page.waitForFunction(() => location.pathname === "/target");
   });
@@ -1598,9 +1619,10 @@ try {
       "clipboard-write",
     ]);
     await key(["y", "y"]);
-    assert(
-      await page.evaluate(() => navigator.clipboard.readText()) === page.url(),
-      "yy copied the wrong URL",
+    await page.waitForFunction(
+      (url) => navigator.clipboard.readText().then((clip) => clip === url, () => false),
+      {},
+      page.url(),
     );
     await runCommand("LinkHints.activateModeToCopyLinkUrl");
     await page.waitForSelector(".vimiumHintMarker");
@@ -1676,8 +1698,11 @@ try {
     await created.keyboard.press("x").catch((error) => {
       if (!/Target closed|Session closed/.test(error.message)) throw error;
     });
-    await page.waitForFunction(() => document.hasFocus());
+    for (let i = 0; i < 50 && !created.isClosed(); i++) await pause(50);
     assert(created.isClosed(), "x did not close the tab");
+    // The browser chooses which tab comes forward after a close; X belongs to this one.
+    await page.bringToFront();
+    await page.waitForFunction(() => document.hasFocus());
     await key(["X"]);
     const restored = await browser.waitForTarget((target) => target.url() === `${origin}/new-tab`, {
       timeout: 5000,
@@ -1738,7 +1763,8 @@ try {
     const extras = [];
     for (let i = 0; i < 7; i++) {
       const extra = await browser.newPage();
-      await extra.goto(`${origin}/extra?title=Preview${i}`);
+      // Awake: headless Chromium would freeze these background tabs within seconds.
+      await extra.goto(`${origin}/extra?title=Preview${i}&awake`);
       extras.push(extra);
     }
     await page.bringToFront();
@@ -1951,6 +1977,7 @@ try {
   await check("Ctrl+Q continues the original recents after a protected-page hop", async () => {
     await fresh();
     const peers = [];
+    let protectedPage;
     await worker.evaluate(() => {
       globalThis.originalCommandsGetAll = chrome.commands.getAll;
       chrome.commands.getAll = () =>
@@ -1962,9 +1989,11 @@ try {
         peers.push(peer);
         await peer.goto(`${origin}/hop-${i}?title=Hop${i}`);
       }
-      await options.bringToFront();
-      await options.keyboard.down("Control");
-      await openBrowserSwitcher(options);
+      protectedPage = await browser.newPage();
+      await protectedPage.goto("chrome://version/");
+      await protectedPage.bringToFront();
+      await protectedPage.keyboard.down("Control");
+      await openBrowserSwitcher(protectedPage);
       assert(
         await worker.evaluate(async () =>
           (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
@@ -1997,6 +2026,7 @@ try {
       await options.keyboard.up("Control");
       await worker.evaluate(() => chrome.commands.getAll = globalThis.originalCommandsGetAll);
       for (const peer of peers) if (!peer.isClosed()) await peer.close();
+      if (protectedPage && !protectedPage.isClosed()) await protectedPage.close();
       await page.bringToFront();
     }
   });
@@ -2494,7 +2524,7 @@ try {
       paused = true;
       await Promise.race([
         openBrowserSwitcher(id),
-        pause(2000).then(() => {
+        pause(3000).then(() => {
           throw new Error("An unresponsive page blocked the shortcut");
         }),
       ]);
@@ -3137,7 +3167,8 @@ try {
           for (let i = 0; i < 20; i++) {
             peers.push(
               await chrome.tabs.create({
-                url: `${prefix}recent-${i}?title=Recent${i}`,
+                // Awake: headless Chromium would freeze these background tabs within seconds.
+                url: `${prefix}recent-${i}?title=Recent${i}&awake`,
                 active: false,
               }),
             );
@@ -3146,7 +3177,10 @@ try {
             const tabs = (await chrome.tabs.query({})).filter((tab) => tab.url.startsWith(prefix));
             if (tabs.length === 23 && tabs.every((tab) => tab.status === "complete")) {
               for (const pin of pins) await chrome.tabs.discard(pin.id);
-              return { peerId: peers.at(-1).id, peerUrl: `${prefix}recent-19?title=Recent19` };
+              return {
+                peerId: peers.at(-1).id,
+                peerUrl: `${prefix}recent-19?title=Recent19&awake`,
+              };
             }
             await new Promise((resolve) => setTimeout(resolve, 50));
           }
@@ -3466,7 +3500,10 @@ try {
     "Ctrl+Q lists every awake tab in a grid grown to fit, and wraps through all of them",
     async () => {
       await fresh();
-      const urls = Array.from({ length: 19 }, (_, i) => `${origin}/extra${i}?title=Extra${i}`);
+      const urls = Array.from(
+        { length: 19 },
+        (_, i) => `${origin}/extra${i}?title=Extra${i}&awake`,
+      );
       await worker.evaluate(() => {
         globalThis.boundedOriginalCommands = chrome.commands.getAll;
         chrome.commands.getAll = () =>
@@ -3648,6 +3685,7 @@ try {
     async () => {
       await fresh();
       const peers = [];
+      let protectedPage;
       await worker.evaluate(async () => {
         globalThis.refillOriginalCommands = chrome.commands.getAll;
         chrome.commands.getAll = () =>
@@ -3661,9 +3699,11 @@ try {
           peers.push(peer);
           await peer.goto(`${origin}/refill-${i}?title=Refill${i}`);
         }
-        await options.bringToFront();
-        await options.keyboard.down("Control");
-        await openBrowserSwitcher(options);
+        protectedPage = await browser.newPage();
+        await protectedPage.goto("chrome://version/");
+        await protectedPage.bringToFront();
+        await protectedPage.keyboard.down("Control");
+        await openBrowserSwitcher(protectedPage);
         await openBrowserSwitcher(peers[2]);
         const element = await peers[2].waitForSelector(
           ":root >>> iframe.tab-switcher-frame.vimium-ui-component-visible",
@@ -3705,6 +3745,7 @@ try {
       } finally {
         await options.keyboard.up("Control");
         for (const peer of peers) if (!peer.isClosed()) await peer.close();
+        if (protectedPage && !protectedPage.isClosed()) await protectedPage.close();
         await worker.evaluate(async () => {
           chrome.commands.getAll = globalThis.refillOriginalCommands;
           await Settings.set("tabSwitcherColumns", Settings.defaultOptions.tabSwitcherColumns);

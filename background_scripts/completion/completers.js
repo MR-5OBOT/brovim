@@ -307,11 +307,15 @@ export class BookmarkCompleter {
       return;
     }
 
-    this.bookmarksTreePromise = chrome.bookmarks.getTree();
-    const bookmarksTree = await this.bookmarksTreePromise;
-    this.bookmarks = this.traverseBookmarks(bookmarksTree)
-      .filter((b) => b.url != null);
-    this.bookmarksTreePromise = null;
+    this.bookmarksTreePromise = (async () => {
+      const bookmarksTree = await chrome.bookmarks.getTree();
+      this.bookmarks = this.traverseBookmarks(bookmarksTree).filter((b) => b.url != null);
+    })();
+    try {
+      await this.bookmarksTreePromise;
+    } finally {
+      this.bookmarksTreePromise = null;
+    }
   }
 
   // Traverses the bookmark hierarchy, and returns a flattened list of all bookmarks.
@@ -409,6 +413,7 @@ export class DomainCompleter {
   // - `referenceCount` is a count of the number of History entries within this domain.
   //    If `referenceCount` goes to zero, the domain entry can and should be deleted.
   domains;
+  urls = new Set(); // Count distinct history URLs, rather than every visit to the same URL.
 
   async filter({ queryTerms, query }) {
     const isMultiWordQuery = /\S\s/.test(query);
@@ -442,13 +447,20 @@ export class DomainCompleter {
   }
 
   async populateDomains() {
-    await HistoryCache.onLoaded();
-    this.domains = {};
-    for (const entry of HistoryCache.history) {
-      this.onVisited(entry);
+    if (this.domainsPromise) return await this.domainsPromise;
+    this.domainsPromise = (async () => {
+      await HistoryCache.onLoaded();
+      this.domains = {};
+      this.urls.clear();
+      for (const entry of HistoryCache.history) this.onVisited(entry);
+      chrome.history.onVisited.addListener(this.onVisited.bind(this));
+      chrome.history.onVisitRemoved.addListener(this.onVisitRemoved.bind(this));
+    })();
+    try {
+      await this.domainsPromise;
+    } finally {
+      this.domainsPromise = null;
     }
-    chrome.history.onVisited.addListener(this.onVisited.bind(this));
-    chrome.history.onVisitRemoved.addListener(this.onVisitRemoved.bind(this));
   }
 
   onVisited(newPage) {
@@ -461,15 +473,20 @@ export class DomainCompleter {
       if (slot.entry.lastVisitTime < newPage.lastVisitTime) {
         slot.entry = newPage;
       }
-      slot.referenceCount += 1;
+      if (!this.urls.has(newPage.url)) {
+        this.urls.add(newPage.url);
+        slot.referenceCount += 1;
+      }
     }
   }
 
   onVisitRemoved(toRemove) {
     if (toRemove.allHistory) {
       this.domains = {};
+      this.urls.clear();
     } else {
       for (const url of toRemove.urls) {
+        if (!this.urls.delete(url)) continue;
         const domain = this.parseDomainAndScheme(url);
         const entry = this.domains[domain];
         if (entry == null) continue;
@@ -724,23 +741,26 @@ export const HistoryCache = {
       await this.chromeHistoryPromise;
       return;
     }
-    this.chromeHistoryPromise = chrome.history.search({
-      text: "",
-      maxResults: this.size,
-      startTime: 0,
-    });
-
-    const history = await this.chromeHistoryPromise;
-
-    // On Firefox, some history entries do not have titles.
-    for (const entry of history) {
-      if (entry.title == null) entry.title = "";
+    this.chromeHistoryPromise = (async () => {
+      const history = await chrome.history.search({
+        text: "",
+        maxResults: this.size,
+        startTime: 0,
+      });
+      // On Firefox, some history entries do not have titles.
+      for (const entry of history) {
+        if (entry.title == null) entry.title = "";
+      }
+      history.sort(this.compareHistoryByUrl);
+      this.history = history;
+      chrome.history.onVisited.addListener(this._onVisitedListener);
+      chrome.history.onVisitRemoved.addListener(this._onVisitRemovedListener);
+    })();
+    try {
+      await this.chromeHistoryPromise;
+    } finally {
+      this.chromeHistoryPromise = null;
     }
-    history.sort(this.compareHistoryByUrl);
-    this.history = history;
-    chrome.history.onVisited.addListener(this._onVisitedListener);
-    chrome.history.onVisitRemoved.addListener(this._onVisitRemovedListener);
-    this.chromeHistoryPromise = null;
   },
 
   compareHistoryByUrl(a, b) {

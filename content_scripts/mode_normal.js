@@ -104,8 +104,8 @@ const NormalModeCommands = {
 
   toggleViewSource() {
     chrome.runtime.sendMessage({ handler: "getCurrentTabUrl" }, function (url) {
-      if (url.substr(0, 12) === "view-source:") {
-        url = url.substr(12, url.length - 12);
+      if (url.startsWith("view-source:")) {
+        url = url.slice(12);
       } else {
         url = "view-source:" + url;
       }

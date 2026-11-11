@@ -67,8 +67,11 @@ export async function save(profile = defaultProfile, shortcutsFile = defaultShor
 if (import.meta.main) {
   const args = [...Deno.args];
   const at = args.indexOf("--profile");
-  const profile = at >= 0 ? args.splice(at, 2)[1] : defaultProfile;
   try {
+    if (at >= 0 && (!args[at + 1] || args[at + 1].startsWith("--"))) {
+      throw new Error("--profile requires a profile directory.");
+    }
+    const profile = at >= 0 ? args.splice(at, 2)[1] : defaultProfile;
     if (args[0] === "save") {
       await save(profile);
       console.log(`Saved the shortcuts of ${profile} to helium/shortcuts.json.`);

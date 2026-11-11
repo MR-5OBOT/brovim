@@ -1,5 +1,6 @@
 import "./test_helper.js";
 import "../../tests/unit_tests/test_chrome_stubs.js";
+import "../../lib/dom_utils.js";
 import "../../content_scripts/mode.js";
 import "../../content_scripts/ui_component.js";
 import "../../content_scripts/tab_switcher.js";
@@ -450,7 +451,8 @@ context("configured switcher shortcut", () => {
     assert.equal([{ handler: "endTabSwitcherCycle", id: "released-cycle" }], messages);
   });
   should("open with Ctrl held even when Alt is up", async () => {
-    stub(globalThis, "document", { activeElement: { tagName: "BODY" } });
+    stub(TabSwitcher, "painted", true);
+    stub(globalThis, "document", { activeElement: { tagName: "BODY" }, hasFocus: () => true });
     stub(TabSwitcher, "modifierState", { ctrlKey: true, altKey: false });
     let shown = false;
     stub(TabSwitcher, "activate", () => {
@@ -464,6 +466,440 @@ context("configured switcher shortcut", () => {
     assert.isTrue(shown);
     assert.equal({ opened: true }, result);
   });
+  should("leave the switch to the background where the modifier can't be seen", async () => {
+    stub(TabSwitcher, "painted", true);
+    const frame = { tagName: "IFRAME" };
+    const page = { activeElement: { tagName: "BODY" }, hasFocus: () => true };
+    stub(TabSwitcher, "tabSwitcherUI", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "keysFrame", null);
+    stub(TabSwitcher, "modifierState", { altKey: true });
+    stub(TabSwitcher, "activate", () => {
+      throw new Error("Opened a grid whose release would go unseen");
+    });
+    stub(TabSwitcher, "quickSwitch", () => {
+      throw new Error("Guessed at a release");
+    });
+    for (
+      const [name, unseen] of [
+        ["the address bar", { ...page, hasFocus: () => false }],
+        ["a PDF", { ...page, contentType: "application/pdf" }],
+        ["an embedded page without Brovim", { ...page, activeElement: frame }],
+        ["a plugin", { ...page, activeElement: { tagName: "EMBED" } }],
+        ["a frame in a shadow root", {
+          ...page,
+          activeElement: { tagName: "DIV", shadowRoot: { activeElement: frame } },
+        }],
+      ]
+    ) {
+      stub(globalThis, "document", unseen);
+      stub(TabSwitcher, "cycle", null);
+      const result = await TabSwitcher.activateFromBrowserShortcut(name, {
+        cycle: { id: "carried", startedAt: 0 },
+      });
+      assert.equal({ opened: false }, result);
+      // The background carries the gesture on to the next tab.
+      assert.equal(null, TabSwitcher.cycle);
+    }
+  });
+  should("open over an embedded page that reports its modifier keys", async () => {
+    stub(TabSwitcher, "painted", true);
+    const frame = { tagName: "IFRAME" };
+    stub(globalThis, "document", { activeElement: frame, hasFocus: () => true });
+    stub(TabSwitcher, "tabSwitcherUI", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "cycle", null);
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(TabSwitcher, "keysFrame", null);
+    stub(TabSwitcher, "modifierState", {});
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    stub(TabSwitcher, "warmUp", () => {});
+    const opened = [];
+    stub(TabSwitcher, "activate", (_frameId, options) => {
+      opened.push(options.showDelay);
+      return Promise.resolve(true);
+    });
+    let quick = 0;
+    stub(TabSwitcher, "quickSwitch", () => {
+      quick++;
+      return Promise.resolve({ opened: true, quickSwitch: true });
+    });
+    TabSwitcher.recordKeyboardEvent({ type: "keydown", key: "Alt", altKey: true }, true);
+    assert.equal(frame, TabSwitcher.keysFrame);
+    assert.equal({ opened: true }, await TabSwitcher.activateFromBrowserShortcut("held", {}));
+    assert.equal([TabSwitcher.showDelayMs], opened);
+    // A tap: the frame reports the release before the shortcut arrives.
+    TabSwitcher.recordKeyboardEvent({ type: "keyup", key: "Alt", altKey: false }, true);
+    await TabSwitcher.activateFromBrowserShortcut("tapped", {});
+    assert.equal(1, quick);
+    assert.equal(1, opened.length);
+  });
+  should("report only the shortcut's modifier, and Shift with it, from an embedded page", () => {
+    const sent = [];
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    stub(chrome.runtime, "id", "brovim");
+    stub(chrome.runtime, "sendMessage", (message) => {
+      sent.push(message);
+      return Promise.resolve();
+    });
+    const event = (type, key, modifiers = {}) => ({
+      type,
+      key,
+      altKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      repeat: false,
+      ...modifiers,
+    });
+    for (
+      const ignored of [
+        event("keydown", "a"),
+        event("keydown", "Control", { ctrlKey: true }),
+        event("keydown", "Shift", { shiftKey: true }),
+        event("keydown", "Alt", { altKey: true, repeat: true }),
+      ]
+    ) TabSwitcher.reportKeyboardEvent(ignored);
+    assert.equal([], sent);
+    TabSwitcher.reportKeyboardEvent(event("keydown", "Alt", { altKey: true }));
+    TabSwitcher.reportKeyboardEvent(event("keydown", "Shift", { altKey: true, shiftKey: true }));
+    TabSwitcher.reportKeyboardEvent(event("keyup", "Alt"));
+    assert.equal(
+      [
+        ["keydown", "Alt", true, false],
+        ["keydown", "Shift", true, true],
+        ["keyup", "Alt", false, false],
+      ],
+      sent.map(({ handler, frameId, message }) => {
+        assert.equal(["sendMessageToFrames", 0, "tabSwitcherKey"], [
+          handler,
+          frameId,
+          message.handler,
+        ]);
+        const { type, key, altKey, shiftKey } = message.event;
+        return [type, key, altKey, shiftKey];
+      }),
+    );
+  });
+  should("show a held grid only after the tap window, and never for a tap", async () => {
+    stub(TabSwitcher, "painted", true);
+    stub(globalThis, "document", { activeElement: { tagName: "BODY" }, hasFocus: () => true });
+    stub(TabSwitcher, "showDelayMs", 30);
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    stub(TabSwitcher, "cycle", null);
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "isAltCycling", false);
+    stub(TabSwitcher, "openingGeneration", 0);
+    stub(TabSwitcher, "uiLoad", Promise.resolve());
+    stub(TabSwitcher, "init", () => {});
+    const shown = [];
+    stub(TabSwitcher, "tabSwitcherUI", {
+      showing: false,
+      iframePort: Promise.resolve(),
+      show(message, focusOptions) {
+        shown.push([message.name, focusOptions.restoreFocus]);
+        this.showing = true;
+        return Promise.resolve();
+      },
+      hide() {},
+    });
+    const switched = [];
+    stub(chrome.runtime, "sendMessage", (message) => {
+      switched.push(message.handler);
+      return Promise.resolve({ switched: true });
+    });
+    const alt = (type) => ({ type, key: "Alt", altKey: type === "keydown", repeat: false });
+
+    TabSwitcher.recordKeyboardEvent(alt("keydown"));
+    const tap = TabSwitcher.activateFromBrowserShortcut("tap", {});
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    TabSwitcher.recordKeyboardEvent(alt("keyup"));
+    assert.equal({ opened: true, quickSwitch: true }, await tap);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal([], shown);
+    assert.equal(["quickSwitchTab"], switched);
+
+    TabSwitcher.recordKeyboardEvent(alt("keydown"));
+    const hold = TabSwitcher.activateFromBrowserShortcut("hold", {});
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    assert.equal([], shown);
+    assert.equal({ opened: true }, await hold);
+    // The grid returns the focus to whatever had it: the user may have been typing.
+    assert.equal([["activate", true]], shown);
+  });
+
+  should("drop a press that waited while the press before it switched tabs", async () => {
+    const source = { id: 921, windowId: 892, index: 0, active: true, url: "https://busy.example/" };
+    const peer = { id: 922, windowId: 892, index: 1, url: "https://peer.example/" };
+    const third = { id: 923, windowId: 892, index: 2, url: "https://third.example/" };
+    let active = source;
+    stub(
+      chrome.tabs,
+      "query",
+      (query) => Promise.resolve(query.active ? [active] : [source, peer, third]),
+    );
+    const asked = [];
+    let answer;
+    stub(chrome.tabs, "sendMessage", (id, message) => {
+      if (message.handler !== "openTabSwitcher") return Promise.resolve();
+      asked.push(id);
+      return new Promise((resolve) => answer = resolve);
+    });
+    stub(chrome.tabs, "update", () => {
+      throw new Error("The spent press switched tabs a second time");
+    });
+    // A busy page takes its time to answer; an impatient second press queues behind the first.
+    const first = SwitcherCommands.openTabSwitcher(source);
+    const second = SwitcherCommands.openTabSwitcher(source);
+    while (!answer) await new Promise((resolve) => setTimeout(resolve, 1));
+    // The page answers at last: it was a tap, and it has switched to the peer.
+    active = { ...peer, active: true };
+    answer({ opened: true });
+    await Promise.all([first, second]);
+    assert.equal([921], asked);
+    SwitcherCommands.endTabSwitcherCycle(892);
+  });
+  should("switch directly only until a slow grid frame has started", async () => {
+    let started;
+    const ui = { showing: false, iframePort: new Promise((resolve) => started = resolve) };
+    stub(TabSwitcher, "tabSwitcherUI", ui);
+    stub(TabSwitcher, "currentRequestId", "slow");
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(TabSwitcher, "isUnavailable", false);
+    TabSwitcher.suspend("stale");
+    assert.isFalse(TabSwitcher.isUnavailable);
+    TabSwitcher.suspend("slow");
+    assert.isTrue(TabSwitcher.isUnavailable);
+    assert.equal({ opened: false }, await TabSwitcher.activateFromBrowserShortcut("next", {}));
+    started();
+    await ui.iframePort;
+    await Promise.resolve();
+    assert.isFalse(TabSwitcher.isUnavailable);
+  });
+
+  should(
+    "hand a held gesture to the next tab only when that tab can tell a hold from a tap",
+    async () => {
+      const tabs = [811, 812, 813].map((id, index) => ({
+        id,
+        index,
+        windowId: 891,
+        active: index === 0,
+        url: "https://example.com/",
+      }));
+      stub(
+        chrome.tabs,
+        "query",
+        (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+      );
+      stub(chrome.tabs, "update", (id) => {
+        for (const tab of tabs) tab.active = tab.id === id;
+        return Promise.resolve(tabs.find((t) => t.id === id));
+      });
+      // In the background, the time since the service worker started.
+      let now = 10_000;
+      stub(performance, "now", () => now);
+      let answer;
+      const handoffs = [];
+      stub(chrome.tabs, "sendMessage", (_id, message) => {
+        if (message.handler === "openTabSwitcher") return answer();
+        if (message.handler === "rememberTabSwitcherCycle") handoffs.push(message.handoff);
+        return Promise.resolve();
+      });
+      await bgUtils.tabRecency.init();
+      const press = async () => {
+        for (const tab of tabs) tab.active = tab.id === 811;
+        for (const id of [813, 812, 811]) bgUtils.tabRecency.register(id);
+        await SwitcherCommands.openTabSwitcher(tabs[0]);
+        SwitcherCommands.endTabSwitcherCycle(891);
+      };
+      try {
+        // The page saw the modifier still held, but couldn't show the grid: it isn't being drawn.
+        answer = () => Promise.resolve({ opened: false, held: true });
+        await press();
+        // No page could see the keys (the address bar had the focus), and the switch was quick.
+        answer = () => Promise.resolve({ opened: false });
+        await press();
+        // The same, but the switch came late: the release may already have been lost.
+        answer = () => {
+          now += 80;
+          return Promise.resolve({ opened: false });
+        };
+        await press();
+        // The press had to start the stopped background, so it arrived late itself.
+        now = 30;
+        answer = () => Promise.resolve({ opened: false });
+        await press();
+        assert.equal(["held", "unknown", undefined, undefined], handoffs);
+      } finally {
+        SwitcherCommands.endTabSwitcherCycle(891);
+      }
+    },
+  );
+  should(
+    "show a handed-off gesture's grid after the tap window, and let a tap end it",
+    async () => {
+      stub(TabSwitcher, "painted", true);
+      stub(globalThis, "document", { activeElement: { tagName: "BODY" }, hasFocus: () => true });
+      stub(TabSwitcher, "showDelayMs", 30);
+      stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+      stub(TabSwitcher, "cycle", null);
+      stub(TabSwitcher, "shortcutRequest", null);
+      stub(TabSwitcher, "isOpening", false);
+      stub(TabSwitcher, "isAltCycling", false);
+      stub(TabSwitcher, "openingGeneration", 0);
+      stub(TabSwitcher, "modifierState", {});
+      stub(TabSwitcher, "keyboardEventAt", 0);
+      stub(TabSwitcher, "uiLoad", Promise.resolve());
+      stub(TabSwitcher, "init", () => {});
+      const shown = [];
+      stub(TabSwitcher, "tabSwitcherUI", {
+        showing: false,
+        iframePort: Promise.resolve(),
+        show(message) {
+          shown.push(message.cycle?.selectedId);
+          this.showing = true;
+          return Promise.resolve();
+        },
+        hide() {},
+      });
+      const sent = [];
+      stub(chrome.runtime, "sendMessage", (message) => {
+        sent.push([message.handler, message.cycle?.selectedId]);
+        return Promise.resolve({ switched: true });
+      });
+      // The gesture began on tab 1, which couldn't show the grid, and switched to tab 2.
+      const cycle = (id) => ({
+        id,
+        startedAt: Date.now() - 5,
+        tabIds: [1, 2, 3],
+        sourceId: 1,
+        selectedId: 2,
+        previousId: 2,
+      });
+      const alt = (type) => ({ type, key: "Alt", altKey: type === "keydown", repeat: false });
+
+      // A tap: its release reaches this tab within the tap window, and the switch was all it
+      // wanted. Committing the gesture's selection, this tab, switches nowhere else.
+      TabSwitcher.rememberCycle(cycle("tap"), TabSwitcher.shortcut);
+      const tap = TabSwitcher.activateFromBrowserShortcut("tap", {
+        cycle: cycle("tap"),
+        showDelay: 30,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      TabSwitcher.recordKeyboardEvent(alt("keyup"));
+      await tap;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.equal([], shown);
+      assert.equal([["quickSwitchTab", 2]], sent);
+
+      // A hold: the grid shows after the tap window, with the gesture's own list and selection.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      TabSwitcher.rememberCycle(cycle("hold"), TabSwitcher.shortcut);
+      assert.equal(
+        { opened: true },
+        await TabSwitcher.activateFromBrowserShortcut("hold", {
+          cycle: cycle("hold"),
+          showDelay: 30,
+        }),
+      );
+      assert.equal([2], shown);
+    },
+  );
+  should("report a held modifier only after seeing it go down during this gesture", () => {
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    stub(TabSwitcher, "cycle", null);
+    stub(TabSwitcher, "modifierState", {});
+    stub(TabSwitcher, "keyboardEventAt", 0);
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(TabSwitcher, "tabSwitcherUI", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "isAltCycling", false);
+    assert.isFalse(TabSwitcher.modifierHeld());
+    TabSwitcher.recordKeyboardEvent({ type: "keydown", key: "Alt", altKey: true, repeat: false });
+    assert.isTrue(TabSwitcher.modifierHeld());
+    // A gesture carried here from another tab began after this page's last key event.
+    stub(TabSwitcher, "cycle", { id: "later", startedAt: Date.now() + 1000 });
+    assert.isFalse(TabSwitcher.modifierHeld());
+    stub(TabSwitcher, "cycle", null);
+    TabSwitcher.recordKeyboardEvent({ type: "keyup", key: "Alt", altKey: false, repeat: false });
+    assert.isFalse(TabSwitcher.modifierHeld());
+  });
+  should("leave a page the browser hasn't drawn yet to the background at once", async () => {
+    // Waiting for a script in its head, the page shows nothing and gets no keys: it can't tell a
+    // hold from a tap. Declining at once lets the next tab do that, while the press is fresh.
+    stub(globalThis, "document", { activeElement: { tagName: "BODY" }, hasFocus: () => true });
+    stub(TabSwitcher, "painted", false);
+    stub(TabSwitcher, "tabSwitcherUI", null);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "isUnavailable", false);
+    stub(TabSwitcher, "cycle", null);
+    stub(TabSwitcher, "modifierState", {});
+    stub(TabSwitcher, "keyboardEventAt", 0);
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    let opened = 0;
+    stub(TabSwitcher, "activate", () => {
+      opened++;
+      return Promise.resolve(true);
+    });
+    assert.equal({ opened: false }, await TabSwitcher.activateFromBrowserShortcut("blank", {}));
+    assert.equal(0, opened);
+    // Drawn, it handles the shortcut itself.
+    TabSwitcher.painted = true;
+    TabSwitcher.recordKeyboardEvent({ type: "keydown", key: "Alt", altKey: true, repeat: false });
+    assert.equal({ opened: true }, await TabSwitcher.activateFromBrowserShortcut("drawn", {}));
+    assert.equal(1, opened);
+  });
+  should("rebuild the grid's frame if the page threw it away", () => {
+    let closed = 0;
+    const old = { detached: true, messageChannelPorts: [{ close: () => closed++ }] };
+    stub(TabSwitcher, "tabSwitcherUI", old);
+    stub(TabSwitcher, "backdrop", {});
+    stub(TabSwitcher, "uiLoad", null);
+    const loads = [];
+    stub(UIComponent.prototype, "load", (url, _className, _handler, options) => {
+      loads.push([url, options]);
+      return Promise.resolve();
+    });
+    TabSwitcher.init();
+    assert.isTrue(TabSwitcher.tabSwitcherUI !== old);
+    assert.equal(null, TabSwitcher.backdrop);
+    assert.equal(1, closed);
+    // It joins a page that is still arriving: the shortcut works while a page loads.
+    assert.equal([["pages/tab_switcher_page.html", { early: true }]], loads);
+    // A frame still in the page is kept.
+    const current = TabSwitcher.tabSwitcherUI;
+    TabSwitcher.init();
+    assert.equal(current, TabSwitcher.tabSwitcherUI);
+  });
+
+  should(
+    "keep the background running only while a tab that can't show the grid is in front",
+    async () => {
+      const intervals = [];
+      const cleared = [];
+      stub(globalThis, "setInterval", (_callback, ms) => intervals.push(ms));
+      stub(globalThis, "clearInterval", (id) => cleared.push(id));
+      let answer;
+      stub(chrome.tabs, "sendMessage", () => answer());
+      stub(chrome.tabs, "query", () => Promise.resolve([{ id: 7 }]));
+      // A browser page without Brovim, or one still blank: nothing answers.
+      answer = () => Promise.reject(new Error("Receiving end does not exist"));
+      await SwitcherCommands.checkFrontTab(7);
+      await SwitcherCommands.checkFrontTab(7);
+      assert.equal([20_000], intervals);
+      // A website: it wakes the background itself as the shortcut's modifier goes down.
+      answer = () => Promise.resolve(true);
+      await SwitcherCommands.checkFrontTab(7);
+      assert.equal([1], cleared);
+      // An answer from a tab that has left the front changes nothing.
+      answer = () => Promise.resolve(false);
+      stub(chrome.tabs, "query", () => Promise.resolve([{ id: 8 }]));
+      await SwitcherCommands.checkFrontTab(7);
+      assert.equal([20_000], intervals);
+    },
+  );
 
   should("keep a frozen order through protected-page hops, then reset after release", async () => {
     const tabs = [801, 802, 803, 804].map((id, index) => ({
@@ -572,6 +1008,19 @@ context("TabSwitcher", () => {
     const result = await sendRequestHandlers.quickSwitchTab({ tab: { id: 201, windowId: 7 } });
     assert.isTrue(result.switched);
     assert.equal({ id: 204, active: true }, selected);
+  });
+
+  should("give a tab still waiting for its first page the address it is loading", async () => {
+    stub(chrome.tabs, "query", () =>
+      Promise.resolve([
+        { id: 1, index: 0, title: "Loaded", url: "https://example.com/", active: true },
+        { id: 2, index: 1, title: "", url: "", pendingUrl: "https://slow.example/page" },
+      ]));
+    const tabs = await sendRequestHandlers.getOpenTabsWithScreenshots({ tab: { windowId: 1 } });
+    assert.equal(
+      ["https://example.com/", "https://slow.example/page"],
+      tabs.map((tab) => tab.url),
+    );
   });
 
   should("fetch open tabs with screenshot placeholders from background", async () => {

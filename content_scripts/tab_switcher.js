@@ -15,6 +15,15 @@ const TabSwitcher = {
   uiLoad: null,
   opening: null,
   backdrop: null,
+  // A held shortcut shows the grid after this long, as desktop Alt+Tab switchers do, so that a
+  // quick tap switches tabs without flashing the grid or taking the focus. Human taps differ:
+  // raise it if taps still flash the grid, lower it if the grid feels late.
+  showDelayMs: 90,
+  keysFrame: null, // The focused embedded page that last reported its modifier keys.
+  // Whether the browser has drawn this page yet. Until it has, the page shows nothing, Brovim's
+  // grid included, and gets no keys: a page still waiting for a script or stylesheet in its head,
+  // as on a slow network.
+  painted: false,
 
   activate(sourceFrameId, options) {
     if (this.isUnavailable) return Promise.resolve(false);
@@ -44,8 +53,15 @@ const TabSwitcher = {
     this.shortcut = options.shortcut ?? this.shortcut;
     if (options.cycle || !this.tabSwitcherUI?.showing) this.cycle = options.cycle ?? null;
     this.currentRequestId = requestId;
-    const focusedInFrame = ["IFRAME", "FRAME"].includes(document.activeElement?.tagName);
-    if (this.modifierReleased() && !focusedInFrame) return await this.quickSwitch();
+    if (!this.tabSwitcherUI?.showing && !this.isOpening) {
+      // This page can't tell a tap from a hold, nor see the release. The background switches
+      // tabs, as it does on pages that Brovim can't run on, and the next tab can tell.
+      if (!this.seesShortcutKeys()) {
+        this.cycle = null;
+        return { opened: false };
+      }
+      if (this.modifierReleased()) return await this.quickSwitch();
+    }
 
     let complete;
     const released = new Promise((resolve) => complete = resolve);
@@ -55,6 +71,8 @@ const TabSwitcher = {
       altCycle: true,
       requestId,
       reverse: this.modifierState.shiftKey === true && !this.shortcut.requiresShift,
+      // A carried gesture is already past its first press, unless it says otherwise.
+      showDelay: options.showDelay ?? (options.cycle ? 0 : this.showDelayMs),
     }).then((opened) => ({ opened }));
     try {
       return await Promise.race([showing, released]);
@@ -88,12 +106,15 @@ const TabSwitcher = {
     const generation = ++this.openingGeneration;
     const overlayId = this.overlayId;
     const ui = this.tabSwitcherUI;
+    const held = options?.showDelay &&
+      new Promise((resolve) => Utils.setTimeout(options.showDelay, resolve));
     // Let an early Alt release switch directly while the hidden frame warms up. Do not send its
     // activation or fetch thumbnails if that request was already completed or cancelled.
     // Passive preview capture keeps screenshots current without delaying this interaction.
     this.opening = (async () => {
-      await Promise.all([this.uiLoad, ui.iframePort]);
-      if (generation !== this.openingGeneration) return false;
+      await Promise.all([this.uiLoad, ui.iframePort, held]);
+      // The tab can be left during that wait: a grid must never open, unseen, in a hidden tab.
+      if (generation !== this.openingGeneration || globalThis.document?.hidden) return false;
       this.hideBackdrop();
       await ui.show(
         {
@@ -105,7 +126,7 @@ const TabSwitcher = {
           reverse: options?.reverse,
           commitOnOpen: this.pendingCommit,
         },
-        { sourceFrameId, focus: true },
+        { sourceFrameId, focus: true, restoreFocus: true },
       );
       return generation === this.openingGeneration && !this.isUnavailable;
     })().finally(() => {
@@ -117,22 +138,30 @@ const TabSwitcher = {
   // The shortcut's modifier goes down before its letter. Load the hidden grid frame and wake the
   // background then, so the first grid on a page opens as fast as later ones. A quick tap doesn't
   // wait for either.
-  warmUp(event) {
+  // - fromFrame: an embedded page reported the key through the background, which is awake.
+  warmUp(event, fromFrame = false) {
     if (event.repeat || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
     // Loading the frame reads settings (for the user's CSS), which can still be loading early in a
     // page's life. A script orphaned by an extension update can't reach the extension.
     if (!Settings.isLoaded() || !chrome.runtime?.id) return;
     this.init();
-    chrome.runtime.sendMessage({ handler: "warmTabSwitcher" }).catch(() => {});
+    if (!fromFrame) chrome.runtime.sendMessage({ handler: "warmTabSwitcher" }).catch(() => {});
   },
 
   init() {
+    // Build the grid's frame again if the page threw the last one away.
+    if (this.tabSwitcherUI?.detached) {
+      for (const port of this.tabSwitcherUI.messageChannelPorts || []) port.close();
+      this.tabSwitcherUI = this.backdrop = null;
+    }
     if (!this.tabSwitcherUI) {
       this.tabSwitcherUI = new UIComponent();
       this.uiLoad = this.tabSwitcherUI.load(
         "pages/tab_switcher_page.html",
         "tab-switcher-frame",
         (event) => this.handleUiMessage(event),
+        // The shortcut works while a page is still arriving on a slow network.
+        { early: true },
       );
     }
   },
@@ -216,6 +245,19 @@ const TabSwitcher = {
     if (this.shortcutRequest?.id === requestId) this.shortcutRequest.complete({ opened: false });
   },
 
+  // The grid's frame hasn't started in time. Let the background switch directly until it has,
+  // rather than make every press wait for it.
+  suspend(requestId) {
+    if (this.currentRequestId !== requestId) return;
+    this.cancel(requestId);
+    const ui = this.tabSwitcherUI;
+    this.isUnavailable = true;
+    ui?.iframePort.then(() => {
+      if (this.tabSwitcherUI === ui) this.isUnavailable = false;
+    });
+  },
+
+  // This page can't show the grid at all.
   abort(requestId) {
     if (this.currentRequestId !== requestId) return;
     this.cancel(requestId);
@@ -251,6 +293,24 @@ const TabSwitcher = {
     return this.shortcut.modifiers.some((key) => this.modifierState[key] === false);
   },
 
+  // Whether this page saw the shortcut's modifier go down, and not back up, during this gesture.
+  modifierHeld() {
+    if (this.cycle && this.keyboardEventAt < this.cycle.startedAt) return false;
+    return this.shortcut.modifiers.every((key) => this.modifierState[key] === true);
+  },
+
+  // Whether the shortcut's modifier going up will reach this page. The address bar, the PDF viewer
+  // and embedded pages without Brovim keep their keys to themselves, and the browser gives a page
+  // none before it has drawn it.
+  seesShortcutKeys() {
+    if (!this.painted || !document.hasFocus()) return false;
+    if (document.contentType === "application/pdf") return false;
+    const focused = DomUtils.deepActiveElement();
+    if (!["IFRAME", "FRAME", "EMBED", "OBJECT"].includes(focused?.tagName)) return true;
+    // An embedded page with Brovim reports its modifier keys: see reportKeyboardEvent.
+    return focused === this.keysFrame;
+  },
+
   rememberCycle(cycle, shortcut) {
     this.cycle = cycle;
     this.shortcut = shortcut;
@@ -269,7 +329,33 @@ const TabSwitcher = {
     }
   },
 
-  recordKeyboardEvent(event) {
+  // In an embedded page: keys typed here don't reach the top frame, which runs the switcher. Tell
+  // it about the shortcut's modifier (and Shift, which reverses the direction).
+  reportKeyboardEvent(event) {
+    const isModifier = Utils.isBrowserShortcutRelease(event, this.shortcut) ||
+      (event.key === "Shift" && this.shortcut.modifiers.some((key) => event[key]));
+    if (!isModifier || event.repeat || !chrome.runtime?.id) return;
+    const { type, key, altKey, ctrlKey, metaKey, shiftKey } = event;
+    try {
+      chrome.runtime.sendMessage({
+        handler: "sendMessageToFrames",
+        frameId: 0,
+        message: {
+          handler: "tabSwitcherKey",
+          event: { type, key, altKey, ctrlKey, metaKey, shiftKey },
+        },
+      }).catch(() => {});
+    } catch (error) {
+      if (!/Extension context invalidated/i.test(error?.message)) throw error;
+    }
+  },
+
+  // - fromFrame: an embedded page of this tab reported the event.
+  recordKeyboardEvent(event, fromFrame = false) {
+    if (fromFrame) {
+      this.keysFrame = DomUtils.deepActiveElement();
+      if (event.type === "keydown") this.warmUp(event, true);
+    }
     // A new primary-modifier press is a new gesture, even if its previous release happened on
     // a protected page before this page received the carried cycle.
     if (
@@ -479,11 +565,22 @@ globalThis.TabPreview = TabPreview;
 
 if (globalThis.window != null) {
   // Only real key presses: a page must not be able to fake a modifier release and commit the grid.
-  const recordKeyboardEvent = forTrusted((event) => TabSwitcher.recordKeyboardEvent(event));
+  const recordKeyboardEvent = forTrusted((event) =>
+    DomUtils.isTopFrame()
+      ? TabSwitcher.recordKeyboardEvent(event)
+      : TabSwitcher.reportKeyboardEvent(event)
+  );
   globalThis.addEventListener("keydown", recordKeyboardEvent, true);
   globalThis.addEventListener("keyup", recordKeyboardEvent, true);
   if (DomUtils.isTopFrame()) {
+    // A page's first animation frame comes when the browser first draws it.
+    requestAnimationFrame(() => TabSwitcher.painted = true);
     globalThis.addEventListener("keydown", forTrusted((event) => TabSwitcher.warmUp(event)), true);
+    // The grid belongs to the tab the user is looking at. Left open in a tab that went away, it
+    // would be waiting there, with a stale selection, when the user comes back.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) TabSwitcher.cancel(TabSwitcher.currentRequestId);
+    });
     if (/^(https?|file):$/.test(location.protocol)) TabPreview.init();
   }
 }

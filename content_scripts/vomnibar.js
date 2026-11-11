@@ -60,7 +60,11 @@ const Vomnibar = {
       this.browserPagesUI = new UIComponent();
       this.browserPagesUI.load("pages/browser_pages.html", "browser-pages-frame");
     }
-    this.browserPagesUI.show({ name: "activate", targetTabId }, { sourceFrameId: 0, focus: true });
+    this.browserPagesUI.show({ name: "activate", targetTabId }, {
+      sourceFrameId: 0,
+      focus: true,
+      restoreFocus: true,
+    });
   },
 
   init() {

@@ -13,7 +13,7 @@ if (nativeNumber == null || Number(nativeNumber) === Number(desktopNumber)) {
 const root = Deno.env.get("BROVIM_EXTENSION_PATH") ||
   fileURLToPath(new URL("../../", import.meta.url));
 const python = `
-import ctypes as c, sys
+import ctypes as c, sys, time
 x = c.CDLL('libX11.so.6')
 t = c.CDLL('libXtst.so.6')
 x.XOpenDisplay.argtypes = [c.c_char_p]
@@ -36,7 +36,10 @@ d = x.XOpenDisplay(sys.argv[1].encode())
 if not d: raise RuntimeError('Cannot open isolated X display')
 for action in sys.argv[2:]:
     kind, key = action.split(':',1)
-    if kind == 'focus':
+    if kind == 'sleep':
+        x.XFlush(d)
+        time.sleep(int(key)/1000)
+    elif kind == 'focus':
         a,b,n = c.c_ulong(),c.c_ulong(),c.c_uint()
         children = c.POINTER(c.c_ulong)()
         x.XQueryTree(d,x.XDefaultRootWindow(d),c.byref(a),c.byref(b),c.byref(children),c.byref(n))
@@ -97,8 +100,74 @@ async function switcher(page) {
   await frame.waitForSelector("#panel.ready .selected");
   return frame;
 }
+const pdf = `%PDF-1.1
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]>>endobj
+trailer<</Root 1 0 R>>
+%%EOF`;
 const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (request) => {
-  const title = new URL(request.url).searchParams.get("title") || "Native peer";
+  const { pathname, searchParams, port } = new URL(request.url);
+  const title = searchParams.get("title") || "Native peer";
+  if (pathname === "/document.pdf") {
+    return new Response(pdf, { headers: { "content-type": "application/pdf" } });
+  }
+  // A slow network. Each response arrives after `late` ms, or never within the checks.
+  const late = (response) => new Promise((resolve) => setTimeout(() => resolve(response()), 8000));
+  const html = { headers: { "content-type": "text/html; charset=utf-8" } };
+  if (pathname === "/unanswered") {
+    // The server hasn't answered: the tab has no page yet.
+    return late(() => new Response(`<!doctype html><title>${title}</title>`, html));
+  }
+  if (pathname === "/arriving") {
+    // The first part of the page has arrived, and is drawn; the rest is on its way.
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(
+            `<!doctype html><title>${title}</title><h1>${title}</h1>${
+              "<p>Arrived</p>".repeat(200)
+            }`,
+          ));
+          setTimeout(() => {
+            try {
+              controller.enqueue(encoder.encode("<p>The rest</p>"));
+              controller.close();
+            } catch { /* The tab was closed. */ }
+          }, 8000);
+        },
+      }),
+      html,
+    );
+  }
+  if (pathname === "/blocked") {
+    // The page waits for a script in its head, and the browser draws nothing until it comes.
+    return new Response(
+      `<!doctype html><title>${title}</title><script src="/late.js"></script><h1>${title}</h1>`,
+      html,
+    );
+  }
+  if (pathname === "/late.js") {
+    return late(() => new Response("", { headers: { "content-type": "text/javascript" } }));
+  }
+  if (pathname === "/stalling") {
+    // Like YouTube: the page's main thread stalls just as the shortcut arrives.
+    return new Response(
+      `<!doctype html><title>${title}</title><h1>${title}</h1><script>addEventListener("keydown", (event) => {
+        if (event.key !== "Alt" || event.repeat) return;
+        setTimeout(() => { const end = performance.now() + 700; while (performance.now() < end); }, 60);
+      }, true)</script>`,
+      { headers: { "content-type": "text/html" } },
+    );
+  }
+  if (pathname === "/embedding") {
+    // The frame is cross-origin (localhost in 127.0.0.1), like an embedded editor or video.
+    return new Response(
+      `<!doctype html><title>${title}</title><h1>${title}</h1><iframe src="http://localhost:${port}/embedded?title=Embedded" style="width:600px;height:300px"></iframe>`,
+      { headers: { "content-type": "text/html" } },
+    );
+  }
   return new Response(
     `<!doctype html><title>${title}</title><h1>${title}</h1><input id="editor"><main style="height:5000px">Scrollable page</main>`,
     {
@@ -310,6 +379,236 @@ try {
   );
   pass("Shift reverses and Alt release commits the final selected tab");
 
+  const activeTabId = () =>
+    worker.evaluate(async () =>
+      (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+    );
+  // A tap of a human length: the modifier is released a moment after the letter.
+  const tap = () => keys("down:Alt_L", "sleep:20", "tap:q", "sleep:50", "up:Alt_L");
+  const gridVisible = (page) =>
+    page.evaluate(() =>
+      [...document.documentElement.children].some((element) =>
+        element.shadowRoot?.querySelector("iframe.tab-switcher-frame.vimium-ui-component-visible")
+      )
+    );
+
+  const typing = await browser.newPage();
+  typing.setDefaultTimeout(5000);
+  await typing.goto(`${origin}/typing?title=Typing`);
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  await until(() => typing.evaluate(() => document.hasFocus()), "Typing page did not gain focus");
+  const typingId = await activeTabId();
+  // A real click: Brovim takes the focus back from fields that focus themselves on a new page.
+  await (await typing.$("#editor")).click();
+  await typing.evaluate(() => {
+    globalThis.gridSeen = false;
+    const watch = () => {
+      globalThis.gridSeen ||= [...document.documentElement.children].some((element) =>
+        element.shadowRoot?.querySelector("iframe.tab-switcher-frame.vimium-ui-component-visible")
+      );
+      requestAnimationFrame(watch);
+    };
+    watch();
+  });
+  const typed = (text) =>
+    until(
+      () => typing.evaluate((text) => document.querySelector("#editor").value === text, text),
+      `The text field did not receive "${text}"`,
+    );
+  await keys("tap:a");
+  await typed("a");
+  await tap();
+  await until(async () => await activeTabId() !== typingId, "A quick tap did not switch tabs");
+  assert(!await typing.evaluate(() => gridSeen), "A quick tap flashed the grid");
+  await tap();
+  await until(async () => await activeTabId() === typingId, "A second tap did not switch back");
+  await keys("tap:b");
+  await typed("ab");
+  pass("Native quick taps never show the grid, and typing continues after switching back");
+  await keys("down:Alt_L", "tap:q");
+  await switcher(typing);
+  await keys("tap:Escape", "up:Alt_L");
+  await until(async () => !await gridVisible(typing), "Escape did not close the grid");
+  await keys("tap:c");
+  await typed("abc");
+  await keys("down:Alt_L", "tap:q");
+  await switcher(typing);
+  await keys("up:Alt_L");
+  await until(async () => await activeTabId() !== typingId, "Releasing Alt did not switch tabs");
+  await tap();
+  await until(async () => await activeTabId() === typingId, "A tap did not return to the page");
+  await keys("tap:d");
+  await typed("abcd");
+  pass("Native held grid returns the focus to the text field, cancelled or committed");
+
+  const embedding = await browser.newPage();
+  embedding.setDefaultTimeout(5000);
+  await embedding.goto(`${origin}/embedding?title=Embedding`);
+  await embedding.bringToFront();
+  await keys("focus:Embedding");
+  const embeddingId = await activeTabId();
+  const embedded = embedding.frames().find((frame) => frame.url().includes("/embedded"));
+  const typingInFrame = () =>
+    embedded.evaluate(() => document.hasFocus() && document.activeElement?.id === "editor");
+  await (await embedded.$("#editor")).click();
+  await until(typingInFrame, "The embedded text field did not gain focus");
+  await keys("down:Alt_L", "tap:q");
+  const embeddingGrid = await switcher(embedding);
+  const embeddingTarget = Number(
+    await embeddingGrid.$eval(".selected", (card) => card.dataset.id),
+  );
+  assert(embeddingTarget === typingId, "The grid over an embedded page chose the wrong tab");
+  await keys("up:Alt_L");
+  await until(
+    async () => await activeTabId() === typingId,
+    "Releasing Alt over an embedded page did not switch tabs",
+  );
+  await tap();
+  await until(async () => await activeTabId() === embeddingId, "A tap did not return");
+  await until(typingInFrame, "The embedded text field lost the focus to the grid");
+  pass("Native held Alt+Q while typing in an embedded page shows the grid and gives focus back");
+  await tap();
+  await until(
+    async () => await activeTabId() === typingId,
+    "A quick tap inside an embedded page did not switch tabs",
+  );
+  assert(!await gridVisible(embedding), "A quick tap inside an embedded page left a grid open");
+  pass("Native quick Alt+Q while typing in an embedded page switches tabs");
+
+  const stalling = await browser.newPage();
+  stalling.setDefaultTimeout(5000);
+  await stalling.goto(`${origin}/stalling?title=Stalling`);
+  await stalling.bringToFront();
+  await keys("focus:Stalling");
+  await until(() => stalling.evaluate(() => document.hasFocus()), "Stalling page has no focus");
+  const stallingId = await activeTabId();
+  // Twice: one slow answer must not cost the page its grid for good.
+  for (let round = 0; round < 2; round++) {
+    await keys("down:Alt_L", "sleep:50", "tap:q");
+    await switcher(stalling);
+    assert(
+      await activeTabId() === stallingId,
+      "A held shortcut on a stalling page switched tabs instead of showing the grid",
+    );
+    await keys("tap:Escape", "up:Alt_L");
+    await until(async () => !await gridVisible(stalling), "Escape did not close the grid");
+  }
+  pass("Native held Alt+Q on a page that stalls waits for it and shows the grid, every time");
+  await tap();
+  await until(
+    async () => await activeTabId() !== stallingId,
+    "A quick tap on a stalling page did not switch tabs",
+  );
+  assert(!await gridVisible(stalling), "A quick tap on a stalling page left a grid open");
+  pass("Native quick Alt+Q on a page that stalls switches once the page answers");
+
+  const document = await browser.newPage();
+  await document.goto(`${origin}/document.pdf`);
+  await document.bringToFront();
+  await keys("focus:document.pdf");
+  const documentId = await activeTabId();
+  // The PDF viewer keeps its keys: Brovim can't see the release, so every press switches.
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await keys("down:Alt_L", "tap:q");
+  await until(
+    async () => await activeTabId() !== documentId,
+    "Alt+Q on a PDF did not switch tabs",
+  );
+  await keys("up:Alt_L");
+  pass("Native Alt+Q on a PDF switches tabs directly");
+  await document.close();
+
+  // A slow network. Whether or not a loading tab can show the grid, holding the shortcut shows it.
+  const loading = (path) =>
+    worker.evaluate(async (url) => (await chrome.tabs.create({ url })).id, `${origin}${path}`);
+  const loadingGrid = (tabId) =>
+    worker.evaluate(async (tabId) => {
+      const visible = chrome.scripting.executeScript({
+        target: { tabId },
+        injectImmediately: true,
+        func: () => {
+          const ui = globalThis.TabSwitcher?.tabSwitcherUI;
+          return !!ui?.showing &&
+            ui.iframeElement.classList.contains("vimium-ui-component-visible");
+        },
+      }).then(([frame]) => frame.result, () => false);
+      return await Promise.race([visible, new Promise((r) => setTimeout(() => r(false), 300))]);
+    }, tabId);
+  const removeTab = (tabId) => worker.evaluate((tabId) => chrome.tabs.remove(tabId), tabId);
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  const unanswered = await loading("/unanswered?title=Unanswered");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert(
+    await worker.evaluate(async (id) => (await chrome.tabs.get(id)).url === "", unanswered),
+    "The unanswered tab already has a page",
+  );
+  // No page can show the grid here: it shows on the previous tab, and Escape comes back.
+  await keys("down:Alt_L", "tap:q");
+  await until(
+    async () => await activeTabId() === typingId,
+    "Holding Alt+Q on an unanswered tab did not move to the previous tab",
+  );
+  const handedOff = await switcher(typing);
+  assert(
+    Number(await handedOff.$eval(".selected", (card) => card.dataset.id)) === typingId,
+    "The handed-off grid did not select the previous tab",
+  );
+  await keys("tap:Escape", "up:Alt_L");
+  await until(
+    async () => await activeTabId() === unanswered,
+    "Escape did not return to the unanswered tab",
+  );
+  pass(
+    "Native held Alt+Q on a tab whose server hasn't answered shows the grid on the previous tab",
+  );
+  await typing.evaluate(() => globalThis.gridSeen = false);
+  await tap();
+  await until(
+    async () => await activeTabId() === typingId,
+    "A quick tap on an unanswered tab did not switch to the previous tab",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert(
+    !await typing.evaluate(() => gridSeen),
+    "A quick tap on an unanswered tab showed the grid",
+  );
+  pass("Native quick Alt+Q on a tab whose server hasn't answered switches without a grid");
+  await removeTab(unanswered);
+
+  const arriving = await loading("/arriving?title=Arriving");
+  await until(
+    () =>
+      worker.evaluate(async (id) => {
+        const tab = await chrome.tabs.get(id);
+        return tab.url !== "" && tab.status === "loading";
+      }, arriving),
+    "The arriving page did not start",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await keys("down:Alt_L", "tap:q");
+  await until(() => loadingGrid(arriving), "Holding Alt+Q on a page still arriving showed no grid");
+  assert(await activeTabId() === arriving, "Holding Alt+Q on a page still arriving left it");
+  await keys("tap:Escape", "up:Alt_L");
+  pass("Native held Alt+Q on a page still arriving shows the grid on it");
+  await removeTab(arriving);
+
+  await typing.bringToFront();
+  const blocked = await loading("/blocked?title=Blocked");
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await keys("down:Alt_L", "tap:q");
+  await until(
+    async () => await activeTabId() === typingId,
+    "Holding Alt+Q on a page drawing nothing did not move to the previous tab",
+  );
+  await switcher(typing);
+  await keys("up:Alt_L");
+  await until(async () => !await gridVisible(typing), "Releasing Alt left the grid open");
+  assert(await activeTabId() === typingId, "Releasing Alt did not keep the selected tab");
+  pass("Native held Alt+Q on a page waiting for a script shows the grid on the previous tab");
+  await removeTab(blocked);
+
   const protectedPage = await browser.newPage();
   await protectedPage.goto("chrome://version/");
   await protectedPage.bringToFront();
@@ -422,7 +721,16 @@ try {
       await readyInternal(internalId);
     }
     const targetId = await previousInternal();
-    await keys("focus:Extensions", "down:Alt_L", "tap:q", "up:Alt_L");
+    // Keys sent before the reloaded page has the focus would reach the browser but not the page.
+    // With no window manager on the test display, the focus can take a few tries.
+    await internalPage.bringToFront();
+    for (let attempt = 0;; attempt++) {
+      await keys("focus:Extensions");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      if (await internalPage.evaluate(() => document.hasFocus())) break;
+      assert(attempt < 30, "Extensions did not gain focus");
+    }
+    await keys("down:Alt_L", "tap:q", "up:Alt_L");
     await until(
       () => internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, targetId),
       "Quick Extensions Alt+Q did not switch automatically",
@@ -433,6 +741,35 @@ try {
       } Extensions switches automatically`,
     );
   }
+  // Ctrl+T leaves the focus in the address bar, where no page sees the keys.
+  await internalPage.bringToFront();
+  await keys("focus:Extensions");
+  const activeInternalId = () =>
+    internalWorker.evaluate(async () =>
+      (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+    );
+  await keys("down:Control_L", "tap:t", "up:Control_L");
+  await until(async () => await activeInternalId() !== internalId, "Ctrl+T opened no tab");
+  const newTabId = await activeInternalId();
+  const newTab = (await browser.pages()).find((page) => page.url().startsWith("chrome://new"));
+  assert(newTab, "The new tab page is missing");
+  // Its scripts load after the tab opens.
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  await keys("down:Alt_L", "sleep:20", "tap:q", "sleep:50", "up:Alt_L");
+  await until(
+    async () => await activeInternalId() === internalId,
+    "Quick Alt+Q from a new tab's address bar did not switch back",
+  );
+  assert(
+    !await newTab.evaluate(() =>
+      [...document.documentElement.children].some((element) =>
+        element.shadowRoot?.querySelector("iframe.tab-switcher-frame.vimium-ui-component-visible")
+      )
+    ),
+    "A grid was left open on the new tab",
+  );
+  await internalWorker.evaluate((id) => chrome.tabs.remove(id), newTabId);
+  pass("Native quick Alt+Q from a new tab's address bar switches back and leaves no grid");
   await internalWorker.evaluate(() => Settings.set("enableInternalPages", false));
   await internalPage.bringToFront();
   const disabledTarget = await previousInternal();

@@ -1,3 +1,6 @@
+import "../lib/utils.js";
+import "../lib/settings.js";
+
 // This module manages manages the exclusion rule setting. An exclusion is an object with two
 // attributes: pattern and passKeys. The exclusion rules are an array of such objects.
 

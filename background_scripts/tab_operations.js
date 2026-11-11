@@ -11,7 +11,7 @@ export async function openUrlInCurrentTab(request, sender) {
   const urlStr = await UrlUtils.convertToUrl(request.url);
   if (urlStr == null) {
     // The requested destination is not a URL, so treat it like a search query.
-    chrome.search.query({ text: request.url });
+    return chrome.search.query({ text: request.url, tabId: request.tabId });
   } else if (UrlUtils.hasJavascriptProtocol(urlStr)) {
     // javascript: URLs, i.e. "bookmarklets", are always run against the tab's top-level frame.
 
@@ -60,10 +60,10 @@ export async function openUrlInCurrentTab(request, sender) {
       // As of Firefox 118, specifying "MAIN" as the world is not yet supported.
       scriptingArgs.world = "MAIN";
     }
-    chrome.scripting.executeScript(scriptingArgs);
+    return chrome.scripting.executeScript(scriptingArgs);
   } else {
     // The requested destination is a regular URL.
-    chrome.tabs.update(request.tabId, { url: urlStr });
+    return chrome.tabs.update(request.tabId, { url: urlStr });
   }
 }
 
@@ -123,16 +123,13 @@ export async function openUrlInNewTab(request) {
 
 // Open request.url in new window and switch to it.
 export async function openUrlInNewWindow(request) {
-  const winConfig = {
-    url: await UrlUtils.convertToUrl(request.url),
-    active: true,
-  };
-  if (request.active != null) {
-    winConfig.active = request.active;
-  }
+  const url = await UrlUtils.convertToUrl(request.url);
+  const winConfig = { focused: request.active ?? true };
   // Firefox does not support "about:newtab" in chrome.tabs.create, so omit it.
-  if (tabConfig["url"] === UrlUtils.chromeNewTabUrl) {
-    delete winConfig["url"];
+  if (url != null && url !== UrlUtils.chromeNewTabUrl) winConfig.url = url;
+  const window = await chrome.windows.create(winConfig);
+  if (url == null && window?.tabs?.[0]?.id != null) {
+    await chrome.search.query({ text: request.url, tabId: window.tabs[0].id });
   }
-  await chrome.windows.create(winConfig);
+  return window;
 }

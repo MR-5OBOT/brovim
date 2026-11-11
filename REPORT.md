@@ -24,7 +24,7 @@ text).
 | #  | Dropped Feature              | Default Key(s)    | Files & Mechanisms Removed                                                                                                                                                                                                                                              |
 | -- | ---------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1  | **Marks**                    | `m`, `'`, `` ` `` | Deleted `background_scripts/marks.js`, `content_scripts/marks.js`, `tests/unit_tests/marks_test.js`. Removed `Marks.activateCreateMode`, `Marks.activateGotoMode`, and `Marks.setPreviousPosition()`. Pruned `tabLoadedHandlers` from background.                       |
-| 2  | **Visual / Caret Mode**      | `v`, `V`          | Deleted `content_scripts/mode_visual.js` (615 lines). Removed `enterVisualMode` and `enterVisualLineMode` from command registries, `mode_normal.js`, and `manifest.json`.                                                                                               |
+| 2  | **Visual / Caret Mode**      | `v`, `V`          | Initially deleted, then **restored** in `5e0362d9`: `content_scripts/mode_visual.js` restored with full Vim visual selection (`v`, `V`, `c`, `y`, `w`, `b`, `e`, `gg`, `G`, `0`, `$`, etc.) and multi-range shadow DOM support.                                         |
 | 3  | **Pagination Guessing**      | `]]`, `[[`        | Removed `goPrevious` and `goNext` commands. Removed DOM heuristic scanners (`followLink`, `findLink`, `findElementWithRelValue`). Removed `previousPatterns` and `nextPatterns` from settings, options page HTML, and JS.                                               |
 | 4  | **Frame Navigation**         | `gf`, `gF`        | Removed `nextFrame` and `mainFrame` from `all_commands.js`, `commands.js`, `mode_normal.js`, and `main.js`. Removed frame cycling tests in `main_test.js`.                                                                                                              |
 | 5  | **Count Prefixes**           | Digits (`0-9`)    | Removed `isCountKey` and `countPrefix` from `content_scripts/mode_key_handler.js`. Digits are no longer intercepted or buffered as repeat counters on keydown. Removed repeat limit confirmation prompts in `mode_normal.js`. `count=N` in a key mapping still repeats. |
@@ -76,11 +76,13 @@ explicit custom CSS is preserved, including any colors it overrides.
 - **Vomnibar:** `o`, `O` (URL/history/web search; active tab switching excluded), `b`, `B`
   (bookmarks only), `ge` (in-place URL edit). The tab search is still available as the unmapped
   `Vomnibar.activateTabSelection` command.
-- **Tab Controls:** `t` (create tab), `x` (close tab), `X` (restore closed tab), `J` / `K` (previous
-  / next tab), `^` (jump to last active tab), `<a-p>` (pin/unpin), `<a-m>` (mute/unmute), `<<` /
-  `>>` (reorder tab).
-- **Clipboard & Navigation:** `yy` (copy URL), `p` / `P` (paste and open URL), `H` / `L` (history
-  back / forward), `r` / `R` (reload / hard reload), `i` (insert mode), `gi` (focus input).
+- **Tab Controls:** `x` (close tab), `X` (restore closed tab), `<a-p>` (pin/unpin), `<a-m>`
+  (mute/unmute), `<<` / `>>` (reorder tab). (Note: `t`, `J`, `K`, `^` were intentionally dropped so
+  browser native tabs and shortcuts handle tab cycling).
+- **Clipboard & Navigation:** `yy` (copy URL), `H` / `L` (history back / forward), `r` / `R` (reload
+  / hard reload), `i` (insert mode), `gi` (focus input), `v` / `V` (visual / caret mode). Clipboard
+  paste commands (`openCopiedUrlInCurrentTab`, `openCopiedUrlInNewTab`) remain available for custom
+  key mapping.
 
 ---
 
@@ -1127,3 +1129,157 @@ platform's generated manifest). Six additional browser-navigation checks passed 
 extracted Chrome Store package, which intentionally omits the internal-page override permission.
 DotRobot's concurrent removal of its docs directory was preserved; its stale README report link was
 removed.
+
+## 23. Tab Switcher on Every Tab: Taps, Holds, Focus and Busy Pages (November 10, 2026)
+
+The user asked for the grid to work on any tab and for a quick Alt+Q to switch at once, then
+reported that holding the shortcut on YouTube switched to the previous tab instead of showing the
+grid. Real Alt+Q presses on an isolated X server, across some twenty kinds of tab and fourteen real
+sites, reproduced six faults.
+
+| Fault                                                                        | Cause                                                                                                                                                         | Now                                                                                                   |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Holding on YouTube switched tabs                                             | The background gave a page 350 ms to answer, then switched directly. YouTube's main thread stalls for longer, and only the page knows whether the key is held | A page gets two seconds; a busy one answers late with the right action                                |
+| A slow answer could cost a tab its grid until reload                         | The page's own 800 ms timer expired during a stall and marked the switcher unavailable for good                                                               | The timer counts time the page's event loop actually ran; a slow frame is retried once it has started |
+| Alt+Q did nothing while typing in an embedded page                           | Taking the focus from another frame focuses the top window for an instant, which the grid read as the user leaving and closed itself                          | That moment is ignored; embedded pages report the modifier's presses and releases to the top frame    |
+| A tap on a new tab left the grid stuck open                                  | The address bar had the focus, so the page never saw the release                                                                                              | Without the focus the page declines and the background switches directly                              |
+| Holding on a PDF did nothing                                                 | The PDF viewer keeps its keys                                                                                                                                 | Every press switches directly                                                                         |
+| The grid took the focus from a text field for good (then `x` closed the tab) | Closing the grid focused the frame, not the element                                                                                                           | The element gets the focus back, on the page or inside an embedded page                               |
+
+A held grid now shows 90 ms after the shortcut (`showDelayMs`), as KWin (90 ms) and GNOME Shell (150
+ms) do, so a tap no longer flashes the grid or touches the focus. A grid can no longer open or stay
+open in a tab that was left, and a press that waited behind a slow one is dropped once that one has
+switched tabs.
+
+### Measurements
+
+Timestamps from the pages themselves, real keys, isolated Helium with `--extensions-on-chrome-urls`:
+
+| Interaction                                   | Time                                         |
+| --------------------------------------------- | -------------------------------------------- |
+| Tap: Alt released to tab switched             | 3–7 ms                                       |
+| Tap from a stopped background worker          | 5 ms after release (the modifier wakes it)   |
+| Tap on a page Brovim can't run on             | 10 ms from the letter; 45–70 ms cold         |
+| Hold: letter to grid drawn with previews      | 110–120 ms, of which 90 ms is the tap window |
+| Hold or tap on a page stalled for 700–1600 ms | When the stall ends                          |
+
+### Limits
+
+- No grid where the page can't see the keys: address bar focused, PDF viewer, fullscreen video,
+  embedded pages without Brovim, and the pages browsers protect. Every press switches directly
+  there, and the grid resumes on the next tab.
+- Two such tabs in a row can't tell a second tap from a held second press for three seconds, so
+  tapping back and forth between two PDFs walks on through the list.
+- A tap on a stalled page waits for the page, where it used to switch after 350 ms.
+
+### Verification
+
+Formatting and lint, 373 unit tests, 102 DOM tests, the installed-extension browser suite, 22
+real-shortcut checks (eight new: typing, embedded pages, a stalling page, a PDF, a new tab), 7
+lifecycle, 13 internal-page and 10 browser-navigation checks pass in isolated Helium profiles. The
+stalling-page check fails against the 350/450 ms answer limit and passes with the fix. Packages were
+not rebuilt.
+
+## 24. Loading Tabs, and a Grid on Every Tab (November 11, 2026)
+
+The user reported that on a tab still loading over a slow network, holding Alt+Q showed no grid and
+switched to the previous tab. Real Alt+Q presses against slow-network fixtures (a server that hasn't
+answered, a page arriving in parts, a script or stylesheet that hasn't arrived) reproduced it in
+three forms. This section supersedes section 23's first limit.
+
+| Tab                                                   | Cause                                                                                                                                         | Now                                                                                                             |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| A page arriving in parts, its first part drawn        | The grid's frame joined a page only once all of it had been parsed. The page's wait for the frame ran out, and the background switched tabs   | The frame joins a page as it arrives: the grid shows on the page                                                |
+| A tab whose server hasn't answered                    | There is no page to show the grid in                                                                                                          | The press switches to the previous tab, which shows the grid for the same gesture if the shortcut is still held |
+| A page waiting for a script or stylesheet in its head | The browser draws nothing, and gives the page no keys, until its first paint. The page could neither show the grid nor tell a hold from a tap | The page declines at once (it hasn't been drawn), and the gesture moves on as above                             |
+
+The hand-off applies to every tab that can't show the grid: pages that block extension scripts,
+sandboxed and SVG documents, the PDF viewer, fullscreen video, embedded pages without Brovim and the
+address bar. Before, those switched directly and showed the grid only on the next press. The tab
+switched to waits the usual tap window: a tap's release reaches it, and nothing shows. Held past
+that, it shows the grid with the gesture's own list and selection; release selects, and Escape
+returns to the tab where the gesture began.
+
+A release while no page has the focus is lost, and the grid would wait for it. So the background
+hands off only when it was already running and switched within 60 ms of the press, or when the page
+that declined saw the shortcut held past the tap window (its grid frame failed to start in time). A
+press that has to start the stopped background switches without a grid, as before; the next press
+shows it.
+
+Also:
+
+- A card for a tab whose page hasn't arrived shows the address it is loading (site letter, host and
+  saved preview) instead of "Untitled".
+- A page that throws away its whole document no longer loses the grid's frame until reload: the next
+  press builds a new one.
+- While a tab that can't show the grid is in front of a focused window, the background stays running
+  (one extension call every 20 s restarts the browser's 30 s countdown to stopping it), so the first
+  press there hands its gesture on too. Browsers driven by automation never stop an idle background,
+  so this was checked in Helium launched without automation (the extension loaded from a folder,
+  real keys, screenshots): after 50 s on a PDF, the first held press showed no grid without the
+  change, and the grid with it.
+
+### Measurements
+
+Real keys, isolated headful Helium; the tap releases Alt 60 ms after pressing Q:
+
+| Tab                                                                         | Hold: grid shown            | Tap: switched |
+| --------------------------------------------------------------------------- | --------------------------- | ------------- |
+| Website, browser and Brovim pages, text, XML, file                          | 107–129 ms, on the tab      | 84–92 ms      |
+| Address bar, PDF, SVG, view-source, data:, error page, sandboxed, Web Store | 122–178 ms, on previous tab | 70–78 ms      |
+| Server hasn't answered                                                      | 132–155 ms, on previous tab | 70–83 ms      |
+| Waiting for a script or stylesheet                                          | 152–163 ms, on previous tab | 72–75 ms      |
+| Arriving in parts, or waiting for an image                                  | 113–164 ms, on the tab      | 79–91 ms      |
+| Main thread 90% busy                                                        | 239 ms, on the tab          | 221 ms        |
+
+No tap showed a grid on any tab, and Escape returned to the starting tab in every case. Warm and
+cold timings from section 23 are unchanged (a tap switches 5–8 ms after the release; a held grid
+shows about 100 ms after the press).
+
+### Trade-offs the user kept
+
+Two behaviours are kept by the user's choice (November 11). A quick tap during a page freeze waits
+for the freeze to end, because only the page can tell a tap from a hold; switching at once would
+make a hold on a frozen page jump to the previous tab, the bug reported on YouTube. Between two tabs
+that can't show the grid, quick taps walk down the list, because neither can see Alt being released;
+the 3 s gesture window stays, so a held walk never starts over.
+
+### Test reliability
+
+- The browser suite's first navigation in a fresh browser hung in about a third of launches, on the
+  last commit as well: Chromium holds or supersedes it while installing the extension. The suite's
+  `navigate` now retries up to four times.
+- Headless Chromium freezes background tabs within 3–5 s, which a window doesn't, and a frozen tab
+  is asleep, so the grid leaves it out. The fixture tabs of the two every-tab checks hold a Web
+  Lock, which keeps them awake; both pass reliably again.
+- "initialization recovers from empty responses" pressed `f` as soon as the background received the
+  page's third initialization request, before the reply reached the page and before normal mode had
+  loaded its key mappings; `f` then did nothing (2 of 6 runs). It now waits until `f` is mapped in
+  the page, as the internal-page and browser-navigation suites already did: 12 of 12.
+- "x/X close and restore a tab" waited for its page to regain the focus after `x`, but the browser
+  chooses which tab comes forward after a close. It now brings its page forward first.
+- The grid-navigation check's seven fixture tabs hold a Web Lock too: two frozen tabs left a single
+  row, where `j` has nowhere to go.
+- The quick-tap check on a freshly reloaded Extensions page sometimes found the page without the
+  focus: the test display has no window manager. It now reactivates the tab and refocuses the window
+  until the page has the focus.
+- Three checks in the November 10 run were removed from the working tree before this round: "find
+  and hint collection remain responsive on a large document", "first opening on Brovim settings
+  validates numeric options and supports held grids and quick taps" and "new-window navigation
+  accepts real browser window options and the new-tab URL". They were not restored.
+
+### Verification
+
+Formatting and lint, 382 unit tests (nine new: the hand-off decision, a tap ending a handed-off
+gesture, the held-modifier evidence, a page not yet drawn, Escape back to the first tab, the frame
+joining a page that is still arriving, its rebuild, the loading address, and keeping the background
+running), 102 DOM tests, 26 real-shortcut checks (four new: an unanswered tab held and tapped, a
+page arriving in parts, a page waiting for a script) in four consecutive runs, 7 lifecycle, 13
+internal-page and 10 browser-navigation checks pass in isolated Helium profiles. Undoing each fix in
+turn fails its new unit test. Packages were rebuilt, and the Firefox package passes the 9 lifecycle
+checks in Firefox 159. Real Alt+Q presses in Firefox 159 (a visible window on the test display) show
+the grid on hold, select on release, switch on a tap, and hand a gesture on from `about:robots` to
+the previous tab, which shows the grid.
+
+The browser suite's failures in this round were test races, fixed as listed above. With the fixes,
+it passed 101 of 101 checks in two consecutive full runs.

@@ -119,6 +119,13 @@ context("matches", () => {
 });
 
 context("RegexpCache", () => {
+  should("search for prototype names as literal words", () => {
+    for (const term of ["constructor", "__proto__", "toString"]) {
+      assert.isTrue(RegexpCache.get(term) instanceof RegExp);
+      assert.isTrue(ranking.matches([term], `https://example.com/${term}`));
+      assert.isTrue(ranking.wordRelevancy([term], `https://example.com/${term}`, term) > 0);
+    }
+  });
   should("RegexpCache is in fact caching (positive case)", () => {
     assert.isTrue(RegexpCache.get("this") === RegexpCache.get("this"));
   });

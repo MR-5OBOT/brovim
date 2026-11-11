@@ -4,6 +4,38 @@ import "../../lib/settings.js";
 import "../../content_scripts/mode.js";
 import "../../content_scripts/link_hints.js";
 
+context("hint hit testing", () => {
+  should("request only the top element when the root supports it", () => {
+    const top = {};
+    const root = {
+      elementFromPoint: () => top,
+      elementsFromPoint: () => {
+        throw new Error("An entire hit stack should not be requested");
+      },
+    };
+    assert.isTrue(LocalHints.getElementFromPoint(10, 20, root) === top);
+  });
+
+  should("fall back to roots that only expose elementsFromPoint", () => {
+    const top = {};
+    assert.isTrue(
+      LocalHints.getElementFromPoint(10, 20, {
+        elementsFromPoint: () => [top, {}],
+      }) === top,
+    );
+  });
+
+  should("descend into shadow roots without looping through the host", () => {
+    const host = {};
+    host.shadowRoot = { elementFromPoint: () => host };
+    assert.isTrue(
+      LocalHints.getElementFromPoint(10, 20, {
+        elementFromPoint: () => host,
+      }) === host,
+    );
+  });
+});
+
 context("With invalid saved link characters", () => {
   setup(async () => {
     await Settings.onLoaded();

@@ -8,6 +8,8 @@ context("private find history", () => {
     stub(chrome.extension, "inIncognitoContext", true);
     stub(FindModeHistory, "isIncognitoMode", null);
     stub(FindModeHistory, "rawQueryList", null);
+    stub(FindModeHistory, "loading", null);
+    stub(FindModeHistory, "listening", false);
     stub(FindModeHistory, "key", "findModeRawQueryList");
     stub(FindModeHistory, "storage", {
       get: () => Promise.resolve(globalThis.structuredClone(data)),
@@ -35,6 +37,17 @@ context("private find history", () => {
 
   should("allow a repeat key before history finishes loading", () => {
     assert.equal("", FindModeHistory.getQuery());
+  });
+
+  should("keep an early submitted query when the initial history read is delayed", async () => {
+    let finishRead;
+    stub(FindModeHistory.storage, "get", () => new Promise((resolve) => finishRead = resolve));
+    const loading = FindModeHistory.init();
+    const saving = FindModeHistory.saveQuery("early search").then(() => true, () => false);
+    finishRead({ findModeRawQueryListIncognito: ["stored search"] });
+    await loading;
+    assert.isTrue(await saving);
+    assert.equal(["early search", "stored search"], data.findModeRawQueryListIncognito);
   });
 
   should("keep an explicitly empty private history empty", async () => {

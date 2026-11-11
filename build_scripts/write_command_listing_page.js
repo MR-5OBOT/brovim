@@ -51,7 +51,7 @@ document.querySelector("html").classList.add("hosted-version");
 // Use the website's favicon.
 const favicon = document.createElement("link");
 favicon.setAttribute("rel", "shortcut icon");
-favicon.href = "../vimium_logo.svg";
+favicon.href = "../icons/icon48.png";
 document.head.appendChild(favicon);
 
 // The doctype tag is not included in outerHTML; add it back in.
