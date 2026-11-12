@@ -124,16 +124,15 @@ selection moves without delay as you cycle. The grid opens over whatever you wer
 the focus back when it closes, so a text field you were typing in, on the page or inside an embedded
 page, is still ready when you cancel or come back to the tab.
 
-The grid lists every eligible tab, 8 cards per row by default: each further 8 tabs start a new row.
-When the screen has no room for another row while cards stay readable, it adds columns instead
-(widening the panel), so every tab has a cell. All rows fit in the frame without scrolling. Only
-past that limit does keyboard navigation advance to another page; a page indicator shows where you
-are. Pinned tabs occupy the leading cells in tab-bar order, including while sleeping or inactive. A
-quick tap swaps to the last-used tab. Holding starts at that tab's visible cell; further presses
-move to the next cell, wrapping from the last cell back to cell 0. Closing a card moves the
-following cards up. Arrow keys, `h` `j` `k` `l` and Tab also move, `Enter` switches, `x`, Delete or
-Backspace close the selected tab, and `Esc` cancels. Mouse movement, clicks, middle clicks, touch
-and wheel input do not operate the switcher; there are no close buttons.
+The grid shows at most 12 cards, 6 per row by default: pinned tabs first, in tab-bar order and
+including while sleeping or inactive, then the most recently used tabs. Older tabs are left out. All
+rows fit in the frame without scrolling; a screen too small for them adds columns, and past that,
+keyboard navigation pages through them with a page indicator. A quick tap swaps to the last-used
+tab. Holding starts at that tab's visible cell; further presses move to the next cell, wrapping from
+the last cell back to cell 0. Closing a card moves the following cards up. Arrow keys, `h` `j` `k`
+`l` and Tab also move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc`
+cancels. Mouse movement, clicks, middle clicks, touch and wheel input do not operate the switcher;
+there are no close buttons.
 
 In shortcut order, the current tab comes first, then tabs used this session (new background tabs
 come right after the current tab, including tabs created without an opener), then the rest by when

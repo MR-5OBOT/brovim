@@ -3,8 +3,8 @@ import "../lib/settings.js";
 import { orderTabSwitcherCards, tabSwitcherGrid } from "../lib/tab_switcher.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 
-// Keyboard-only tab switcher: a fixed MRU list for each gesture, shown as one grid of cards. The
-// grid lists every eligible tab, growing to fit them, and cycling wraps through all of them. Hold
+// Keyboard-only tab switcher: a fixed MRU list for each gesture, shown as one grid of cards: pins and
+// the most recent tabs, at most 12. Cycling wraps through all of them. Hold
 // the assigned modifier and repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l
 // and Tab also move, Enter switches, x/Delete/Backspace close the selected tab, and Escape cancels.
 

@@ -266,7 +266,7 @@ context("tab switcher page", () => {
     assert.equal(0, messages.filter((r) => r.message?.handler === "selectSpecificTab").length);
   });
 
-  should("cycle a large grid without rebuilding cards or losing the selected page", async () => {
+  should("show 12 cards of many tabs, and cycle them without rebuilding cards", async () => {
     list = Array.from({ length: 200 }, (_, i) => ({
       ...list[0],
       id: i + 1,
@@ -275,6 +275,8 @@ context("tab switcher page", () => {
       lastUsed: i === 1,
     }));
     await open();
+    // Pins and the most recent tabs, 12 at most.
+    assert.equal(12, cards().length);
     const before = cards();
     let replacements = 0;
     const observer = new domWindow.MutationObserver((records) => replacements += records.length);
@@ -290,7 +292,7 @@ context("tab switcher page", () => {
     await flush();
     observer.disconnect();
     assert.equal(0, replacements);
-    assert.equal("7", grid.querySelector(".selected").dataset.id);
+    assert.equal("3", grid.querySelector(".selected").dataset.id);
     assert.isFalse(grid.querySelector(".selected").hidden);
     assert.equal(1, grid.querySelectorAll('[aria-selected="true"]').length);
     assert.isTrue(cards().every((card, i) => card === before[i]));

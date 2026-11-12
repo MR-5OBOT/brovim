@@ -3164,7 +3164,7 @@ try {
   );
 
   await check(
-    "old sleeping pins on excluded sites lead a grid of every tab and preserve quick swaps",
+    "old sleeping pins on excluded sites lead a grid of the most recent tabs and keep quick swaps",
     async () => {
       await fresh();
       const prefix = `${origin}/reserved-pin-`;
@@ -3225,9 +3225,12 @@ try {
           visibleTitles.length === allTitles.length,
           `The grid paged instead of growing: ${visibleTitles}`,
         );
-        for (let i = 0; i < 20; i++) {
-          assert(visibleTitles.includes(`Recent${i}`), `Recent${i} was left out: ${visibleTitles}`);
+        // At most 12 cards: the pins, then the most recent tabs.
+        assert(allTitles.length === 12, `The grid didn't keep to 12 cards: ${allTitles}`);
+        for (const name of ["Recent19", "Recent18"]) {
+          assert(visibleTitles.includes(name), `${name}, among the most recent, was left out`);
         }
+        assert(!visibleTitles.includes("Recent0"), `The oldest tab took a card: ${visibleTitles}`);
         for (const name of ["WhatsApp", "Gmail", "OtherPin"]) {
           assert(visibleTitles.includes(name), `${name} was missing from the visible first page`);
         }
@@ -3520,7 +3523,7 @@ try {
   }
 
   await check(
-    "Ctrl+Q lists every awake tab in a grid grown to fit, and wraps through all of them",
+    "Ctrl+Q lists the 12 most recent tabs in rows of six, and wraps through them",
     async () => {
       await fresh();
       const urls = Array.from(
@@ -3533,7 +3536,7 @@ try {
           Promise.resolve([{ name: "open_tab_switcher", shortcut: "Ctrl+Q" }]);
       });
       try {
-        // More tabs than one row of the default 8 cards holds.
+        // More tabs than the grid's 12 cards hold.
         for (const url of urls) await worker.evaluate((url) => chrome.tabs.create({ url }), url);
         await worker.evaluate(async (urls) => {
           for (let attempt = 0; attempt < 100; attempt++) {
@@ -3560,9 +3563,12 @@ try {
           ".card-title",
           (els) => els.map((el) => el.textContent),
         );
-        for (let i = 0; i < 19; i++) {
+        // This tab, then the 11 most recent: older tabs are left out.
+        assert(titles.length === 12, `The grid didn't keep to 12 cards: ${JSON.stringify(titles)}`);
+        for (let i = 8; i < 19; i++) {
           assert(titles.includes(`Extra${i}`), `Extra${i} was left out: ${JSON.stringify(titles)}`);
         }
+        assert(!titles.includes("Extra7"), `An older tab took a card: ${JSON.stringify(titles)}`);
         assert(
           titles[0] === "Brovim browser fixture" && titles[1] === "Extra18",
           JSON.stringify(titles),
@@ -3572,12 +3578,12 @@ try {
             "#tab-switcher",
             (el) => getComputedStyle(el).gridTemplateColumns.split(" ").length,
           );
-        assert(await columns() === 8, "Rows did not hold the default 8 cards each");
+        assert(await columns() === 6, "Rows did not hold the default 6 cards each");
         assert(
           await switcher.$$eval(".tab-card[hidden]", (cards) => cards.length === 0),
           "A large screen paged instead of growing the grid",
         );
-        // Smaller screens grow the grid less; the smallest pages through the cards instead.
+        // Every card fits on smaller screens too.
         for (const [width, height] of [[1280, 900], [900, 700], [640, 480]]) {
           await page.setViewport({ width, height });
           await switcher.waitForFunction((width) => innerWidth === width, {}, width);
@@ -3585,7 +3591,7 @@ try {
             const panel = document.querySelector("#panel");
             const rect = panel.getBoundingClientRect();
             const cards = [...document.querySelectorAll(".tab-card:not([hidden])")];
-            return cards.length >= 18 && panel.scrollHeight <= panel.clientHeight + 1 &&
+            return cards.length === 12 && panel.scrollHeight <= panel.clientHeight + 1 &&
               rect.top >= 0 && rect.bottom <= innerHeight &&
               rect.left >= 0 && rect.right <= innerWidth &&
               cards.every((card) => {
@@ -3621,18 +3627,17 @@ try {
         await switcher.waitForFunction(() =>
           document.querySelector(".selected .card-title").textContent === "Extra18"
         );
-        // Closing the selected card (Extra18) just removes it; every other tab was already listed.
+        // Closing the selected card (Extra18) brings in the next most recent tab.
         await key(["x"]);
-        await switcher.waitForFunction(
-          (count) => document.querySelectorAll(".tab-card").length === count,
-          {},
-          initialIds.length - 1,
+        await switcher.waitForFunction(() =>
+          [...document.querySelectorAll(".card-title")].some((el) => el.textContent === "Extra7")
         );
-        assert(
-          !(await switcher.$$eval(".card-title", (els) => els.map((el) => el.textContent)))
-            .includes("Extra18"),
-          "The closed tab stayed in the grid",
+        const afterClose = await switcher.$$eval(
+          ".card-title",
+          (els) => els.map((el) => el.textContent),
         );
+        assert(afterClose.length === 12, `The grid lost a card: ${JSON.stringify(afterClose)}`);
+        assert(!afterClose.includes("Extra18"), "The closed tab stayed in the grid");
         await key(["Escape"]);
       } finally {
         await page.keyboard.up("Control");

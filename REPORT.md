@@ -1470,3 +1470,6 @@ lifecycle, 13 internal-page and 10 browser-navigation checks pass.
 
 Listing tabs Helium restored at startup but hadn't loaded was tried and dropped: Helium shows them
 greyed out, as sleeping. The grid keeps to awake tabs and pinned tabs.
+
+The grid now shows at most 12 cards, two rows of six by default: pinned tabs first, then the most
+recently used tabs. Older tabs are left out, and closing a card brings in the next most recent one.

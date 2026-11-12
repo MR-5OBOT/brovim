@@ -265,47 +265,51 @@ context("configured switcher shortcut", () => {
     },
   );
   for (const columns of [3, 5, 8]) {
-    should(`cycle every awake tab on protected pages with ${columns} cards per row`, async () => {
-      await Settings.onLoaded();
-      const oldColumns = Settings.get("tabSwitcherColumns");
-      const limit = columns * 2;
-      const tabs = Array.from({ length: limit + 3 }, (_, index) => ({
-        id: 5000 + index,
-        index,
-        windowId: 890,
-        active: index === 0,
-        url: "chrome://extensions/",
-      }));
-      stub(
-        chrome.tabs,
-        "query",
-        (query) => Promise.resolve(tabs.filter((tab) => !query.active || tab.active)),
-      );
-      stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
-      const selected = [];
-      stub(chrome.tabs, "update", (id) => {
-        for (const tab of tabs) tab.active = tab.id === id;
-        bgUtils.tabRecency.register(id);
-        selected.push(id);
-        return Promise.resolve(tabs.find((tab) => tab.id === id));
-      });
-      await bgUtils.tabRecency.init();
-      for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
-      try {
-        await Settings.set("tabSwitcherColumns", columns);
-        for (let i = 0; i < limit * 2 + 2; i++) {
-          await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
-        }
-        // The configured size is only where the grid starts; it never hides tabs.
-        assert.equal(
-          Array.from({ length: limit * 2 + 2 }, (_, i) => 5000 + ((i + 1) % tabs.length)),
-          selected,
+    should(
+      `cycle the 12 most recent tabs on protected pages with ${columns} cards per row`,
+      async () => {
+        await Settings.onLoaded();
+        const oldColumns = Settings.get("tabSwitcherColumns");
+        const limit = columns * 2;
+        const tabs = Array.from({ length: limit + 3 }, (_, index) => ({
+          id: 5000 + index,
+          index,
+          windowId: 890,
+          active: index === 0,
+          url: "chrome://extensions/",
+        }));
+        stub(
+          chrome.tabs,
+          "query",
+          (query) => Promise.resolve(tabs.filter((tab) => !query.active || tab.active)),
         );
-      } finally {
-        SwitcherCommands.endTabSwitcherCycle(890);
-        await Settings.set("tabSwitcherColumns", oldColumns);
-      }
-    });
+        stub(chrome.tabs, "sendMessage", () => Promise.reject(new Error("No receiver")));
+        const selected = [];
+        stub(chrome.tabs, "update", (id) => {
+          for (const tab of tabs) tab.active = tab.id === id;
+          bgUtils.tabRecency.register(id);
+          selected.push(id);
+          return Promise.resolve(tabs.find((tab) => tab.id === id));
+        });
+        await bgUtils.tabRecency.init();
+        for (const tab of tabs.slice().reverse()) bgUtils.tabRecency.register(tab.id);
+        try {
+          await Settings.set("tabSwitcherColumns", columns);
+          for (let i = 0; i < limit * 2 + 2; i++) {
+            await SwitcherCommands.openTabSwitcher(tabs.find((tab) => tab.active));
+          }
+          // At most 12 cards, whatever the row width: older tabs are left out.
+          const cards = Math.min(tabs.length, 12);
+          assert.equal(
+            Array.from({ length: limit * 2 + 2 }, (_, i) => 5000 + ((i + 1) % cards)),
+            selected,
+          );
+        } finally {
+          SwitcherCommands.endTabSwitcherCycle(890);
+          await Settings.set("tabSwitcherColumns", oldColumns);
+        }
+      },
+    );
   }
   should(
     "include sleeping and inactive pinned tabs in protected-page cycling",
