@@ -245,13 +245,13 @@ context("configured switcher shortcut", () => {
         { id: 704, index: 3, windowId: 7, discarded: true },
         { id: 705, index: 4, windowId: 7, frozen: true },
         { id: 706, index: 5, windowId: 7, pinned: true, hidden: true },
-        // Restored after a browser restart and never opened again: unloaded, not sleeping.
+        // Restored after a browser restart and never opened again: unloaded, not "discarded".
         { id: 707, index: 6, windowId: 7, status: "unloaded" },
         { id: 708, index: 7, windowId: 7, pinned: true, status: "unloaded" },
       ];
       stub(chrome.tabs, "query", () => Promise.resolve(tabs));
       const visible = await getRecentTabs(7);
-      assert.equal([701, 702, 703, 707, 708], visible.map((tab) => tab.id));
+      assert.equal([701, 702, 703, 708], visible.map((tab) => tab.id));
       stub(chrome.tabs, "get", (id) => Promise.resolve(tabs.find((tab) => tab.id === id)));
       stub(chrome.windows, "update", () => Promise.resolve());
       const selected = [];
@@ -261,9 +261,7 @@ context("configured switcher shortcut", () => {
       });
       await sendRequestHandlers.selectSpecificTab({ id: 702, awakeOnly: true, tab: tabs[0] });
       await sendRequestHandlers.selectSpecificTab({ id: 703, awakeOnly: true, tab: tabs[0] });
-      // Selecting a restored tab loads it.
-      await sendRequestHandlers.selectSpecificTab({ id: 707, awakeOnly: true, tab: tabs[0] });
-      assert.equal([702, 703, 707], selected);
+      assert.equal([702, 703], selected);
     },
   );
   for (const columns of [3, 5, 8]) {
@@ -429,7 +427,7 @@ context("configured switcher shortcut", () => {
     SwitcherCommands.endTabSwitcherCycle(889);
   });
   for (
-    const state of [{ discarded: true }, { frozen: true }, { hidden: true }]
+    const state of [{ discarded: true }, { frozen: true }, { status: "unloaded" }, { hidden: true }]
   ) {
     should(`not wake an unavailable grid selection: ${JSON.stringify(state)}`, async () => {
       stub(chrome.tabs, "get", () => Promise.resolve({ id: 901, windowId: 1, ...state }));

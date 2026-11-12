@@ -1468,6 +1468,5 @@ itself; otherwise on the previous tab within 132–193 ms) and every tap switche
 unit tests, 103 DOM tests, 101 browser checks, 34 real-shortcut checks in three consecutive runs, 7
 lifecycle, 13 internal-page and 10 browser-navigation checks pass.
 
-The same logging showed why some tabs the user considers awake were missing from the grid: 19 tabs
-Helium restored at startup and hadn't loaded since (status "unloaded", not discarded). At the user's
-choice the grid now lists them, and selecting one loads it; discarded and frozen tabs stay out.
+Listing tabs Helium restored at startup but hadn't loaded was tried and dropped: Helium shows them
+greyed out, as sleeping. The grid keeps to awake tabs and pinned tabs.
