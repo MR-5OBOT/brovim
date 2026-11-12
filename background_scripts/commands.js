@@ -417,7 +417,6 @@ const defaultKeyMappings = {
   // Manipulating tabs
   "<<": "moveTabLeft",
   ">>": "moveTabRight",
-  "x": "removeTab",
   "X": "restoreTab",
   "<a-p>": "togglePinTab",
   "<a-m>": "toggleMuteTab",

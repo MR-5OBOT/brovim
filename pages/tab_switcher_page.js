@@ -36,11 +36,14 @@ let tabsLoaded = Promise.resolve();
 let closing = null; // The pending close request.
 let focusGuard = null;
 
-// Route requests through the owning content script so background handlers always receive the
-// correct window and privacy context. Extension iframe senders can lack sender.tab in Firefox.
+// Chromium tells the background which tab this frame is in, so ask it directly: a loading page's
+// scripts can be busy for seconds, and the grid must not wait on them. Firefox doesn't name the
+// tab, so there requests go through the owning content script.
+const direct = globalThis.location?.protocol === "chrome-extension:";
 let requestId = 0;
 const requests = new Map();
 function sendRequest(message) {
+  if (direct) return chrome.runtime.sendMessage(message);
   return new Promise((resolve, reject) => {
     const id = ++requestId;
     requests.set(id, { resolve, reject, handler: message.handler });
@@ -356,14 +359,9 @@ function commit() {
     await closing;
     if (!visible || currentActivation !== activation) return;
     const tab = tabs[selectedIndex];
-    hide();
-    if (tab) {
-      await sendRequest({
-        handler: "selectSpecificTab",
-        id: tab.id,
-        awakeOnly: true,
-      }).catch(() => {});
-    }
+    // The selected tab may be this one, already in front.
+    if (tab && !tab.active) await hideAndSwitch(tab.id);
+    else hide();
   });
 }
 
@@ -402,10 +400,26 @@ async function closeTab(index) {
 // couldn't show the grid, so the gesture moved here to show it.
 function cancel() {
   const source = sourceId != null && tabs.find((tab) => tab.id === sourceId && !tab.active);
+  if (source) hideAndSwitch(source.id);
+  else hide();
+}
+
+// The browser shows a tab's last frame for a moment when you come back to it, so the grid must be
+// gone from that frame before the switch. This frame clears itself at once; the page, which hides
+// the frame, says when it has drawn without it. A page too busy to say so soon doesn't hold up the
+// switch.
+let pageHid = null;
+async function hideAndSwitch(id) {
   hide();
-  if (source) {
-    sendRequest({ handler: "selectSpecificTab", id: source.id, awakeOnly: true }).catch(() => {});
-  }
+  await new Promise((resolve) => {
+    pageHid = resolve;
+    setTimeout(resolve, 50);
+    UIComponentMessenger.postMessage({ name: "confirmHidden" });
+  });
+  pageHid = null;
+  // Something else switched tabs meanwhile: leave it be.
+  if (document.hidden) return;
+  await sendRequest({ handler: "selectSpecificTab", id, awakeOnly: true }).catch(() => {});
 }
 
 function hide() {
@@ -415,6 +429,7 @@ function hide() {
   isAltCycling = false;
   clearInterval(focusGuard);
   panel.classList.remove("ready");
+  document.body.classList.add("closed");
   UIComponentMessenger.postMessage({ name: "hide" });
   endCycle();
 }
@@ -509,6 +524,7 @@ UIComponentMessenger.registerHandler((event) => {
     case "activate":
       cancelPendingReads();
       visible = true;
+      document.body.classList.remove("closed");
       closing = null;
       isAltCycling = event.data.isAltCycle ?? false;
       shortcut = event.data.shortcut ?? Utils.parseBrowserShortcut();
@@ -521,14 +537,14 @@ UIComponentMessenger.registerHandler((event) => {
       tabsLoaded = fetchTabs(event.data);
       if (event.data.commitOnOpen) commit();
       break;
-    case "cycleNext": {
-      isAltCycling = true;
-      const direction = shiftIsDown && !shortcut.requiresShift ? -1 : 1;
-      whenTabsLoaded(() => step(direction));
+    case "cycleNext":
+      cycleNext();
       break;
-    }
     case "commitSelection":
       commit();
+      break;
+    case "hiddenConfirmed":
+      pageHid?.();
       break;
     case "hide":
       hide();
@@ -542,6 +558,22 @@ UIComponentMessenger.registerHandler((event) => {
       endCycle();
       break;
   }
+});
+
+function cycleNext() {
+  isAltCycling = true;
+  const direction = shiftIsDown && !shortcut.requiresShift ? -1 : 1;
+  whenTabsLoaded(() => step(direction));
+}
+
+// A press of the shortcut while this grid shows comes straight from the background, so a busy
+// page can't hold it up. Other frames stay silent: the first answer is the one that counts.
+chrome.runtime.onMessage.addListener((request, _sender, respond) => {
+  if (request?.handler !== "stepTabSwitcher" || !visible || request.overlayId !== overlayId) {
+    return false;
+  }
+  cycleNext();
+  respond(true);
 });
 
 globalThis.addEventListener("keydown", handleKeydown, true);

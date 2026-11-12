@@ -26,16 +26,35 @@ const unresponsiveMs = 2000;
 // When no page could see the keys, the tab a press switches to shows the grid only if the switch
 // came this soon after the press. A release while no page had the focus would be lost, and the
 // grid would wait for it; people let go of the modifier later than this after pressing the letter.
-const handoffMs = 60;
+// A browser busy loading a page can take most of this to switch tabs.
+const handoffMs = 100;
 // A press that had to start the stopped background arrives late, by about that much.
 const workerStartMs = 250;
-// A page that doesn't answer within this long is frozen: YouTube stalls for hundreds of
-// milliseconds while it loads. A press there switches tabs at once, as a tap would, and the tab it
-// lands on shows the grid if the shortcut turns out to be held.
-const frozenMs = 200;
+// A page that doesn't answer within this long is busy: a loading page's scripts can keep it busy
+// for seconds. A press there switches tabs at once, before a tap lets go of the modifier (see
+// handoffMs), so the tab it lands on sees the release of a tap, or shows the grid for a hold.
+const frozenMs = 30;
+// A page that hasn't said the shortcut's modifier went down (see TabSwitcher.warmUp) likely missed
+// it: it was busy, or its keys went elsewhere. It gets less time, so the switch beats even a quick
+// tap. A page that is fine but whose word is still on its way answers in time.
+const unseenMs = 20;
 // When the tab a gesture moved to can't see the shortcut's modifier, a press counts as part of the
 // same held gesture only if it comes this soon after the last one. A slower one is a new tap.
 const holdGapMs = 400;
+
+// The tab whose page last saw the shortcut's modifier go down, and when. Pages report it at once
+// (see TabSwitcher.warmUp); recorded here as it arrives, before anything else can delay it.
+let modifierDown = { tabId: null, at: -Infinity };
+// Pages being asked whether they can answer, by tab: see pagePulse.
+const pulseWaiters = new Map();
+export function noteModifierDown(tabId) {
+  modifierDown = { tabId, at: performance.now() };
+  pulseWaiters.get(tabId)?.();
+}
+chrome.runtime.onMessage.addListener((request, sender) => {
+  if (request?.handler === "warmTabSwitcher" && sender.tab) noteModifierDown(sender.tab.id);
+  return false;
+});
 
 export function endTabSwitcherCycle(windowId, id) {
   const cycle = cycles.get(windowId);
@@ -128,6 +147,16 @@ export function openTabSwitcher(tab) {
 
 async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.now()) {
   const pressedOn = tab?.id;
+  // Ask the page at once whether it can answer, while the rest is gathered: the switch away from
+  // one that can't has to come before a tap's release (see handoffMs). A grid on screen owns the
+  // gesture.
+  const askPage = (tab) =>
+    !isScriptable(tab)
+      ? null
+      : expectedOverlayId
+      ? "alive"
+      : pagePulse(tab.id, sawPressBegin(tab, pressedAt));
+  const early = tab ? askPage(tab) : undefined;
   // Commands queued during a protected-page hop can carry an obsolete tab snapshot.
   tab = (await chrome.tabs.query(
     tab ? { active: true, windowId: tab.windowId } : {
@@ -143,8 +172,14 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
   if (pressedOn != null && pressedOn !== tab.id && cycles.get(tab.windowId)?.currentId !== tab.id) {
     return;
   }
+  const sawPress = sawPressBegin(tab, pressedAt);
+  // The early question went to this tab, unless the press's snapshot was obsolete.
+  const pulse = early !== undefined && tab.id === pressedOn ? early : askPage(tab);
   await Settings.onLoaded();
-  const { tabs, previousId } = await getTabSwitcherData(tab.windowId);
+  const [{ tabs, previousId }, shortcut] = await Promise.all([
+    getTabSwitcherData(tab.windowId),
+    getTabSwitcherShortcut(),
+  ]);
   if (expectedOverlayId && overlays.get(tab.windowId)?.id !== expectedOverlayId) return;
   if (tabs.length < 2) return;
   if (
@@ -155,7 +190,6 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
     await switchToPreviousRecentTab(tab);
     return;
   }
-  const shortcut = await getTabSwitcherShortcut();
   let cycle = cycles.get(tab.windowId);
   // A tab that sees the modifier ends the gesture itself when it's released. Elsewhere, only a
   // quick press can still belong to it.
@@ -188,16 +222,11 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
   // The page's answer, if it gave one.
   let answer;
   let frozen = false;
-  // Brovim's own full-page UI (Options/Commands) already loads the content scripts. It can show
-  // the same grid as a website; other extensions' pages remain protected by the browser.
-  const ownPage = /^(chrome|moz)-extension:/i.test(tab.url || "") &&
-    tab.url.startsWith(chrome.runtime.getURL(""));
-  if (ownPage || /^(https?|file|chrome|brave|edge|about):/i.test(tab.url || "")) {
-    // A grid on screen owns the gesture, frozen or not.
-    const pulse = expectedOverlayId ? "alive" : await pagePulse(tab.id);
-    frozen = pulse === "frozen";
-    missingReceiver = pulse === "absent";
-    if (pulse === "alive") {
+  if (pulse) {
+    const state = await pulse;
+    frozen = state === "frozen";
+    missingReceiver = state === "absent";
+    if (state === "alive") {
       try {
         answer = await askPageToOpen(tab, requestId, options);
       } catch {
@@ -205,7 +234,9 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
       }
     }
     if (missingReceiver) {
-      const repaired = await Promise.race([
+      // A page still loading brings Brovim with it. Waiting for that would make a tap slow, and
+      // a hold late to tell from a tap; only a loaded page left without Brovim gets it now.
+      const repaired = tab.status === "complete" && await Promise.race([
         ensureContentScripts(tab.id, { forBrowserShortcut: true }),
         new Promise((resolve) => setTimeout(() => resolve(false), 250)),
       ]);
@@ -218,6 +249,8 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
     if (answer?.opened) {
       if (cycle) {
         cycle.overlay = true;
+        // A press on a grid on screen means the shortcut is held: see awaitVerdict.
+        cycle.stepped ||= !!expectedOverlayId;
         clearTimeout(cycle.timer);
       }
       return;
@@ -259,50 +292,95 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
       handler: "rememberTabSwitcherCycle",
       cycle: snapshot(cycle),
       shortcut,
-      handoff: frozen ? "verdict" : answer?.held ? "held" : quick ? "unknown" : undefined,
+      handoff: answer?.held ? "held" : quick ? "unknown" : frozen ? "verdict" : undefined,
     }, { frameId: 0 }).catch(() => null);
     // Whether the tab now in front sees the shortcut's modifier, and so ends the gesture itself.
     cycle.watched = reply?.watching === true;
-    if (frozen) awaitVerdict(tab, cycle);
+    // The letter went down a moment before the shortcut reached the background.
+    const since = Date.now() - (performance.now() - pressedAt) - 50;
+    if (frozen) awaitVerdict(tab, cycle, quick, since);
   } catch {
     endTabSwitcherCycle(tab.windowId, cycle.id);
   }
 }
 
-// "alive" if the page answers at once, "frozen" if it doesn't answer within frozenMs, or "absent"
-// if no Brovim runs there to answer.
-async function pagePulse(tabId) {
+// Whether Brovim runs on this tab's page: websites, files, browser pages (with the browser's flag),
+// and Brovim's own pages (Options, Commands), which show the same grid. Other extensions' pages
+// remain protected by the browser.
+function isScriptable(tab) {
+  const url = tab.url || "";
+  const ownPage = /^(chrome|moz)-extension:/i.test(url) &&
+    url.startsWith(chrome.runtime.getURL(""));
+  return ownPage || /^(https?|file|chrome|brave|edge|about):/i.test(url);
+}
+
+// Whether this tab's page said the press began (see noteModifierDown), or a held gesture moved to it.
+function sawPressBegin(tab, pressedAt) {
+  return (modifierDown.tabId === tab.id && pressedAt - modifierDown.at < 10_000) ||
+    cycles.get(tab.windowId)?.currentId === tab.id;
+}
+
+// "alive" if the page answers in time, "frozen" if it doesn't, or "absent" if no Brovim runs there
+// to answer. A page that hasn't said the press began gets unseenMs, and frozenMs once it does: its
+// word can arrive just after the shortcut.
+async function pagePulse(tabId, seen) {
+  const asked = performance.now();
   let timer;
   try {
     return await Promise.race([
       chrome.tabs.sendMessage(tabId, { handler: "tabSwitcherPing" }, { frameId: 0 })
         .then(() => "alive", () => "absent"),
-      new Promise((resolve) => timer = setTimeout(() => resolve("frozen"), frozenMs)),
+      new Promise((resolve) => {
+        const wait = (ms) => {
+          clearTimeout(timer);
+          timer = setTimeout(() => resolve("frozen"), ms);
+        };
+        wait(seen ? frozenMs : unseenMs);
+        if (!seen) pulseWaiters.set(tabId, () => wait(frozenMs - (performance.now() - asked)));
+      }),
     ]);
   } finally {
     clearTimeout(timer);
+    pulseWaiters.delete(tabId);
   }
 }
 
-// A frozen page saw the keys up to the switch. Once it catches up, it says whether the shortcut was
-// still held then; if so, the tab the gesture moved to shows the grid. A release after the switch
-// reaches that tab, which ends the gesture itself.
-async function awaitVerdict(source, cycle) {
+// A frozen page saw the keys up to the switch, or some of them. Once it catches up, it says what it
+// saw. A release after the switch reaches the tab the gesture moved to.
+// - quick: the switch came before a tap's release, so that tab decided itself: a grid for a hold,
+//   none for a tap. The answer only corrects it: a release this page saw since the press means the
+//   grid there is for a tap. A page that saw no release (a loading page gets no keys before it is
+//   drawn) leaves that tab's decision be. Otherwise that tab waits for this page to say it saw the
+//   shortcut held.
+// - since: when the shortcut was pressed.
+async function awaitVerdict(source, cycle, quick, since) {
   let timer;
-  const held = await Promise.race([
-    chrome.tabs.sendMessage(source.id, { handler: "heldTabSwitcherShortcut" }, { frameId: 0 })
-      .then((answer) => answer?.held === true, () => false),
-    new Promise((resolve) => timer = setTimeout(() => resolve(false), unresponsiveMs)),
+  const answer = await Promise.race([
+    chrome.tabs.sendMessage(source.id, { handler: "heldTabSwitcherShortcut", since }, {
+      frameId: 0,
+    }).catch(() => null),
+    new Promise((resolve) => timer = setTimeout(() => resolve(null), unresponsiveMs)),
   ]);
   clearTimeout(timer);
-  // The gesture may have moved on: the tab saw the release, or a second press opened the grid.
-  if (cycles.get(source.windowId) !== cycle || cycle.overlay) return;
+  const held = quick ? (answer?.released ? false : null) : answer?.held === true;
+  // The gesture may have moved on: the tab saw the release, or a press stepped its grid.
+  if (cycles.get(source.windowId) !== cycle || cycle.stepped || held === null) return;
+  if (quick ? held : cycle.overlay) return;
   if (!held) endTabSwitcherCycle(source.windowId, cycle.id);
   await chrome.tabs.sendMessage(cycle.currentId, {
     handler: "tabSwitcherHeld",
     cycleId: cycle.id,
     held,
   }, { frameId: 0 }).catch(() => {});
+}
+
+// Whether the grid with this id is showing, and moved its selection.
+async function stepGrid(overlayId) {
+  try {
+    return await chrome.runtime.sendMessage({ handler: "stepTabSwitcher", overlayId }) === true;
+  } catch {
+    return false; // No grid answered.
+  }
 }
 
 // The shortcut assigned in the browser's extension-shortcut settings.
@@ -327,6 +405,10 @@ function snapshot(cycle) {
 // The page's answer: { opened, held }. held: the page couldn't show the grid, but saw the
 // shortcut's modifier held past the tap window.
 async function askPageToOpen(tab, requestId, options) {
+  // The grid on screen takes the press itself, while the page's scripts may be busy loading.
+  if (options.expectedOverlayId && await stepGrid(options.expectedOverlayId)) {
+    return { opened: true };
+  }
   const wasVisible = !!options.expectedOverlayId || overlays.get(tab.windowId)?.tabId === tab.id;
   let timeout;
   try {

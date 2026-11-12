@@ -245,13 +245,13 @@ context("configured switcher shortcut", () => {
         { id: 704, index: 3, windowId: 7, discarded: true },
         { id: 705, index: 4, windowId: 7, frozen: true },
         { id: 706, index: 5, windowId: 7, pinned: true, hidden: true },
-        // Restored after a browser restart and never opened again: unloaded, not "discarded".
+        // Restored after a browser restart and never opened again: unloaded, not sleeping.
         { id: 707, index: 6, windowId: 7, status: "unloaded" },
         { id: 708, index: 7, windowId: 7, pinned: true, status: "unloaded" },
       ];
       stub(chrome.tabs, "query", () => Promise.resolve(tabs));
       const visible = await getRecentTabs(7);
-      assert.equal([701, 702, 703, 708], visible.map((tab) => tab.id));
+      assert.equal([701, 702, 703, 707, 708], visible.map((tab) => tab.id));
       stub(chrome.tabs, "get", (id) => Promise.resolve(tabs.find((tab) => tab.id === id)));
       stub(chrome.windows, "update", () => Promise.resolve());
       const selected = [];
@@ -261,7 +261,9 @@ context("configured switcher shortcut", () => {
       });
       await sendRequestHandlers.selectSpecificTab({ id: 702, awakeOnly: true, tab: tabs[0] });
       await sendRequestHandlers.selectSpecificTab({ id: 703, awakeOnly: true, tab: tabs[0] });
-      assert.equal([702, 703], selected);
+      // Selecting a restored tab loads it.
+      await sendRequestHandlers.selectSpecificTab({ id: 707, awakeOnly: true, tab: tabs[0] });
+      assert.equal([702, 703, 707], selected);
     },
   );
   for (const columns of [3, 5, 8]) {
@@ -368,25 +370,30 @@ context("configured switcher shortcut", () => {
     assert.equal(null, TabSwitcher.cycle);
     assert.equal([{ handler: "endTabSwitcherCycle", id: "old-hop" }], messages);
   });
-  should("warm up only on a fresh press of the shortcut's modifier, after settings load", () => {
-    const warmed = [];
-    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Ctrl+Q"));
-    stub(TabSwitcher, "init", () => warmed.push("frame"));
-    stub(chrome.runtime, "id", "brovim");
-    stub(chrome.runtime, "sendMessage", (message) => {
-      warmed.push(message.handler);
-      return Promise.resolve();
-    });
-    stub(Settings, "isLoaded", () => false);
-    TabSwitcher.warmUp({ key: "Control", repeat: false });
-    assert.equal([], warmed);
-    stub(Settings, "isLoaded", () => true);
-    TabSwitcher.warmUp({ key: "Alt", repeat: false });
-    TabSwitcher.warmUp({ key: "Control", repeat: true });
-    assert.equal([], warmed);
-    TabSwitcher.warmUp({ key: "Control", repeat: false });
-    assert.equal(["frame", "warmTabSwitcher"], warmed);
-  });
+  should(
+    "warm up only on a fresh press of the shortcut's modifier, the frame after settings load",
+    () => {
+      const warmed = [];
+      stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Ctrl+Q"));
+      stub(TabSwitcher, "init", () => warmed.push("frame"));
+      stub(chrome.runtime, "id", "brovim");
+      stub(chrome.runtime, "sendMessage", (message) => {
+        warmed.push(message.handler);
+        return Promise.resolve();
+      });
+      // The background learns of the press even before settings load.
+      stub(Settings, "isLoaded", () => false);
+      TabSwitcher.warmUp({ key: "Control", repeat: false });
+      assert.equal(["warmTabSwitcher"], warmed);
+      warmed.length = 0;
+      stub(Settings, "isLoaded", () => true);
+      TabSwitcher.warmUp({ key: "Alt", repeat: false });
+      TabSwitcher.warmUp({ key: "Control", repeat: true });
+      assert.equal([], warmed);
+      TabSwitcher.warmUp({ key: "Control", repeat: false });
+      assert.equal(["warmTabSwitcher", "frame"], warmed);
+    },
+  );
   should("forward grid data requests through the owning content script", async () => {
     const replies = [];
     const request = { handler: "getTabScreenshots", urls: ["https://private.example/"] };
@@ -422,7 +429,7 @@ context("configured switcher shortcut", () => {
     SwitcherCommands.endTabSwitcherCycle(889);
   });
   for (
-    const state of [{ discarded: true }, { frozen: true }, { status: "unloaded" }, { hidden: true }]
+    const state of [{ discarded: true }, { frozen: true }, { hidden: true }]
   ) {
     should(`not wake an unavailable grid selection: ${JSON.stringify(state)}`, async () => {
       stub(chrome.tabs, "get", () => Promise.resolve({ id: 901, windowId: 1, ...state }));
@@ -564,21 +571,26 @@ context("configured switcher shortcut", () => {
     TabSwitcher.reportKeyboardEvent(event("keydown", "Alt", { altKey: true }));
     TabSwitcher.reportKeyboardEvent(event("keydown", "Shift", { altKey: true, shiftKey: true }));
     TabSwitcher.reportKeyboardEvent(event("keyup", "Alt"));
+    // The modifier going down also tells the background directly that this tab saw the press begin.
+    assert.equal(1, sent.filter(({ handler }) => handler === "warmTabSwitcher").length);
+    assert.equal("warmTabSwitcher", sent[0].handler);
     assert.equal(
       [
         ["keydown", "Alt", true, false],
         ["keydown", "Shift", true, true],
         ["keyup", "Alt", false, false],
       ],
-      sent.map(({ handler, frameId, message }) => {
-        assert.equal(["sendMessageToFrames", 0, "tabSwitcherKey"], [
-          handler,
-          frameId,
-          message.handler,
-        ]);
-        const { type, key, altKey, shiftKey } = message.event;
-        return [type, key, altKey, shiftKey];
-      }),
+      sent.filter(({ handler }) => handler !== "warmTabSwitcher").map(
+        ({ handler, frameId, message }) => {
+          assert.equal(["sendMessageToFrames", 0, "tabSwitcherKey"], [
+            handler,
+            frameId,
+            message.handler,
+          ]);
+          const { type, key, altKey, shiftKey } = message.event;
+          return [type, key, altKey, shiftKey];
+        },
+      ),
     );
   });
   should("show a held grid only after the tap window, and never for a tap", async () => {
@@ -650,6 +662,7 @@ context("configured switcher shortcut", () => {
       throw new Error("The spent press switched tabs a second time");
     });
     // A busy page takes its time to answer; an impatient second press queues behind the first.
+    SwitcherCommands.noteModifierDown(source.id);
     const first = SwitcherCommands.openTabSwitcher(source);
     const second = SwitcherCommands.openTabSwitcher(source);
     while (!answer) await new Promise((resolve) => setTimeout(resolve, 1));
@@ -711,6 +724,7 @@ context("configured switcher shortcut", () => {
       const press = async () => {
         for (const tab of tabs) tab.active = tab.id === 811;
         for (const id of [813, 812, 811]) bgUtils.tabRecency.register(id);
+        SwitcherCommands.noteModifierDown(811);
         await SwitcherCommands.openTabSwitcher(tabs[0]);
         SwitcherCommands.endTabSwitcherCycle(891);
       };
@@ -723,7 +737,7 @@ context("configured switcher shortcut", () => {
         await press();
         // The same, but the switch came late: the release may already have been lost.
         answer = () => {
-          now += 80;
+          now += 150;
           return Promise.resolve({ opened: false });
         };
         await press();
@@ -807,6 +821,73 @@ context("configured switcher shortcut", () => {
       assert.equal([2], shown);
     },
   );
+  should("keep a handed-off grid for a hold, and drop it for a tap a busy page saw", () => {
+    const cancelled = [];
+    const ended = [];
+    stub(TabSwitcher, "cancel", (id) => cancelled.push(id));
+    stub(TabSwitcher, "endCycle", () => ended.push(TabSwitcher.cycle?.id));
+    stub(TabSwitcher, "currentRequestId", "request");
+    stub(TabSwitcher, "modifierReleased", () => false);
+    stub(TabSwitcher, "isOpening", false);
+    stub(TabSwitcher, "tabSwitcherUI", { showing: true });
+    stub(TabSwitcher, "cycle", { id: "gesture" });
+    // The grid this page showed for a hold stays; a newer gesture ignores the old answer.
+    assert.isFalse(TabSwitcher.showsHeldGrid("gesture", true));
+    assert.isFalse(TabSwitcher.showsHeldGrid("older", false));
+    assert.equal([[], []], [cancelled, ended]);
+    // The busy page took the release before the switch: it was a tap.
+    assert.isFalse(TabSwitcher.showsHeldGrid("gesture", false));
+    assert.equal([["request"], ["gesture"]], [cancelled, ended]);
+    // No grid yet: show it for a hold, unless this page saw the release since.
+    TabSwitcher.tabSwitcherUI.showing = false;
+    assert.isTrue(TabSwitcher.showsHeldGrid("gesture", true));
+    TabSwitcher.modifierReleased = () => true;
+    assert.isFalse(TabSwitcher.showsHeldGrid("gesture", true));
+  });
+
+  should("wait for the focus that follows a switch, but not for long", async () => {
+    let focused = false;
+    stub(globalThis, "document", { hasFocus: () => focused });
+    let start = Date.now();
+    const waiting = TabSwitcher.whenFocused(500);
+    focused = true;
+    globalThis.dispatchEvent(new Event("focus"));
+    await waiting;
+    assert.isTrue(Date.now() - start < 400);
+    focused = false;
+    start = Date.now();
+    await TabSwitcher.whenFocused(30);
+    assert.isTrue(Date.now() - start >= 25);
+  });
+
+  should("ignore a tap reported by a tab the background already left", async () => {
+    let updated = false;
+    stub(chrome.tabs, "update", () => {
+      updated = true;
+      return Promise.resolve();
+    });
+    const result = await sendRequestHandlers.quickSwitchTab({
+      tab: { id: 861, windowId: 7, active: false },
+    });
+    assert.isTrue(result.switched);
+    assert.isFalse(updated);
+  });
+
+  should("remember when the modifier went up, by the key event's own time", () => {
+    stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
+    stub(TabSwitcher, "cycle", null);
+    stub(TabSwitcher, "shortcutRequest", null);
+    stub(TabSwitcher, "modifierState", {});
+    stub(TabSwitcher, "modifierUpAt", 0);
+    stub(TabSwitcher, "onModifierReleased", () => {});
+    const keyup = (key, timeStamp) => ({ type: "keyup", key, altKey: false, timeStamp });
+    TabSwitcher.recordKeyboardEvent(keyup("q", 10));
+    assert.equal(0, TabSwitcher.modifierUpAt);
+    // A busy page handles the release late: the event's time says when it happened.
+    TabSwitcher.recordKeyboardEvent(keyup("Alt", 25));
+    assert.equal(performance.timeOrigin + 25, TabSwitcher.modifierUpAt);
+  });
+
   should("report a held modifier only after seeing it go down during this gesture", () => {
     stub(TabSwitcher, "shortcut", Utils.parseBrowserShortcut("Alt+Q"));
     stub(TabSwitcher, "cycle", null);
@@ -902,7 +983,7 @@ context("configured switcher shortcut", () => {
   );
 
   should(
-    "switch at once from a frozen page, and show the grid there only if it was held",
+    "switch from a busy page before a tap lets go, and let the tab it lands on decide",
     async () => {
       const tabs = [831, 832, 833].map((id, index) => ({
         id,
@@ -916,7 +997,12 @@ context("configured switcher shortcut", () => {
         "query",
         (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
       );
+      // In the background, the time since the service worker started.
+      let now = 10_000;
+      let lateBy = 0;
+      stub(performance, "now", () => now);
       stub(chrome.tabs, "update", (id) => {
+        now += lateBy;
         for (const tab of tabs) tab.active = tab.id === id;
         return Promise.resolve(tabs.find((t) => t.id === id));
       });
@@ -924,7 +1010,7 @@ context("configured switcher shortcut", () => {
       let verdict;
       stub(chrome.tabs, "sendMessage", (id, message) => {
         sent.push([id, message.handler, message.handoff ?? message.held]);
-        // The source is frozen: nothing it is asked gets an answer until it catches up.
+        // The source is busy: nothing it is asked gets an answer until it catches up.
         if (id === 831 && message.handler === "tabSwitcherPing") return new Promise(() => {});
         if (id === 831 && message.handler === "heldTabSwitcherShortcut") {
           return new Promise((resolve) => verdict = resolve);
@@ -935,37 +1021,149 @@ context("configured switcher shortcut", () => {
         return Promise.resolve();
       });
       await bgUtils.tabRecency.init();
-      const press = async (held) => {
+      // - held: whether the busy page saw the shortcut held (or else its release) when it catches up.
+      // - late: how long the switch took past the press.
+      // - released: whether it saw the modifier go up since the press.
+      const press = async (held, late = 0, released = !held) => {
         for (const tab of tabs) tab.active = tab.id === 831;
         for (const id of [833, 832, 831]) bgUtils.tabRecency.register(id);
         sent.length = 0;
-        const pressed = performance.now();
+        lateBy = late;
+        // The page saw the modifier go down, then got busy.
+        SwitcherCommands.noteModifierDown(831);
         await Promise.race([
           SwitcherCommands.openTabSwitcher(tabs[0]),
           new Promise((resolve) => setTimeout(resolve, 1000)),
         ]);
         // It switched as soon as the page failed to answer, without asking it for the grid.
-        assert.isTrue(performance.now() - pressed < 500);
         assert.isTrue(tabs[1].active);
         assert.isFalse(sent.some(([, handler]) => handler === "openTabSwitcher"));
-        assert.equal(
-          [832, "rememberTabSwitcherCycle", "verdict"],
-          sent.find(([, handler]) => handler === "rememberTabSwitcherCycle"),
-        );
-        // The page catches up and says whether the shortcut was still held at the switch.
-        verdict({ held });
+        const handoff = sent.find(([, handler]) => handler === "rememberTabSwitcherCycle")[2];
+        verdict({ held, released });
         await new Promise((resolve) => setTimeout(resolve, 0));
-        return sent.at(-1);
+        SwitcherCommands.endTabSwitcherCycle(893);
+        return [handoff, sent.filter(([, handler]) => handler === "tabSwitcherHeld")];
       };
       try {
-        assert.equal([832, "tabSwitcherHeld", true], await press(true));
-        SwitcherCommands.endTabSwitcherCycle(893);
-        assert.equal([832, "tabSwitcherHeld", false], await press(false));
+        // A quick switch: the tab it lands on tells a hold from a tap itself. The busy page only
+        // corrects it if it took a tap's release before the switch.
+        assert.equal(["unknown", []], await press(true));
+        assert.equal(["unknown", [[832, "tabSwitcherHeld", false]]], await press(false));
+        // It never saw the keys (a loading page gets none before it is drawn): the grid stays.
+        assert.equal(["unknown", []], await press(false, 0, false));
+        // A late switch: the release may already be gone, so that tab waits for the busy page.
+        assert.equal(["verdict", [[832, "tabSwitcherHeld", true]]], await press(true, 150));
+        assert.equal(["verdict", [[832, "tabSwitcherHeld", false]]], await press(false, 150));
       } finally {
         SwitcherCommands.endTabSwitcherCycle(893);
       }
     },
   );
+  should("give a page that hasn't said the press began less time to answer", async () => {
+    const tabs = [871, 872, 873].map((id, index) => ({
+      id,
+      index,
+      windowId: 896,
+      active: index === 0,
+      status: "complete",
+      url: "https://example.com/",
+    }));
+    stub(
+      chrome.tabs,
+      "query",
+      (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+    );
+    stub(chrome.tabs, "update", (id) => {
+      for (const tab of tabs) tab.active = tab.id === id;
+      return Promise.resolve(tabs.find((t) => t.id === id));
+    });
+    // How long the page takes to answer the ping.
+    let busyFor = 0;
+    const sent = [];
+    stub(chrome.tabs, "sendMessage", (id, message) => {
+      sent.push([id, message.handler, message.handoff]);
+      if (message.handler === "tabSwitcherPing") {
+        return new Promise((resolve) => setTimeout(() => resolve(true), busyFor));
+      }
+      if (message.handler === "openTabSwitcher") return Promise.resolve({ opened: true });
+      return Promise.resolve({ watching: true });
+    });
+    await bgUtils.tabRecency.init();
+    // - seen: whether the page said the press began: "before" the shortcut, "after" it, or never.
+    const press = async (seen, ms) => {
+      for (const tab of tabs) tab.active = tab.id === 871;
+      for (const id of [873, 872, 871]) bgUtils.tabRecency.register(id);
+      sent.length = 0;
+      busyFor = ms;
+      SwitcherCommands.noteModifierDown(seen === "before" ? 871 : 999);
+      if (seen === "after") setTimeout(() => SwitcherCommands.noteModifierDown(871), 3);
+      await SwitcherCommands.openTabSwitcher(tabs[0]);
+      SwitcherCommands.endTabSwitcherCycle(896);
+      // Leaves out the busy page's later correction: see awaitVerdict.
+      return sent.filter(([, handler]) =>
+        !["tabSwitcherPing", "heldTabSwitcherShortcut"].includes(handler)
+      );
+    };
+    try {
+      // A page that answers at once is asked for the grid.
+      assert.equal([[871, "openTabSwitcher", undefined]], await press(false, 0));
+      // It missed the press: busy for a moment is too long.
+      assert.equal([[872, "rememberTabSwitcherCycle", "unknown"]], await press(false, 25));
+      assert.isTrue(tabs[1].active);
+      // It saw the press begin, even if its word came just after the shortcut: that moment is fine.
+      assert.equal([[871, "openTabSwitcher", undefined]], await press("before", 25));
+      assert.isTrue(tabs[0].active);
+      assert.equal([[871, "openTabSwitcher", undefined]], await press("after", 25));
+      assert.isTrue(tabs[0].active);
+    } finally {
+      SwitcherCommands.endTabSwitcherCycle(896);
+    }
+  });
+
+  should("switch from a page still arriving without waiting for Brovim to load there", async () => {
+    const tabs = [851, 852, 853].map((id, index) => ({
+      id,
+      index,
+      windowId: 895,
+      active: index === 0,
+      // A tab woken from sleep: its page is on its way, and nothing in it answers yet.
+      status: index === 0 ? "loading" : "complete",
+      url: "https://waking.example/",
+    }));
+    stub(
+      chrome.tabs,
+      "query",
+      (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+    );
+    stub(chrome.tabs, "update", (id) => {
+      for (const tab of tabs) tab.active = tab.id === id;
+      return Promise.resolve(tabs.find((t) => t.id === id));
+    });
+    const sent = [];
+    stub(chrome.tabs, "sendMessage", (id, message) => {
+      sent.push([id, message.handler, message.handoff]);
+      if (id === 851) return Promise.reject(new Error("Receiving end does not exist."));
+      return Promise.resolve({ watching: true });
+    });
+    let injected = false;
+    stub(chrome.scripting, "executeScript", () => {
+      injected = true;
+      return new Promise(() => {});
+    });
+    await bgUtils.tabRecency.init();
+    for (const id of [853, 852, 851]) bgUtils.tabRecency.register(id);
+    try {
+      await SwitcherCommands.openTabSwitcher(tabs[0]);
+      assert.isTrue(tabs[1].active);
+      assert.isFalse(injected);
+      assert.equal(
+        [852, "rememberTabSwitcherCycle", "unknown"],
+        sent.find(([, handler]) => handler === "rememberTabSwitcherCycle"),
+      );
+    } finally {
+      SwitcherCommands.endTabSwitcherCycle(895);
+    }
+  });
   should(
     "count a press on tabs that can't see the modifier as held only if it comes quickly",
     async () => {
@@ -1114,7 +1312,9 @@ context("TabSwitcher", () => {
       selected = { id, ...change };
       return Promise.resolve();
     });
-    const result = await sendRequestHandlers.quickSwitchTab({ tab: { id: 201, windowId: 7 } });
+    const result = await sendRequestHandlers.quickSwitchTab({
+      tab: { id: 201, windowId: 7, active: true },
+    });
     assert.isTrue(result.switched);
     assert.equal({ id: 204, active: true }, selected);
   });
@@ -1448,7 +1648,7 @@ context("Tab switcher previews and order", () => {
       await Settings.set("tabSwitcherOrder", order);
       try {
         const result = await sendRequestHandlers.quickSwitchTab({
-          tab: { id: activeId, windowId: 7 },
+          tab: { id: activeId, windowId: 7, active: true },
         });
         assert.isTrue(result.switched);
         assert.equal({ id: expectedId, active: true }, selected);

@@ -38,6 +38,17 @@ context("help dialog", () => {
     assert.equal(["reload", "hard", ["b", "c"]], [rows[1][0].name, rows[1][1], rows[1][2]]);
   });
 
+  should("list the browser's close-tab shortcut, which has no page key", async () => {
+    stub(chrome, "commands", {
+      getAll: () => Promise.resolve([{ name: "close_tab", shortcut: "Alt+X" }]),
+    });
+    HelpDialogPage.init();
+    await HelpDialogPage.show();
+    const rows = [...HelpDialogPage.dialogElement.querySelectorAll(".help-description")];
+    const row = rows.find((el) => el.textContent === "Close current tab")?.parentElement;
+    assert.equal(["Alt+X"], [...(row?.querySelectorAll(".key") ?? [])].map((el) => el.textContent));
+  });
+
   should("have a section in the help dialog for every group", async () => {
     // This test is to prevent code editing errors, where a command is added but doesn't have a
     // corresponding group in the help dialog.

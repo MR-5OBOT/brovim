@@ -5,7 +5,7 @@ import * as messenger from "../../pages/ui_component_messenger.js";
 let instance = 0;
 
 context("tab switcher page", () => {
-  let port, list, messages, replies, decode, grid, panel, domWindow;
+  let port, list, messages, replies, decode, grid, panel, domWindow, confirmHidden;
   const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
   const receive = (data) => port.onmessage({ data });
   const reply = (request, result) => receive({ name: "response", id: request.id, result });
@@ -25,6 +25,8 @@ context("tab switcher page", () => {
   setup(async () => {
     await jsdomStub("pages/tab_switcher_page.html");
     domWindow = document.defaultView;
+    // jsdom's documents are hidden; a tab showing the grid is in front.
+    Object.defineProperty(document, "hidden", { value: false, configurable: true, writable: true });
     stub(globalThis, "innerWidth", 1280);
     stub(globalThis, "innerHeight", 900);
     stub(globalThis, "addEventListener", domWindow.addEventListener.bind(domWindow));
@@ -46,6 +48,7 @@ context("tab switcher page", () => {
       lastUsed: i === 1,
     }));
     messages = [];
+    confirmHidden = true;
     replies = {
       getOpenTabsWithScreenshots: () => list.map((tab) => ({ ...tab })),
       getTabScreenshots: () => [],
@@ -57,6 +60,10 @@ context("tab switcher page", () => {
     port = {
       postMessage(request) {
         messages.push(request);
+        // The page has drawn without the grid: see hideAndSwitch.
+        if (request.name === "confirmHidden" && confirmHidden) {
+          queueMicrotask(() => receive({ name: "hiddenConfirmed" }));
+        }
         if (request.name !== "request") return;
         const result = replies[request.message.handler]?.(request.message);
         // Tests can withhold a reply without leaving an unresolved test-side promise.
@@ -104,6 +111,45 @@ context("tab switcher page", () => {
       assert.equal([], previewRequests());
     },
   );
+
+  should("hide the grid before switching, without waiting long for a busy page", async () => {
+    const steps = () =>
+      messages.map((m) => m.name === "request" ? m.message.handler : m.name)
+        .filter((name) => ["hide", "confirmHidden", "selectSpecificTab"].includes(name));
+    await open();
+    await press("Enter");
+    await flush();
+    // The page drew a frame without the grid before the switch.
+    assert.equal(["hide", "confirmHidden", "selectSpecificTab"], steps());
+    assert.isTrue(document.body.classList.contains("closed"));
+    // A page too busy to say so: the switch still comes, a moment later.
+    messages.length = 0;
+    confirmHidden = false;
+    await open();
+    assert.isFalse(document.body.classList.contains("closed"));
+    await press("Enter");
+    await flush();
+    assert.equal(["hide", "confirmHidden"], steps());
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(["hide", "confirmHidden", "selectSpecificTab"], steps());
+    // Another switch while waiting: it stands.
+    messages.length = 0;
+    await open();
+    await press("Enter");
+    document.hidden = true;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    document.hidden = false;
+    assert.equal(["hide", "confirmHidden"], steps());
+    // The selected tab is this one, already in front: nothing to switch.
+    messages.length = 0;
+    confirmHidden = true;
+    await open();
+    await press("ArrowLeft");
+    await press("Enter");
+    await flush();
+    assert.equal("1", grid.querySelector(".selected")?.dataset.id ?? "1");
+    assert.equal(["hide"], steps());
+  });
 
   should("return to a handed-off gesture's first tab when it is cancelled", async () => {
     const selections = () =>

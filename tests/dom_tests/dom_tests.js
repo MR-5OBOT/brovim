@@ -1190,6 +1190,16 @@ context("GrabBackFocus", () => {
     assert.isFalse(DomUtils.isEditable(document.activeElement));
   });
 
+  should("blur an input focused inside a shadow root, as browser pages do", () => {
+    const host = document.createElement("div");
+    document.getElementById("test-div").append(host);
+    const search = document.createElement("input");
+    host.attachShadow({ mode: "open" }).append(search);
+    initializeModeState();
+    search.focus();
+    assert.isFalse(DomUtils.isEditable(DomUtils.deepActiveElement()));
+  });
+
   should("release an auto-focused input that refocuses itself on blur", () => {
     const input = document.getElementById("input");
     input.addEventListener("blur", () => input.focus());

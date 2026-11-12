@@ -48,9 +48,6 @@
     ]
   },
   "34015": {
-    "added": [
-      "Control+KeyX"
-    ],
     "removed": [
       "Control+KeyW",
       "Control+F4"

@@ -4,6 +4,9 @@ const TabSwitcher = {
   isOpening: false,
   modifierState: {},
   keyboardEventAt: 0,
+  // When this page last saw the shortcut's modifier go up, in Date.now() time: see
+  // heldTabSwitcherShortcut.
+  modifierUpAt: 0,
   shortcut: Utils.parseBrowserShortcut(),
   cycle: null,
   currentRequestId: null,
@@ -135,17 +138,18 @@ const TabSwitcher = {
     return this.opening;
   },
 
-  // The shortcut's modifier goes down before its letter. Load the hidden grid frame and wake the
-  // background then, so the first grid on a page opens as fast as later ones. A quick tap doesn't
-  // wait for either.
-  // - fromFrame: an embedded page reported the key through the background, which is awake.
+  // The shortcut's modifier goes down before its letter. Tell the background, which wakes it and
+  // tells it this page saw the press begin, and load the hidden grid frame, so the first grid on a
+  // page opens as fast as later ones.
+  // - fromFrame: an embedded page reported the key, and told the background itself.
   warmUp(event, fromFrame = false) {
     if (event.repeat || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
-    // Loading the frame reads settings (for the user's CSS), which can still be loading early in a
-    // page's life. A script orphaned by an extension update can't reach the extension.
-    if (!Settings.isLoaded() || !chrome.runtime?.id) return;
-    this.init();
+    // A script orphaned by an extension update can't reach the extension.
+    if (!chrome.runtime?.id) return;
     if (!fromFrame) chrome.runtime.sendMessage({ handler: "warmTabSwitcher" }).catch(() => {});
+    // Loading the frame reads settings (for the user's CSS), which can still be loading early in a
+    // page's life.
+    if (Settings.isLoaded()) this.init();
   },
 
   init() {
@@ -168,6 +172,13 @@ const TabSwitcher = {
 
   async handleUiMessage({ data }) {
     if (data?.name === "panel") return this.placeBackdrop(data);
+    // The frame asked to be hidden just before this: say so once the page has drawn without it.
+    if (data?.name === "confirmHidden") {
+      if (!document.hidden) {
+        await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+      }
+      return this.tabSwitcherUI.postMessage({ name: "hiddenConfirmed" }).catch(() => {});
+    }
     if (data?.name !== "request") return;
     const allowed = [
       "getOpenTabsWithScreenshots",
@@ -313,6 +324,39 @@ const TabSwitcher = {
     return focused === this.keysFrame;
   },
 
+  // The frozen tab a gesture left says whether the shortcut was still held at the switch to this
+  // page. Returns whether this page should show the grid for it now.
+  showsHeldGrid(cycleId, held) {
+    if (this.cycle?.id !== cycleId) return false;
+    // This page already took the gesture for a hold (see the "unknown" handoff). If the frozen
+    // page saw the release before the switch, it was a tap: drop the grid.
+    if (this.isOpening || this.tabSwitcherUI?.showing) {
+      if (!held) {
+        this.cancel(this.currentRequestId);
+        this.endCycle();
+      }
+      return false;
+    }
+    // A release after the switch reached this page.
+    if (held && !this.modifierReleased()) return true;
+    this.endCycle();
+    return false;
+  },
+
+  // Resolves once this page has the focus, or after ms.
+  whenFocused(ms) {
+    if (document.hasFocus()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        globalThis.removeEventListener("focus", done, true);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      globalThis.addEventListener("focus", done, true);
+    });
+  },
+
   rememberCycle(cycle, shortcut) {
     this.cycle = cycle;
     this.shortcut = shortcut;
@@ -339,6 +383,10 @@ const TabSwitcher = {
     if (!isModifier || event.repeat || !chrome.runtime?.id) return;
     const { type, key, altKey, ctrlKey, metaKey, shiftKey } = event;
     try {
+      // The background hears of the press first-hand: see warmUp.
+      if (type === "keydown" && Utils.isBrowserShortcutRelease(event, this.shortcut)) {
+        chrome.runtime.sendMessage({ handler: "warmTabSwitcher" }).catch(() => {});
+      }
       chrome.runtime.sendMessage({
         handler: "sendMessageToFrames",
         frameId: 0,
@@ -370,6 +418,8 @@ const TabSwitcher = {
       this.modifierState[key] = event[key];
     }
     if (event.type !== "keyup" || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
+    // The event's own time: a busy page handles it late.
+    this.modifierUpAt = event.timeStamp ? performance.timeOrigin + event.timeStamp : Date.now();
     if (this.cycle && !this.shortcutRequest && !this.tabSwitcherUI?.showing && !this.isOpening) {
       this.endCycle();
     }

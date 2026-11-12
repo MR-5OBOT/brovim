@@ -127,6 +127,15 @@
         "mac": "Alt+Q"
       },
       "description": "Open visual tab switcher"
+    },
+    // A browser shortcut, so it closes tabs where pages keep their keys: PDFs, error pages, the
+    // address bar. Browsers give an extension at most four suggested keys; this is the fourth.
+    "close_tab": {
+      "suggested_key": {
+        "default": "Alt+X",
+        "mac": "Alt+X"
+      },
+      "description": "Close the tab"
     }
   },
   "web_accessible_resources": [

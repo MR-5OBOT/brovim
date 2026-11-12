@@ -71,6 +71,11 @@ body {
   user-select: none;
 }
 
+/* Closing: clear the dimming at once, before the page hides the frame. */
+body.closed {
+  background: transparent;
+}
+
 #panel {
   box-sizing: border-box;
   width: 90vw;

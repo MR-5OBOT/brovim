@@ -110,12 +110,18 @@ const HelpDialogPage = {
   async show() {
     const commandToOptionsToKeys =
       (await chrome.storage.session.get("commandToOptionsToKeys")).commandToOptionsToKeys ?? {};
-    // The browser shortcut lives outside page key mappings. Include its actual assigned key.
+    // Browser shortcuts live outside page key mappings. Include their actual assigned keys.
     const shortcuts = await chrome.commands?.getAll?.() ?? [];
-    const shortcut = shortcuts.find((command) => command.name === "open_tab_switcher")?.shortcut;
-    if (shortcut) {
-      const switcher = commandToOptionsToKeys["TabSwitcher.activate"] ??= {};
-      switcher[""] = [...(switcher[""] ?? []), shortcut];
+    for (
+      const [name, command] of [
+        ["open_tab_switcher", "TabSwitcher.activate"],
+        ["close_tab", "removeTab"],
+      ]
+    ) {
+      const shortcut = shortcuts.find((browserCommand) => browserCommand.name === name)?.shortcut;
+      if (!shortcut) continue;
+      const variations = commandToOptionsToKeys[command] ??= {};
+      variations[""] = [...(variations[""] ?? []), shortcut];
     }
     const rowsByGroup = this.getRowsForDialog(commandToOptionsToKeys);
     const focusShortcut = shortcuts.find((command) => command.name === "focus_page")?.shortcut;

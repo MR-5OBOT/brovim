@@ -17,13 +17,13 @@ Temporary Add-on", and pick any file in this directory.
 The Options page opens from the help dialog (type `?`) or from the extension's details page.
 
 **Helium setup:** `helium/shortcuts.json` holds your Helium keyboard shortcuts (the defaults
-removed, such as `Ctrl+Tab`, `Ctrl+T` and `Alt+D`, plus `Ctrl+X` to close a tab and `Alt+S` for
-Settings). On a new machine or profile, start Helium once, close it, then run
-`deno run -A helium/setup.js`. It applies those shortcuts and adds `--extensions-on-chrome-urls` to
-`~/.config/helium-browser-flags.conf` so Brovim also runs on Helium's own pages. After changing
-shortcuts in `chrome://settings/system/shortcuts`, run `deno run -A helium/setup.js save` to copy
-them back into the file. Use `--profile <dir>` for a profile other than
-`~/.config/net.imput.helium/Default`.
+removed, such as `Ctrl+Tab`, `Ctrl+T`, `Ctrl+W` and `Alt+D`, plus `Alt+S` for Settings; Brovim's
+`Alt+X` closes tabs, so `Ctrl+X` stays Cut). On a new machine or profile, start Helium once, close
+it, then run `deno run -A helium/setup.js`. It applies those shortcuts and adds
+`--extensions-on-chrome-urls` to `~/.config/helium-browser-flags.conf` so Brovim also runs on
+Helium's own pages. After changing shortcuts in `chrome://settings/system/shortcuts`, run
+`deno run -A helium/setup.js save` to copy them back into the file. Use `--profile <dir>` for a
+profile other than `~/.config/net.imput.helium/Default`.
 
 ## Key bindings
 
@@ -48,7 +48,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `ge`            | Edit the current URL                                            |
 | `Alt+Q`         | Visual tab switcher, Alt+Tab style (browser shortcut)           |
 | `Alt+E`         | Search browser settings, extensions and internal pages          |
-| `x` `X`         | Close tab / restore closed tab                                  |
+| `Alt+X` `X`     | Close any tab (browser shortcut) / restore closed tab           |
 | `<<` `>>`       | Move the tab left / right                                       |
 | `<a-p>` `<a-m>` | Pin / mute the tab                                              |
 | `H` `L`         | History back / forward                                          |
@@ -109,9 +109,10 @@ fields keep their normal typing behavior.
 
 ### Tab switcher
 
-The switcher is a grid of tab previews, most recently used first. Sleeping unpinned tabs (discarded,
-frozen, or not loaded since the browser restarted) and hidden tabs are excluded. Pinned tabs stay
-eligible while sleeping and wake only when selected; awake background tabs remain available.
+The switcher is a grid of tab previews, most recently used first. Sleeping unpinned tabs (discarded
+or frozen) and hidden tabs are excluded. Tabs restored at startup and not opened since are listed,
+and load when selected. Pinned tabs stay eligible while sleeping and wake only when selected; awake
+background tabs remain available.
 
 The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
 reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its
@@ -166,22 +167,28 @@ pages), sandboxed pages (raw.githubusercontent.com, for example: their sandbox p
 frames, so the grid, Vomnibar, HUD and help can't open there), the PDF viewer, fullscreen video,
 embedded pages Brovim can't run in, and the address bar when it has the focus.
 
-It covers tabs still loading on a slow network, too. A loading tab shows the grid itself as soon as
-any of its page is drawn. Before that (its server hasn't answered, or the page waits for a script or
-stylesheet), the browser shows nothing and gives the page no keys, so the grid opens on the previous
-tab. Brovim keeps its background running while such a tab is in front, so this works on the first
-press; if the browser stopped it anyway, a press switches without a grid, which shows on your next
-press. When the tab a gesture moved to can't see the keys either (two PDFs, say), a press within 0.4
-s of the last one continues a held gesture, and a slower one is a new tap: taps flip between the
-two, and quick presses while holding walk on through the list. The switcher never opens a separate
-window, and the shortcut also works on excluded sites and while an input is focused.
+It covers tabs still loading, too. A loading tab shows the grid itself as soon as any of its page is
+drawn, unless its scripts are busy. Before that (its server hasn't answered, a tab woken from sleep
+is still getting its page back, or the page waits for a script or stylesheet), the browser shows
+nothing and gives the page no keys, so the grid opens on the previous tab. Brovim keeps its
+background running while such a tab is in front, so this works on the first press; if the browser
+stopped it anyway, a press switches without a grid, which shows on your next press. When the tab a
+gesture moved to can't see the keys either (two PDFs, say), a press within 0.4 s of the last one
+continues a held gesture, and a slower one is a new tap: taps flip between the two, and quick
+presses while holding walk on through the list. The switcher never opens a separate window, and the
+shortcut also works on excluded sites and while an input is focused.
 
-A page frozen for more than 0.2 s (YouTube stalls for hundreds of milliseconds while it loads) can't
-tell a tap from a hold until the freeze ends. The press switches to the previous tab at once, which
-is all a tap wants. If the shortcut was held, the grid opens there as soon as the frozen page
-catches up, or at your next press, and `Esc` returns to the frozen tab. A page busy only for a
-moment answers in time and shows the grid itself. Only a page that gives no answer for two seconds
-counts as hung.
+A page whose scripts are busy (a heavy page loading, YouTube stalling for hundreds of milliseconds)
+can't tell a tap from a hold until it catches up. If it doesn't answer the shortcut within 30 ms,
+the press switches to the previous tab at once, before a tap lets go of the modifier: that tab sees
+a tap's release and stays, or shows the grid while you hold. Pages tell Brovim the moment the
+shortcut's modifier goes down; a page that hasn't (it missed the key, being busy) gets 20 ms. `Esc`
+returns to the busy tab. If the busy page later shows that a very quick tap's release reached it
+before the switch, the grid that opened for it closes. Only a page that gives no answer for two
+seconds counts as hung.
+
+The grid hides before the switch, so a tab you come back to never flashes the old grid; on a busy
+page that can't hide it in time, the grid clears itself and the switch waits at most 50 ms.
 
 `Ctrl+Tab` is a reserved browser shortcut; Brovim cannot reliably disable it while the extension is
 active. In Helium versions with custom keyboard shortcuts, open `chrome://settings/system/shortcuts`

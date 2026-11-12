@@ -1328,3 +1328,146 @@ package passes the 9 lifecycle checks, and real Alt+Q presses hold, select, tap 
 
 Test fixes: the native test retries its first navigation like the browser suite. Its PDF check now
 waits for the grid it hands on to close, which otherwise raced with the next check.
+
+## 26. The Grid Moves While Its Page Is Busy (November 11, 2026)
+
+The user reported that on a tab woken from sleep and still loading, the grid opened but neither
+Alt+Q nor hjkl moved it until they came back and tried again.
+
+- **Cause.** The grid's frame got its tab list, and every Alt+Q step, through the page's own content
+  script. A loading page's scripts are often busy for seconds, and the content script shares their
+  thread: the grid waited, hjkl waited on its tab list, and the background, which learns of a grid
+  only once its list has loaded, took the next Alt+Q for a press on a frozen page and switched to
+  the previous tab.
+- **Fix.** In Chromium, which tells the background which tab an extension frame is in, the grid's
+  frame sends its requests to the background itself. An Alt+Q press while a grid shows goes from the
+  background straight to that grid's frame (`stepTabSwitcher`), and only the frame showing that grid
+  answers. Firefox doesn't name the frame's tab, so there requests still go through the content
+  script; the direct Alt+Q step works in both.
+- Section 14's note that grid requests use the parent port now applies to Firefox only.
+
+### Verification
+
+Real keys in isolated Helium, on a tab woken from sleep whose scripts stall for 4 s once the grid
+shows: before the fix, the grid never filled in and the next Alt+Q jumped to the previous tab, then
+another; after it, two Alt+Q steps and `l` moved the selection and the release switched tabs, all
+during the stall. A new real-shortcut check does the same with a 5 s stall and fails without the
+fix.
+
+Formatting and lint, 384 unit tests, 102 DOM tests, 101 browser checks (the incognito grid check
+included), 30 real-shortcut checks (one new), 7 lifecycle, 13 internal-page and 10
+browser-navigation checks pass. Packages were rebuilt; in Firefox 159 the package passes the 9
+lifecycle checks, its switcher check included.
+
+## 27. Alt+X Closes Any Tab; Ctrl+X Cuts Again (November 12, 2026)
+
+The user often closed tabs by accident with `x`, and a Helium shortcut made `Ctrl+X` close the tab
+even while cutting text in a field. The user chose:
+
+- **`Alt+X` closes the tab, on every tab.** It is a Brovim browser shortcut (`close_tab`, the fourth
+  and last suggested key a browser allows), so it works where pages keep their keys: PDFs, error
+  pages, view-source, the Web Store, and New Tab with the focus in the address bar. It closes the
+  tab as the `removeTab` command does. It works in any browser with Brovim installed; Helium itself
+  binds nothing to it, since a browser binding on the same key would make Helium refuse Brovim's.
+  The help dialog and the Options page show the assigned key.
+- **`x` no longer closes tabs**; it reaches the page. `X` still reopens the last closed tab, and the
+  grid's `x` still closes the selected card's tab.
+- **`Ctrl+X` is Cut again.** `helium/shortcuts.json` bound it to Helium's Close Tab, which the
+  browser handles before any page or extension sees the key, so no field could cut. That binding is
+  gone; Close Tab has no browser shortcut (`Ctrl+W` stays removed).
+- **Browser pages keep their keys for Brovim.** Settings, Extensions, History, Downloads, Bookmarks
+  and Flags put the cursor in a search field inside a shadow root on load, so page keys typed into
+  it. "Keep focus on the page" (on by default) only looked at the page's top level; it now looks
+  inside shadow roots, as insert mode does.
+
+### Verification
+
+Real keys in isolated Helium: `Alt+X` closed a web page, a PDF, an error page, a page's source and
+New Tab from its address bar; a plain `x` left the tab open. Upgrading an installed Brovim assigned
+`Alt+X` too, as a restart of the user's Helium will. In Firefox 159 a real `Alt+X` closed the tab
+and `x` didn't. With the old Helium binding, `Ctrl+X` in a field closed the tab and the page never
+got the key; without it, the field cut. New checks, each failing without its change: the help dialog
+lists `Alt+X` (unit), a field focused inside a shadow root loses the focus on load (DOM), and a page
+key works on Settings without Escape (internal pages). 385 unit tests, 103 DOM tests, 101 browser
+checks, 31 real-shortcut checks, 7 lifecycle, 13 internal-page and 10 browser-navigation checks
+pass; in Firefox 159 the package passes the 9 lifecycle checks.
+
+## 28. A Hold Shows the Grid on Any Tab, and a Clean Switch (November 12, 2026)
+
+The user reported that holding Alt+Q on a tab still loading (often one just woken from sleep)
+switched to the previous tab without a grid. The goal: a tap switches fast and a hold shows the
+grid, whatever the tab is doing. Also, as TabGlance does, the grid must leave the page before the
+switch.
+
+- **Cause.** Where the tab in front can't answer, Brovim switches to the previous tab, which tells a
+  tap from a hold by whether the modifier's release reaches it. That only works if the switch comes
+  before a tap's release. A tab whose page wasn't back yet first got 250 ms to load Brovim, and a
+  page that didn't answer got 200 ms: the release came first, so a hold showed no grid, or showed
+  one only when the busy page caught up (within two seconds, or never).
+- **Decide within 20–30 ms.** Pages tell the background the moment the shortcut's modifier goes down
+  (they already did, to wake it; now also before settings load, and embedded pages tell it
+  directly). A page that did gets 30 ms to answer; one that didn't gets 20 ms, or 30 once its word
+  arrives, which can come just after the shortcut. A loading page without Brovim yet isn't waited
+  for: Brovim comes with its page.
+- **The tab it lands on decides.** After such a quick switch it shows the grid unless it sees the
+  release, waiting briefly for the keyboard focus the switch gives it. The busy page, once it
+  catches up, can still say a very quick tap's release reached it before the switch; the grid that
+  opened for it then closes, unless a press has used it. A busy page reporting a tap after the
+  switch no longer switches a second time.
+- **Clean switch.** On release (or Esc back to the first tab), the grid clears itself and hides, the
+  page confirms it drew a frame without it, and only then the tab switches. A page too busy to
+  confirm within 50 ms doesn't hold the switch up. A selection of the tab already in front switches
+  nothing, and a switch made elsewhere in the meantime stands.
+- **Trade-offs.** A page busy for more than about 30 ms when the shortcut comes shows a held grid on
+  the previous tab rather than on itself: the same selections, the same result, and Esc returns. A
+  page that freezes the instant it sees the modifier, with a tap released within 30 ms of the
+  letter, shows a grid on the previous tab until it catches up.
+
+### Measurements
+
+Real keys in isolated Helium, times from the shortcut reaching the background:
+
+| Tab in front                    | Before: hold                      | Before: tap | After: hold        | After: tap |
+| ------------------------------- | --------------------------------- | ----------- | ------------------ | ---------- |
+| Healthy page                    | grid on it                        | 53 ms       | grid on it         | 54 ms      |
+| Woken from sleep, page not back | switch at 256 ms, no grid         | 257 ms      | grid at 125–129 ms | 3–5 ms     |
+| Heavy page loading (long tasks) | grid when the page frees, or none | 200–400 ms  | grid at 111–142 ms | 12–31 ms   |
+| Page waiting for a script       | grid at 133 ms                    | 9 ms        | grid at 113–126 ms | 3–8 ms     |
+| Page freezing as Alt goes down  | grid when it catches up           | 200 ms      | grid at 137–155 ms | 31–35 ms   |
+
+Taps released 25 ms after the letter switch without a grid on all of these but the last. On a
+healthy page the grid now leaves the page 22–68 ms before the switch; a 60 fps recording of coming
+back to a tab, after a switch from a page too busy to hide the grid, shows no grid in any frame.
+
+### Verification
+
+Formatting and lint, 391 unit tests (new: the two answer times, the quick handoff and its
+correction, a tab still loading, the late tap, waiting for the focus, and the clean switch's order
+and its two exceptions), 103 DOM tests, 101 browser checks (four now wait the frame a switch takes
+after the grid hides), 34 real-shortcut checks in five consecutive runs (new: a tab waking from
+sleep, a heavy page loading, and the grid hiding before the switch; a page busy for a moment now
+hands off), 7 lifecycle, 13 internal-page and 10 browser-navigation checks pass. In Firefox 160 the
+package passes the 9 lifecycle checks, and real Alt+Q presses hold, step, release and tap.
+
+### In the user's Helium
+
+Temporary logging in the user's own Helium (three one-minute sessions, removed after) found two more
+causes of a hold without a grid, both on loading tabs:
+
+- **A late "not held" closed the grid.** A loading tab gets no keys before it is drawn, so a busy
+  one that never saw the shortcut answered, once it caught up, that it hadn't seen it held. That
+  answer closed a grid the user was holding (1.8 s). The busy page now closes the grid only if it
+  saw the modifier go up after the press, judged by the key event's own time.
+- **Switches came too late to count as quick.** A browser busy loading a page took 69–77 ms to
+  switch, past the 60 ms within which the next tab may decide. The page is now asked the moment the
+  shortcut arrives, the tab list and shortcut are looked up together, and a switch within 100 ms
+  counts as quick.
+
+In the last session every hold showed the grid (on a loading tab that could answer, on the tab
+itself; otherwise on the previous tab within 132–193 ms) and every tap switched without one. 392
+unit tests, 103 DOM tests, 101 browser checks, 34 real-shortcut checks in three consecutive runs, 7
+lifecycle, 13 internal-page and 10 browser-navigation checks pass.
+
+The same logging showed why some tabs the user considers awake were missing from the grid: 19 tabs
+Helium restored at startup and hadn't loaded since (status "unloaded", not discarded). At the user's
+choice the grid now lists them, and selecting one loads it; discarded and frozen tabs stay out.

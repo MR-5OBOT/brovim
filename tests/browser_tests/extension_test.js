@@ -170,6 +170,11 @@ try {
     }, targetInfo.url);
   };
   const pause = (ms = 100) => new Promise((resolve) => setTimeout(resolve, ms));
+  // A grid's switch comes a frame after it hides: see hideAndSwitch in the switcher page.
+  const eventually = async (check, message) => {
+    for (let i = 0; i < 40 && !await check(); i++) await pause(25);
+    assert(await check(), message);
+  };
   const key = async (keys, p = page) => {
     for (const k of keys) {
       const parts = k.split("+");
@@ -1688,18 +1693,33 @@ try {
     }
   });
 
-  await check("x/X close and restore a tab", async () => {
+  await check("Alt+X/X close and restore a tab; x passes through", async () => {
     await fresh();
+    const command = await worker.evaluate(async () =>
+      (await chrome.commands.getAll()).find((command) => command.name === "close_tab")
+    );
+    assert(command?.shortcut === "Alt+X", "The default close-tab shortcut is missing");
     const created = await browser.newPage();
     await created.goto(`${origin}/new-tab`);
     await created.waitForFunction(() => document.readyState === "complete");
     await pause(200);
-    // Closing on keydown can destroy the target before Puppeteer dispatches keyup.
-    await created.keyboard.press("x").catch((error) => {
-      if (!/Target closed|Session closed/.test(error.message)) throw error;
+    // A plain x no longer closes the tab: it reaches the page.
+    await created.evaluate(() => {
+      globalThis.passedKeys = [];
+      document.addEventListener("keydown", (event) => globalThis.passedKeys.push(event.key));
     });
+    await key(["x"], created);
+    assert(!created.isClosed(), "x closed the tab");
+    assert(
+      (await created.evaluate(() => globalThis.passedKeys)).includes("x"),
+      "x was captured instead of reaching the page",
+    );
+    // Puppeteer's key presses bypass browser shortcuts: run Alt+X's command directly. The native
+    // test presses the real keys.
+    const createdId = await tabId(created);
+    await worker.evaluate(async (id) => closeTab(await chrome.tabs.get(id)), createdId);
     for (let i = 0; i < 50 && !created.isClosed(); i++) await pause(50);
-    assert(created.isClosed(), "x did not close the tab");
+    assert(created.isClosed(), "Alt+X did not close the tab");
     // The browser chooses which tab comes forward after a close; X belongs to this one.
     await page.bringToFront();
     await page.waitForFunction(() => document.hasFocus());
@@ -1911,10 +1931,11 @@ try {
       assert(await frame.$("#panel.ready"), "Shift release committed Ctrl+Q");
       await page.keyboard.up("Control");
       await noUi("tab-switcher-frame");
-      assert(
-        await worker.evaluate(async () =>
-          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
-        ) === "Ctrl1",
+      await eventually(
+        async () =>
+          await worker.evaluate(async () =>
+            (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
+          ) === "Ctrl1",
         "Control release did not commit",
       );
     } finally {
@@ -1959,10 +1980,11 @@ try {
       assert(await frame.$("#panel.ready"), "Shift release committed Ctrl+Q");
       await page.keyboard.up("Control");
       await noUi("tab-switcher-frame");
-      assert(
-        await worker.evaluate(async () =>
-          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
-        ) === "Ctrl1",
+      await eventually(
+        async () =>
+          await worker.evaluate(async () =>
+            (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
+          ) === "Ctrl1",
         "Control release did not commit",
       );
     } finally {
@@ -2016,10 +2038,11 @@ try {
       );
       await peers[2].keyboard.up("Control");
       await frame.waitForFunction(() => !document.querySelector("#panel.ready"));
-      assert(
-        await worker.evaluate(async () =>
-          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
-        ) === "Hop0",
+      await eventually(
+        async () =>
+          await worker.evaluate(async () =>
+            (await chrome.tabs.query({ active: true, currentWindow: true }))[0].title
+          ) === "Hop0",
         "Did not commit the final recent",
       );
     } finally {
@@ -3795,13 +3818,14 @@ try {
       );
       await source.keyboard.press("Enter");
       await frame.waitForFunction(() => !document.querySelector("#panel.ready"));
-      assert(
-        await worker.evaluate(
-          async (windowId, sourceId) =>
-            (await chrome.tabs.query({ active: true, windowId }))[0].id !== sourceId,
-          windowId,
-          result.sourceId,
-        ),
+      await eventually(
+        () =>
+          worker.evaluate(
+            async (windowId, sourceId) =>
+              (await chrome.tabs.query({ active: true, windowId }))[0].id !== sourceId,
+            windowId,
+            result.sourceId,
+          ),
         "Selecting the last card did not switch",
       );
     } finally {

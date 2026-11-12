@@ -106,6 +106,7 @@ const pdf = `%PDF-1.1
 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]>>endobj
 trailer<</Root 1 0 R>>
 %%EOF`;
+const wakingPages = new Set();
 const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (request) => {
   const { pathname, searchParams, port } = new URL(request.url);
   const title = searchParams.get("title") || "Native peer";
@@ -141,6 +142,28 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
       html,
     );
   }
+  if (pathname === "/waking") {
+    // A tab woken from sleep loads its page again; this time the server takes its time.
+    const key = searchParams.get("id");
+    const fresh = { headers: { ...html.headers, "cache-control": "no-store" } };
+    if (wakingPages.has(key)) {
+      return late(() => new Response(`<!doctype html><title>${title}</title>`, fresh));
+    }
+    wakingPages.add(key);
+    return new Response(`<!doctype html><title>${title}</title><h1>${title}</h1>`, fresh);
+  }
+  if (pathname === "/heavy") {
+    // A heavy page loading: its scripts stay busy in long tasks for seconds.
+    return new Response(
+      `<!doctype html><title>${title}</title><h1>${title}</h1><script>const start = performance.now();
+      (function work() {
+        const end = performance.now() + 300;
+        while (performance.now() < end);
+        if (performance.now() - start < 9000) setTimeout(work, 2);
+      })();</script>`,
+      html,
+    );
+  }
   if (pathname === "/blocked") {
     // The page waits for a script in its head, and the browser draws nothing until it comes.
     return new Response(
@@ -160,6 +183,24 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
         if (event.key !== "Alt" || event.repeat) return;
         setTimeout(() => { const end = performance.now() + ${ms}; while (performance.now() < end); });
       }, true)</script>`,
+      { headers: { "content-type": "text/html" } },
+    );
+  }
+  if (pathname === "/busy-under-grid") {
+    // Like a page still loading: its scripts get busy for 5 s once the switcher's grid shows.
+    return new Response(
+      `<!doctype html><title>${title}</title><h1>${title}</h1><script>new MutationObserver(() => {
+        for (const host of document.documentElement.children) {
+          const frame = host.shadowRoot?.querySelector("iframe.tab-switcher-frame");
+          if (!frame || frame.watched) continue;
+          frame.watched = true;
+          new MutationObserver(() => {
+            if (!frame.classList.contains("vimium-ui-component-visible") || frame.stalled) return;
+            frame.stalled = true;
+            setTimeout(() => { const end = performance.now() + 5000; while (performance.now() < end); });
+          }).observe(frame, { attributes: true });
+        }
+      }).observe(document.documentElement, { childList: true })</script>`,
       { headers: { "content-type": "text/html" } },
     );
   }
@@ -536,17 +577,61 @@ try {
   assert(!await typing.evaluate(() => gridSeen), "A quick tap on a frozen page showed the grid");
   assert(!await gridVisible(stalling), "A quick tap on a frozen page left a grid open");
   pass("Native quick Alt+Q on a frozen page switches before the freeze ends");
-  // A page busy for a moment still answers in time: the grid shows on it, as on any page.
+  // A page busy for a moment when the shortcut comes doesn't hold it up either: a hold moves to
+  // the previous tab, which shows the grid at once, and Escape comes back.
   await stalling.goto(`${origin}/stalling?title=Stalling&ms=100`);
   await stalling.bringToFront();
   await keys("focus:Stalling");
   await until(() => stalling.evaluate(() => document.hasFocus()), "Stalling page has no focus");
+  const momentPress = performance.now();
   await keys("down:Alt_L", "sleep:50", "tap:q");
-  await switcher(stalling);
-  assert(await activeTabId() === stallingId, "Holding Alt+Q on a busy page switched tabs");
+  await switcher(typing);
+  assert(
+    performance.now() - momentPress < 1000,
+    `The grid waited for a busy page: ${Math.round(performance.now() - momentPress)} ms`,
+  );
   await keys("tap:Escape", "up:Alt_L");
-  await until(async () => !await gridVisible(stalling), "Escape did not close the grid");
-  pass("Native held Alt+Q on a page busy for a moment shows the grid on it");
+  await until(async () => await activeTabId() === stallingId, "Escape did not return");
+  await until(async () => !await gridVisible(typing), "Escape did not close the grid");
+  pass("Native held Alt+Q on a page busy for a moment shows the grid at once, on the previous tab");
+  // A page whose scripts get busy once the grid shows, as a loading page's do: the grid still
+  // moves, and the release still switches, without waiting for the page.
+  await stalling.goto(`${origin}/busy-under-grid?title=Busy`);
+  await stalling.bringToFront();
+  await keys("focus:Busy");
+  await until(() => stalling.evaluate(() => document.hasFocus()), "Busy page has no focus");
+  const busyPress = performance.now();
+  await keys("down:Alt_L", "sleep:50", "tap:q");
+  const busyGrid = await stalling.waitForFrame((frame) =>
+    frame.url().includes("/pages/tab_switcher_page.html")
+  );
+  await busyGrid.waitForSelector("#panel.ready .selected");
+  const busySelection = () =>
+    busyGrid.evaluate(() => document.querySelector(".selected").dataset.id);
+  for (const key of ["q", "l"]) {
+    const before = await busySelection();
+    await keys(`tap:${key}`);
+    await busyGrid.waitForFunction(
+      (id) => document.querySelector(".selected").dataset.id !== id,
+      {},
+      before,
+    );
+  }
+  const busyTarget = Number(await busySelection());
+  await keys("up:Alt_L");
+  await until(
+    async () => await activeTabId() === busyTarget,
+    "Releasing Alt on a busy page did not switch",
+  );
+  assert(
+    performance.now() - busyPress < 4000,
+    `The grid on a busy page waited for it: ${Math.round(performance.now() - busyPress)} ms`,
+  );
+  // The next check's previous tab.
+  await stalling.bringToFront();
+  await keys("focus:Busy");
+  await until(() => stalling.evaluate(() => document.hasFocus()), "Busy page has no focus");
+  pass("Native Alt+Q and hjkl move the grid while its page is busy");
 
   const document = await browser.newPage();
   await document.goto(`${origin}/document.pdf`);
@@ -656,6 +741,107 @@ try {
   assert(await activeTabId() === typingId, "Releasing Alt did not keep the selected tab");
   pass("Native held Alt+Q on a page waiting for a script shows the grid on the previous tab");
   await removeTab(blocked);
+
+  // Tabs that can't answer when the shortcut comes: a hold shows the grid on the previous tab at
+  // once and Escape comes back; a tap switches at once, with no grid.
+  const holdAndTap = async (name, tabId) => {
+    const held = performance.now();
+    await keys("down:Alt_L", "tap:q");
+    await until(
+      async () => await activeTabId() === typingId,
+      `Holding Alt+Q on ${name} did not move to the previous tab`,
+    );
+    await switcher(typing);
+    assert(
+      performance.now() - held < 1000,
+      `The grid for ${name} came late: ${Math.round(performance.now() - held)} ms`,
+    );
+    await keys("tap:Escape", "up:Alt_L");
+    await until(async () => await activeTabId() === tabId, `Escape did not return to ${name}`);
+    await until(async () => !await gridVisible(typing), "Escape did not close the grid");
+    await typing.evaluate(() => globalThis.gridSeen = false);
+    const tapped = performance.now();
+    await tap();
+    await until(
+      async () => await activeTabId() === typingId,
+      `A quick tap on ${name} did not switch`,
+    );
+    assert(
+      performance.now() - tapped < 1000,
+      `A quick tap on ${name} waited: ${Math.round(performance.now() - tapped)} ms`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert(!await typing.evaluate(() => gridSeen), `A quick tap on ${name} showed the grid`);
+  };
+  // A tab woken from sleep, its page on its way back: nothing in it can see the keys yet.
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  const sleeper = await worker.evaluate(
+    async (url) => (await chrome.tabs.create({ url, active: false })).id,
+    `${origin}/waking?title=Waking&id=native`,
+  );
+  await until(
+    () => worker.evaluate(async (id) => (await chrome.tabs.get(id)).status === "complete", sleeper),
+    "The page to put to sleep did not load",
+  );
+  const woken = await worker.evaluate(async (id) => (await chrome.tabs.discard(id)).id, sleeper);
+  await worker.evaluate((id) => chrome.tabs.update(id, { active: true }), woken);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert(
+    await worker.evaluate(async (id) => (await chrome.tabs.get(id)).status === "loading", woken),
+    "The woken tab already has its page",
+  );
+  await holdAndTap("a tab waking from sleep", woken);
+  pass("Native Alt+Q on a tab waking from sleep: a hold shows the grid, a tap switches at once");
+  await removeTab(woken);
+  // A heavy page still loading, its scripts busy in long tasks.
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  const heavy = await loading("/heavy?title=Heavy");
+  await until(
+    () => worker.evaluate(async (id) => (await chrome.tabs.get(id)).url !== "", heavy),
+    "The heavy page did not start",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  await holdAndTap("a heavy page loading", heavy);
+  pass("Native Alt+Q on a busy loading page: a hold shows the grid, a tap switches at once");
+  await removeTab(heavy);
+
+  // A grid leaves the page before the switch: the browser shows a tab's last frame for a moment
+  // when you come back to it.
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  await until(() => typing.evaluate(() => document.hasFocus()), "Typing page did not gain focus");
+  await typing.evaluate(() => {
+    globalThis.gridHiddenAt = 0;
+    for (const host of document.documentElement.children) {
+      const frame = host.shadowRoot?.querySelector("iframe.tab-switcher-frame");
+      if (!frame) continue;
+      new MutationObserver(() => {
+        if (!frame.classList.contains("vimium-ui-component-visible")) {
+          globalThis.gridHiddenAt ||= Date.now();
+        }
+      }).observe(frame, { attributes: true });
+    }
+  });
+  await keys("down:Alt_L", "tap:q");
+  await switcher(typing);
+  await keys("tap:q");
+  await worker.evaluate(() => {
+    globalThis.switchedAt = 0;
+    chrome.tabs.onActivated.addListener(() => globalThis.switchedAt ||= Date.now());
+  });
+  await keys("up:Alt_L");
+  await until(async () => await activeTabId() !== typingId, "Releasing Alt did not switch");
+  const [hiddenAt, switchedAt] = [
+    await typing.evaluate(() => globalThis.gridHiddenAt),
+    await worker.evaluate(() => globalThis.switchedAt),
+  ];
+  assert(
+    hiddenAt && hiddenAt <= switchedAt,
+    `The grid left the page ${hiddenAt - switchedAt} ms after the switch`,
+  );
+  pass("Native release hides the grid before switching tabs");
 
   const protectedPage = await browser.newPage();
   await protectedPage.goto("chrome://version/");
@@ -775,7 +961,8 @@ try {
     }, internalId);
   await internalPage.bringToFront();
   const heldTarget = await previousInternal();
-  await keys("focus:Extensions", "down:Alt_L", "tap:q");
+  // As a person does it: a moment after focusing, the modifier a moment before the letter.
+  await keys("focus:Extensions", "sleep:100", "down:Alt_L", "sleep:30", "tap:q");
   const internalGrid = await switcher(internalPage);
   assert(
     await internalWorker.evaluate(async (id) => (await chrome.tabs.get(id)).active, internalId),
@@ -850,7 +1037,7 @@ try {
   await internalWorker.evaluate(() => Settings.set("enableInternalPages", false));
   await internalPage.bringToFront();
   const disabledTarget = await previousInternal();
-  await keys("focus:Extensions", "down:Alt_L", "tap:q");
+  await keys("focus:Extensions", "sleep:100", "down:Alt_L", "sleep:30", "tap:q");
   await switcher(internalPage);
   await keys("up:Alt_L");
   await until(
@@ -864,6 +1051,29 @@ try {
   pass(
     "Native Extensions switcher works with browser-page mappings off and keeps their setting unchanged",
   );
+  // Alt+X is a browser shortcut, so it closes tabs whose pages keep their keys too: a PDF, an error
+  // page, a page's source, and New Tab, which starts with the focus in the address bar.
+  for (
+    const url of [
+      `${origin}/closing?title=Closing`,
+      `${origin}/document.pdf`,
+      "http://127.0.0.1:9/",
+      `view-source:${origin}/source`,
+      "chrome://newtab/",
+    ]
+  ) {
+    const id = await internalWorker.evaluate(
+      async (url) => (await chrome.tabs.create({ url, active: true })).id,
+      url,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await keys("down:Alt_L", "tap:x", "up:Alt_L");
+    await until(
+      () => internalWorker.evaluate((id) => chrome.tabs.get(id).then(() => false, () => true), id),
+      `Alt+X did not close ${url}`,
+    );
+  }
+  pass("Native Alt+X closes web pages, PDFs, error pages, page sources and New Tab");
   assert(errors.length === 0, errors.join("\n"));
   pass("No uncaught errors in native shortcut fixture pages");
 } finally {

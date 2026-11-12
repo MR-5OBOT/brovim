@@ -346,16 +346,21 @@ try {
       await page.bringToFront();
       await settle(() => page.goto("chrome://settings/"));
       await ready("chrome://settings/");
-      await page.keyboard.press("Escape");
-      const closed = new Promise((resolve) => page.once("close", resolve));
-      await page.keyboard.press("x");
-      await Promise.race([
-        closed,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("x did not close Settings")), 5000)
-        ),
-      ]);
-      pass("Brovim can close Settings with x");
+      // Settings focuses its search field (inside a shadow root) on load. Brovim takes the focus
+      // back, so a page key works at once, without Escape.
+      const pinned = () =>
+        worker.evaluate(async () =>
+          (await chrome.tabs.query({})).find((tab) => tab.url?.startsWith("chrome://settings"))
+            ?.pinned
+        );
+      await page.keyboard.down("Alt");
+      await page.keyboard.press("p");
+      await page.keyboard.up("Alt");
+      for (let i = 0; i < 50 && !await pinned(); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert(await pinned(), "Alt+P on Settings did not reach Brovim");
+      pass("Brovim keys work on Settings without leaving its search field first");
       assert(errors.length === 0, errors.join("\n"));
       pass("No uncaught errors on internal pages");
     } finally {

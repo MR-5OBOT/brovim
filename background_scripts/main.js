@@ -133,8 +133,16 @@ if (!globalThis.isUnitTests) {
       focusPage(tab).catch((error) => console.warn("Could not focus page:", error));
     } else if (command === "open_browser_pages") {
       openBrowserPages(tab).catch((error) => console.warn("Could not open browser pages:", error));
+    } else if (command === "close_tab") {
+      closeTab(tab).catch((error) => console.warn("Could not close the tab:", error));
     }
   });
+}
+
+// Alt+X. Closes the tab as removeTab does.
+async function closeTab(tab) {
+  tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
+  if (tab) await BackgroundCommands.removeTab({ count: 1, tab });
 }
 
 async function focusPage(tab) {
@@ -540,6 +548,8 @@ const sendRequestHandlers = {
 
   selectSpecificTab,
   async quickSwitchTab({ tab, cycle }) {
+    // A busy page can report its tap after the background already switched away from it.
+    if (!tab.active) return { switched: true };
     return {
       switched: cycle
         ? await commitTabSwitcherCycle(tab, cycle)
@@ -841,6 +851,7 @@ Object.assign(globalThis, {
   // Exported for tests:
   openTabSwitcher,
   focusPage,
+  closeTab,
   HintCoordinator,
   BackgroundCommands,
   sendRequestHandlers,

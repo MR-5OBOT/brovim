@@ -1,9 +1,10 @@
 import * as bgUtils from "./bg_utils.js";
 
-// Sleeping as the browser shows it: discarded, frozen, or not loaded since the browser started
-// (restored tabs that were never opened again are "unloaded" without being marked discarded).
+// Sleeping: discarded or frozen. A tab restored at startup and not opened since is "unloaded"
+// without being either; it looks like any other tab, so the grid lists it, and selecting it loads
+// it.
 export function isSleeping(tab) {
-  return tab.discarded || tab.frozen || tab.status === "unloaded";
+  return tab.discarded || tab.frozen;
 }
 
 // Eligible tabs in this window: the active tab first, then tabs used this session (most recent
