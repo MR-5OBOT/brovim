@@ -60,3 +60,23 @@ Deno.test("apply sets the shortcuts and the flag once, keeps other prefs, and wa
   await assert.rejects(() => apply(profile, flags), /Close Helium first/);
   await Deno.remove(dir, { recursive: true });
 });
+
+Deno.test("apply keeps the first backup and the profile's other shortcuts", async () => {
+  const dir = await Deno.makeTempDir();
+  const profile = `${dir}/Default`;
+  const flags = `${dir}/helium-browser-flags.conf`;
+  const original = JSON.stringify({
+    helium: { browser: { custom_accelerators: { "99999": { added: ["Alt+K"] } } } },
+  });
+  await Deno.mkdir(profile);
+  await Deno.writeTextFile(`${profile}/Preferences`, original);
+  try {
+    await apply(profile, flags);
+    await apply(profile, flags);
+    assert.equal(await Deno.readTextFile(`${profile}/Preferences.before-brovim-setup`), original);
+    const prefs = JSON.parse(await Deno.readTextFile(`${profile}/Preferences`));
+    assert.deepEqual(prefs.helium.browser.custom_accelerators["99999"], { added: ["Alt+K"] });
+  } finally {
+    await Deno.remove(dir, { recursive: true });
+  }
+});

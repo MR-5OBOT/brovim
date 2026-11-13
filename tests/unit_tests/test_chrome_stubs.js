@@ -190,6 +190,9 @@ globalThis.chrome = {
     onCommitted: {
       addListener() {},
     },
+    onCompleted: {
+      addListener() {},
+    },
   },
 
   windows: {

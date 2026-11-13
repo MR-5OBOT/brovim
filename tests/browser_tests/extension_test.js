@@ -1916,6 +1916,62 @@ try {
     }
   });
 
+  await check("a grid's page navigating away doesn't swallow the next press", async () => {
+    await fresh();
+    const peer = await browser.newPage();
+    try {
+      await peer.goto(`${origin}/navigate-peer`);
+      // Title and icon changes don't wake the background: nothing listens to them.
+      assert(
+        !await worker.evaluate(() => chrome.tabs.onUpdated.hasListeners()),
+        "Something still listens to tabs.onUpdated",
+      );
+      await page.bringToFront();
+      await pause(200);
+      await page.keyboard.down("Alt");
+      await openBrowserSwitcher();
+      await (await ui("tab-switcher-frame")).waitForSelector("#panel.ready");
+      // A new page replaces the one under the grid, and the grid goes with it.
+      await fresh();
+      await openBrowserSwitcher();
+      await (await ui("tab-switcher-frame")).waitForSelector("#panel.ready");
+      await key(["Escape"]);
+      await noUi("tab-switcher-frame");
+    } finally {
+      await page.keyboard.up("Alt");
+      await peer.close();
+      await page.bringToFront();
+    }
+  });
+
+  await check("a grid that went unnoticed costs one press at most", async () => {
+    await fresh();
+    const peer = await browser.newPage();
+    try {
+      await peer.goto(`${origin}/unnoticed-peer`);
+      await page.bringToFront();
+      await pause(200);
+      // As if the background missed the navigation that took this tab's grid away.
+      await worker.evaluate(async (id) =>
+        sendRequestHandlers.setTabSwitcherOverlay({
+          tab: await chrome.tabs.get(id),
+          id: "gone",
+          showing: true,
+        }), await tabId());
+      await page.keyboard.down("Alt");
+      await openBrowserSwitcher();
+      await pause(300);
+      await openBrowserSwitcher();
+      await (await ui("tab-switcher-frame")).waitForSelector("#panel.ready");
+      await key(["Escape"]);
+      await noUi("tab-switcher-frame");
+    } finally {
+      await page.keyboard.up("Alt");
+      await peer.close();
+      await page.bringToFront();
+    }
+  });
+
   await check("Ctrl+Q uses the assigned modifier and commits on Control release", async () => {
     const peers = [];
     await worker.evaluate(() => {

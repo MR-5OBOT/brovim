@@ -2,8 +2,8 @@ import { isEnabledForUrl } from "./exclusions.js";
 
 // Tab switcher previews: one screenshot per page URL, so previews survive browser restarts and
 // changing tab IDs, and tabs showing the same page share one. Only the most recent
-// tabSwitcherMaxThumbnails are kept. Incognito previews stay in session storage, which is never
-// written to disk.
+// tabSwitcherMaxThumbnails are kept. Incognito previews stay in this worker's memory only, and are
+// gone when it stops.
 
 const storageKey = "tabThumbnails";
 // Well under the 10 MB storage quota, whatever the preview limit.
@@ -13,12 +13,10 @@ const cacheLoads = {};
 
 const areaFor = (incognito) => incognito ? "session" : "local";
 
-// Older Firefox exposes session storage to content scripts through a local-storage fallback in
-// utils.js. Private screenshots must never follow that fallback onto disk or overwrite normal ones.
-const previewStorage = (area) =>
-  area === "session" && chrome.storage.session === chrome.storage.local
-    ? null
-    : chrome.storage[area];
+// Content scripts can read session storage (main.js), and every frame listens to its changes: a
+// private preview saved there would reach every page of every tab. Firefox's local-storage
+// fallback for it (utils.js) would put it on disk.
+const previewStorage = (area) => area === "session" ? null : chrome.storage.local;
 
 // URL -> JPEG data URL, oldest capture first. Storage keeps the insertion order of these keys.
 function cacheFor(area) {
@@ -43,9 +41,11 @@ function trimCache(cache) {
         Settings.defaultOptions.tabSwitcherMaxThumbnails,
     ),
   );
+  const previousSize = cache.size;
+  // A site excluded since its capture loses its previews too.
+  for (const url of cache.keys()) if (!isEnabledForUrl(url).isEnabledForUrl) cache.delete(url);
   let bytes = 0;
   for (const preview of cache.values()) bytes += preview.length;
-  const previousSize = cache.size;
   for (const [url, preview] of cache) {
     if (cache.size <= limit && bytes <= maxBytes) break;
     cache.delete(url);
@@ -59,6 +59,19 @@ export async function trimThumbnailCaches() {
   await Promise.all(["local", "session"].map(async (area) => {
     const cache = await cacheFor(area);
     if (trimCache(cache)) {
+      await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
+    }
+  }));
+}
+
+// Removes the previews of these pages, or all previews: clearing browsing history clears them too.
+export async function forgetThumbnails(urls) {
+  const pages = urls && new Set(urls.map(pageKey));
+  await Promise.all(["local", "session"].map(async (area) => {
+    const cache = await cacheFor(area);
+    const previousSize = cache.size;
+    for (const url of cache.keys()) if (!pages || pages.has(pageKey(url))) cache.delete(url);
+    if (cache.size !== previousSize) {
       await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
     }
   }));

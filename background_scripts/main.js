@@ -25,6 +25,7 @@ import { getTabSwitcherData, isSleeping, switchToPreviousRecentTab } from "./rec
 import {
   captureThumbnail,
   findThumbnails,
+  forgetThumbnails,
   getCachedThumbnails,
   trimThumbnailCaches,
   warmThumbnailCaches,
@@ -110,6 +111,9 @@ if (!globalThis.isUnitTests) {
   if (!bgUtils.isFirefox()) initializeInternalPages();
   warmThumbnailCaches();
   Settings.addEventListener("change", () => trimThumbnailCaches().catch(() => {}));
+  chrome.history.onVisitRemoved.addListener(({ allHistory, urls }) =>
+    forgetThumbnails(allHistory ? null : urls).catch(() => {})
+  );
   // Cache "content_scripts/vimium.css" in chrome.storage.session for UI components.
   (function () {
     const url = chrome.runtime.getURL("content_scripts/vimium.css");
@@ -124,10 +128,12 @@ if (!globalThis.isUnitTests) {
     Utils.setTimeout(400, () => previewTab(tabId));
   });
 
-  chrome.tabs.onUpdated?.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.status === "complete" && tab.active) {
-      Utils.setTimeout(400, () => previewTab(tabId));
-    }
+  // Not tabs.onUpdated: see tab_switcher.js.
+  chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
+    if (frameId !== 0) return;
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.active) Utils.setTimeout(400, () => previewTab(tabId));
+    }).catch(() => {});
   });
 
   // The assigned browser shortcut (Alt+Q by default). Repeat it while holding the primary

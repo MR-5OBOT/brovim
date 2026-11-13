@@ -1,6 +1,6 @@
 // Sets up Helium for Brovim on a new machine or profile:
 // - Helium's keyboard shortcuts from shortcuts.json (the defaults you removed and the keys you added,
-//   as set in chrome://settings/system/shortcuts);
+//   as set in chrome://settings/system/shortcuts), over the profile's own: its other changes stay;
 // - --extensions-on-chrome-urls in helium-browser-flags.conf, so Brovim runs on Helium's own pages.
 //
 //   deno run -A helium/setup.js                  apply both; close Helium first
@@ -41,10 +41,14 @@ export async function apply(
   } catch {
     throw new Error(`No Helium profile at ${profile}. Start Helium once, close it, and run again.`);
   }
-  ((prefs.helium ??= {}).browser ??= {}).custom_accelerators = JSON.parse(
-    await Deno.readTextFile(shortcutsFile),
-  );
-  await Deno.copyFile(prefsFile, `${prefsFile}.before-brovim-setup`);
+  const browser = (prefs.helium ??= {}).browser ??= {};
+  browser.custom_accelerators = {
+    ...browser.custom_accelerators,
+    ...JSON.parse(await Deno.readTextFile(shortcutsFile)),
+  };
+  // Only the first run's backup holds the profile as it was before this script changed it.
+  const backup = `${prefsFile}.before-brovim-setup`;
+  await Deno.stat(backup).catch(() => Deno.copyFile(prefsFile, backup));
   await Deno.writeTextFile(`${prefsFile}.tmp`, JSON.stringify(prefs), { mode: 0o600 });
   await Deno.rename(`${prefsFile}.tmp`, prefsFile);
 

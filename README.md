@@ -21,9 +21,10 @@ removed, such as `Ctrl+Tab`, `Ctrl+T`, `Ctrl+W` and `Alt+D`, plus `Alt+S` for Se
 `Alt+X` closes tabs, so `Ctrl+X` stays Cut). On a new machine or profile, start Helium once, close
 it, then run `deno run -A helium/setup.js`. It applies those shortcuts and adds
 `--extensions-on-chrome-urls` to `~/.config/helium-browser-flags.conf` so Brovim also runs on
-Helium's own pages. After changing shortcuts in `chrome://settings/system/shortcuts`, run
-`deno run -A helium/setup.js save` to copy them back into the file. Use `--profile <dir>` for a
-profile other than `~/.config/net.imput.helium/Default`.
+Helium's own pages. Shortcuts changed only in the profile stay, and the first run backs up the
+profile's settings to `Preferences.before-brovim-setup`. After changing shortcuts in
+`chrome://settings/system/shortcuts`, run `deno run -A helium/setup.js save` to copy them back into
+the file. Use `--profile <dir>` for a profile other than `~/.config/net.imput.helium/Default`.
 
 ## Key bindings
 
@@ -147,9 +148,11 @@ grid's first draw; opening and cycling never wait for a new capture or for stora
 deferred while Brovim's own UI is on screen. Previews are saved by page address on this device (the
 15 most recent by default, with options for 30 or 50 and a 6 MB cache limit), so they survive
 browser restarts. Existing 5- or 10-preview settings upgrade to 15 automatically. This screenshot
-cache does not limit the tab list or browsing history. Incognito previews are kept only until the
-browser closes. A tab without a saved preview shows its site's first letter until you view it:
-Chrome can capture only the active tab in a window.
+cache does not limit the tab list or browsing history. Clearing browsing history deletes the
+previews of the pages it removes, and excluding a site deletes its previews. Incognito previews stay
+in memory and are dropped when Brovim's background stops (after about 30 idle seconds). A tab
+without a saved preview shows its site's first letter until you view it: Chrome can capture only the
+active tab in a window.
 
 Browser pages use **the same tap, hold and release behavior as websites**. Where Chromium permits
 Brovim's scripts (including Helium's Extensions page with the launch flag below), holding shows the

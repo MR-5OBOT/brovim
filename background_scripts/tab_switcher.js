@@ -115,15 +115,19 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (overlay.tabId === tabId) overlays.delete(windowId);
   }
 });
-chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-  // A page that finished loading, or replaced the one in front, may show the grid itself now.
-  if (tab?.active && (change.status === "complete" || change.url)) {
-    checkFrontTab(tabId).catch(() => {});
-  }
-  if (change.status !== "loading") return;
+// webNavigation, not tabs.onUpdated: that fires for every title or icon change in any tab, and each
+// would start this worker.
+// A new page replaced the one with the grid, and the grid went with it.
+chrome.webNavigation.onCommitted.addListener(({ tabId, frameId }) => {
+  if (frameId !== 0) return;
   for (const [windowId, overlay] of overlays) {
     if (overlay.tabId === tabId) overlays.delete(windowId);
   }
+});
+// A page that finished loading in front may show the grid itself now.
+chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
+  if (frameId !== 0) return;
+  chrome.tabs.get(tabId).then((tab) => tab.active && checkFrontTab(tabId)).catch(() => {});
 });
 if (!globalThis.isUnitTests) {
   // The background can start while such a tab is in front: for a preview capture, say.
@@ -428,6 +432,14 @@ async function askPageToOpen(tab, requestId, options) {
       // held: switching away on a guess would take a held grid for a tap.
       new Promise((resolve) => timeout = setTimeout(() => resolve(null), unresponsiveMs)),
     ]);
+    // Neither the grid nor its page has it: it went with a page this worker didn't see go. Forget
+    // it, or every later press here would be taken for that grid's.
+    if (
+      options.expectedOverlayId && response?.cancelled &&
+      overlays.get(tab.windowId)?.id === options.expectedOverlayId
+    ) {
+      overlays.delete(tab.windowId);
+    }
     // A slow acknowledgement of a repeat must not cancel a live grid and activate its MRU
     // fallback. The page owns selection until release/Escape, even while its replies are late.
     const opened = wasVisible || response?.opened === true ||

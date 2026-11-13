@@ -291,12 +291,12 @@ try {
       session: (await chrome.storage.session.get("tabThumbnails")).tabThumbnails || {},
     }));
     assert(storage.local[`${origin}/normal`], "Normal preview is missing");
-    assert(!storage.local[`${origin}/private`], "Incognito preview reached disk storage");
+    // Pages can read session storage: a private preview stays in the worker's memory.
     assert(
-      storage.session[`${origin}/private`],
-      "Incognito preview is missing from session storage",
+      !storage.local[`${origin}/private`] && !storage.session[`${origin}/private`],
+      "Incognito preview reached storage",
     );
-    pass("Actual normal and incognito captures use separate storage");
+    pass("Normal captures are stored, and incognito captures are not");
 
     const privateTabs = await options.evaluate(async (url) => {
       const source = (await chrome.tabs.query({})).find((tab) => tab.url === url);
@@ -328,7 +328,7 @@ try {
       "Private grid listed tabs from the wrong window",
     );
     assert(
-      cards[0].image === storage.session[`${origin}/private`],
+      cards[0].image?.startsWith("data:image/"),
       "Private grid did not use its private preview",
     );
     await privatePage.keyboard.press("Escape");
@@ -364,7 +364,7 @@ try {
       target.type() === "service_worker" && target !== oldWorker
     );
     const after = await options.evaluate(() =>
-      chrome.storage.session.get(["tabRecency", "vimiumSecret", "tabThumbnails"])
+      chrome.storage.session.get(["tabRecency", "vimiumSecret"])
     );
     // The new worker above proves the restart. It keeps the secret: a UI frame may be checking it.
     assert(
@@ -375,8 +375,7 @@ try {
       JSON.stringify(before.tabRecency) === JSON.stringify(after.tabRecency),
       "Worker stop lost MRU order",
     );
-    assert(after.tabThumbnails?.[`${origin}/private`], "Worker stop lost incognito previews");
-    pass("First post-suspension Vomnibar works and MRU/private previews survive");
+    pass("First post-suspension Vomnibar works and MRU order survives");
   }
   assert(errors.length === 0, errors.join("\n"));
   pass("No uncaught errors in lifecycle fixture pages");

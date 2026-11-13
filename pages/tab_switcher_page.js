@@ -587,6 +587,8 @@ chrome.runtime.onMessage.addListener((request, _sender, respond) => {
 
 globalThis.addEventListener("keydown", handleKeydown, true);
 globalThis.addEventListener("keyup", handleKeyup, true);
+// A key whose release went elsewhere (Enter switched tabs, say) is no longer down here.
+globalThis.addEventListener("blur", () => keysDown.clear());
 globalThis.addEventListener("resize", () => {
   // Showing the iframe can resize it while activation is still loading settings and tabs.
   // The first render will use the current viewport once that load finishes.

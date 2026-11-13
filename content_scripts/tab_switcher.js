@@ -419,8 +419,11 @@ const TabSwitcher = {
       this.modifierState[key] = event[key];
     }
     if (event.type !== "keyup" || !Utils.isBrowserShortcutRelease(event, this.shortcut)) return;
-    // The event's own time: a busy page handles it late.
-    this.modifierUpAt = event.timeStamp ? performance.timeOrigin + event.timeStamp : Date.now();
+    // The event's own time, as Date.now() gives it: a busy page handles it late. Not timeOrigin +
+    // timeStamp: that clock stops while the computer sleeps, and Date.now() doesn't.
+    this.modifierUpAt = event.timeStamp
+      ? Date.now() - (performance.now() - event.timeStamp)
+      : Date.now();
     if (this.cycle && !this.shortcutRequest && !this.tabSwitcherUI?.showing && !this.isOpening) {
       this.endCycle();
     }
@@ -630,6 +633,12 @@ if (globalThis.window != null) {
   // of Alt+X: see closeTab.
   const keysDown = new Set();
   globalThis.addEventListener("keydown", forTrusted((event) => keysDown.add(event.code)), true);
+  // A key whose release went to another tab (X reopened one, say) is no longer down here.
+  globalThis.addEventListener(
+    "blur",
+    forTrusted((event) => event.target === window && keysDown.clear()),
+    true,
+  );
   globalThis.addEventListener(
     "keyup",
     forTrusted((event) => {

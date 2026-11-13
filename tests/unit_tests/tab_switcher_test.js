@@ -898,12 +898,15 @@ context("configured switcher shortcut", () => {
     stub(TabSwitcher, "modifierState", {});
     stub(TabSwitcher, "modifierUpAt", 0);
     stub(TabSwitcher, "onModifierReleased", () => {});
+    // The page's clock lags the wall clock by an hour: the computer slept since the page loaded.
+    stub(Date, "now", () => performance.timeOrigin + 3_600_000 + 100);
+    stub(performance, "now", () => 100);
     const keyup = (key, timeStamp) => ({ type: "keyup", key, altKey: false, timeStamp });
     TabSwitcher.recordKeyboardEvent(keyup("q", 10));
     assert.equal(0, TabSwitcher.modifierUpAt);
     // A busy page handles the release late: the event's time says when it happened.
     TabSwitcher.recordKeyboardEvent(keyup("Alt", 25));
-    assert.equal(performance.timeOrigin + 25, TabSwitcher.modifierUpAt);
+    assert.equal(Date.now() - 75, TabSwitcher.modifierUpAt);
   });
 
   should("report a held modifier only after seeing it go down during this gesture", () => {
@@ -1570,30 +1573,60 @@ context("TabPreview navigation while settling", () => {
 });
 
 context("Tab switcher previews and order", () => {
-  should(
-    "keep private previews out of local storage when session storage falls back to local",
-    async () => {
-      stub(chrome.storage, "session", chrome.storage.local);
-      const fallback = await import(
-        "../../background_scripts/thumbnails.js?local-session-fallback"
-      );
-      const normalUrl = "https://fallback-preview.example/normal";
-      const privateUrl = "https://fallback-preview.example/private";
-      await fallback.storeThumbnail(normalUrl, false, "normal-preview");
-      await fallback.storeThumbnail(privateUrl, true, "private-preview");
-      const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
-      assert.equal("normal-preview", stored[normalUrl]);
-      assert.equal(undefined, stored[privateUrl]);
-      assert.equal(
-        ["normal-preview", null],
-        await fallback.findThumbnails([normalUrl, privateUrl], false),
-      );
-      assert.equal(
-        [null, "private-preview"],
-        await fallback.findThumbnails([normalUrl, privateUrl], true),
-      );
-    },
-  );
+  should("keep private previews in memory, out of every storage area", async () => {
+    const normalUrl = "https://memory-preview.example/normal";
+    const privateUrl = "https://memory-preview.example/private";
+    await storeThumbnail(normalUrl, false, "normal-preview");
+    await storeThumbnail(privateUrl, true, "private-preview");
+    const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
+    assert.equal("normal-preview", stored[normalUrl]);
+    assert.equal(undefined, stored[privateUrl]);
+    assert.equal(undefined, (await chrome.storage.session.get("tabThumbnails")).tabThumbnails);
+    assert.equal(["normal-preview", null], await findThumbnails([normalUrl, privateUrl], false));
+    assert.equal([null, "private-preview"], await findThumbnails([normalUrl, privateUrl], true));
+  });
+
+  should("drop saved previews of a site once it is excluded from Brovim", async () => {
+    const url = "https://later-excluded.example/inbox";
+    const kept = "https://still-allowed.example/";
+    await storeThumbnail(url, false, "excluded-later");
+    await storeThumbnail(kept, false, "allowed");
+    const get = Settings.get.bind(Settings);
+    stub(
+      Settings,
+      "get",
+      (key) =>
+        key === "exclusionRules"
+          ? [{ pattern: "https?://later-excluded.example/*", passKeys: "" }]
+          : get(key),
+    );
+    await trimThumbnailCaches();
+    assert.equal([null, "allowed"], await findThumbnails([url, kept], false));
+    const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
+    assert.equal(undefined, stored[url]);
+  });
+
+  should("forget the previews of pages removed from history, or all of them", async () => {
+    stub(chrome.storage.local, "get", () => Promise.resolve({}));
+    let stored;
+    stub(chrome.storage.local, "set", (items) => {
+      stored = items.tabThumbnails;
+      return Promise.resolve();
+    });
+    const fresh = await import("../../background_scripts/thumbnails.js?forget");
+    const [a, b] = ["https://forget.example/a", "https://forget.example/b"];
+    await fresh.storeThumbnail(a, false, "a");
+    await fresh.storeThumbnail(b, false, "b");
+    await fresh.storeThumbnail(b, true, "private-b");
+    // History lists the page under another variant of its address.
+    await fresh.forgetThumbnails([`${a}?utm_source=mail`]);
+    assert.equal([null, "b"], await fresh.findThumbnails([a, b], false));
+    assert.equal({ [b]: "b" }, stored);
+    await fresh.forgetThumbnails(null);
+    assert.equal([null, null], await fresh.findThumbnails([a, b], false));
+    assert.equal([null, null], await fresh.findThumbnails([a, b], true));
+    assert.equal({}, stored);
+  });
 
   should("reject background preview requests while the page's Brovim UI is visible", async () => {
     const url = "https://visible-ui-preview.example/";
@@ -1702,22 +1735,25 @@ context("Tab switcher previews and order", () => {
     assert.isFalse(pageKey("https://a.com/#/inbox") == pageKey("https://a.com/#/sent"));
   });
 
-  should("retain fifteen visited previews after the worker reloads", async () => {
-    await Settings.onLoaded();
-    await Settings.set(
-      "tabSwitcherMaxThumbnails",
-      Settings.defaultOptions.tabSwitcherMaxThumbnails,
-    );
-    const urls = Array.from({ length: 15 }, (_, i) => `https://retained-preview.example/${i}`);
-    for (const [i, url] of urls.entries()) {
-      await storeThumbnail(url, false, `normal-${i}`);
-      await storeThumbnail(url, true, `private-${i}`);
-    }
-    const reloaded = await import("../../background_scripts/thumbnails.js?retention-reload");
-    await reloaded.warmThumbnailCaches();
-    assert.equal(urls.map((_, i) => `normal-${i}`), await reloaded.findThumbnails(urls, false));
-    assert.equal(urls.map((_, i) => `private-${i}`), await reloaded.findThumbnails(urls, true));
-  });
+  should(
+    "retain fifteen visited previews, but no private ones, after the worker reloads",
+    async () => {
+      await Settings.onLoaded();
+      await Settings.set(
+        "tabSwitcherMaxThumbnails",
+        Settings.defaultOptions.tabSwitcherMaxThumbnails,
+      );
+      const urls = Array.from({ length: 15 }, (_, i) => `https://retained-preview.example/${i}`);
+      for (const [i, url] of urls.entries()) {
+        await storeThumbnail(url, false, `normal-${i}`);
+        await storeThumbnail(url, true, `private-${i}`);
+      }
+      const reloaded = await import("../../background_scripts/thumbnails.js?retention-reload");
+      await reloaded.warmThumbnailCaches();
+      assert.equal(urls.map((_, i) => `normal-${i}`), await reloaded.findThumbnails(urls, false));
+      assert.equal(urls.map(() => null), await reloaded.findThumbnails(urls, true));
+    },
+  );
 
   should("keep the byte cap when retaining more previews", async () => {
     stub(chrome.storage.local, "get", () => Promise.resolve({}));

@@ -89,6 +89,25 @@ context("tab switcher page", () => {
     domWindow.close();
   });
 
+  should("report a key's release after the frame lost the focus while it was down", async () => {
+    await open();
+    const key = (type) =>
+      document.dispatchEvent(
+        new domWindow.KeyboardEvent(type, { key: "a", code: "KeyA", bubbles: true }),
+      );
+    const released = () =>
+      messages.filter((request) => request.message?.handler === "shortcutKeyReleased").length;
+    key("keydown");
+    key("keyup");
+    await flush();
+    assert.equal(0, released());
+    // The press switched tabs, and its release went to the other tab.
+    key("keydown");
+    domWindow.dispatchEvent(new domWindow.FocusEvent("blur"));
+    key("keyup");
+    await flush();
+    assert.equal(1, released());
+  });
   should(
     "retain decoded previews across reopening, recency changes and title updates",
     async () => {
