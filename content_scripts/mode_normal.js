@@ -31,10 +31,13 @@ class NormalMode extends KeyHandlerMode {
   onKeydown(event) {
     // A copied or native selection can outlive visual mode. Escape clears that highlight too.
     if (KeyboardUtils.isEscape(event)) globalThis.getSelection()?.removeAllRanges();
+    this.keyRepeat = event.repeat;
     return super.onKeydown(event);
   }
 
   commandHandler({ command: registryEntry }) {
+    // A held X repeats, on the tab it reopened too: one tab per press.
+    if (this.keyRepeat && registryEntry.command === "restoreTab") return;
     // Count prefixes are gone, but a mapping can still repeat a command: "map J scrollDown count=5".
     const count = registryEntry.options.count ?? 1;
 

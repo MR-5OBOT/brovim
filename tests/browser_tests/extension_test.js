@@ -1727,7 +1727,23 @@ try {
     const restored = await browser.waitForTarget((target) => target.url() === `${origin}/new-tab`, {
       timeout: 5000,
     });
-    await (await restored.page()).close();
+    // A held X repeats, on the tab it reopened too: the repeats reopen nothing.
+    await worker.evaluate((id) => chrome.tabs.remove(id), await tabId(await restored.page()));
+    await page.bringToFront();
+    await page.waitForFunction(() => document.hasFocus());
+    const tabCount = () => worker.evaluate(async () => (await chrome.tabs.query({})).length);
+    const count = await tabCount();
+    const input = await page.createCDPSession();
+    const shiftX = { key: "X", code: "KeyX", windowsVirtualKeyCode: 88, modifiers: 8 };
+    await input.send("Input.dispatchKeyEvent", { type: "rawKeyDown", autoRepeat: true, ...shiftX });
+    await input.send("Input.dispatchKeyEvent", { type: "keyUp", ...shiftX });
+    await pause(500);
+    assert(await tabCount() === count, "A repeated X reopened a tab");
+    await key(["X"]);
+    const again = await browser.waitForTarget((target) => target.url() === `${origin}/new-tab`, {
+      timeout: 5000,
+    });
+    await (await again.page()).close();
   });
 
   await check("removed keys pass through; tab reordering, pin and mute still work", async () => {
@@ -1814,6 +1830,16 @@ try {
       before,
     );
     assert(await selected() === 1, "Closing a tab moved the selection");
+    // Alt+X: with Alt held, the grid's x reaches the browser as its close-tab shortcut. Puppeteer's
+    // key presses bypass browser shortcuts: run the command directly.
+    await worker.evaluate(async (id) => closeTab(await chrome.tabs.get(id)), await tabId());
+    await switcher.waitForFunction(
+      (count) => document.querySelectorAll(".tab-card").length === count - 2,
+      {},
+      before,
+    );
+    assert(!page.isClosed(), "Alt+X closed the tab under the grid");
+    assert(await selected() === 1, "Alt+X moved the selection");
     const title = await switcher.$eval(".selected .card-title", (el) => el.textContent);
     await key(["Enter"]);
     await pause(200);

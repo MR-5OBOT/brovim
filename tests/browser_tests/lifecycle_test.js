@@ -366,7 +366,11 @@ try {
     const after = await options.evaluate(() =>
       chrome.storage.session.get(["tabRecency", "vimiumSecret", "tabThumbnails"])
     );
-    assert(before.vimiumSecret !== after.vimiumSecret, "The background script did not restart");
+    // The new worker above proves the restart. It keeps the secret: a UI frame may be checking it.
+    assert(
+      before.vimiumSecret && before.vimiumSecret === after.vimiumSecret,
+      "The restarted background replaced the session secret",
+    );
     assert(
       JSON.stringify(before.tabRecency) === JSON.stringify(after.tabRecency),
       "Worker stop lost MRU order",

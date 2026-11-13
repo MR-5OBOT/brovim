@@ -35,6 +35,8 @@ let activation = 0;
 let tabsLoaded = Promise.resolve();
 let closing = null; // The pending close request.
 let focusGuard = null;
+// Keys whose press this frame saw: see handleKeyup.
+const keysDown = new Set();
 
 // Chromium tells the background which tab this frame is in, so ask it directly: a loading page's
 // scripts can be busy for seconds, and the grid must not wait on them. Firefox doesn't name the
@@ -490,6 +492,7 @@ function keyAction(event) {
 
 function handleKeydown(event) {
   shiftIsDown = event.shiftKey;
+  keysDown.add(event.code);
   if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
   if (event.key === "Escape") {
     event.preventDefault();
@@ -505,6 +508,10 @@ function handleKeydown(event) {
 
 function handleKeyup(event) {
   shiftIsDown = event.shiftKey;
+  // The browser took this key's press: a shortcut such as Alt+X, which closes one tab per press.
+  if (!keysDown.delete(event.code) && !["Alt", "Control", "Shift", "Meta"].includes(event.key)) {
+    sendRequest({ handler: "shortcutKeyReleased" }).catch(() => {});
+  }
   if (Utils.isBrowserShortcutRelease(event, shortcut) && isAltCycling) {
     event.preventDefault();
     commit();
@@ -567,12 +574,14 @@ function cycleNext() {
 }
 
 // A press of the shortcut while this grid shows comes straight from the background, so a busy
-// page can't hold it up. Other frames stay silent: the first answer is the one that counts.
+// page can't hold it up. So does Alt+X: the held Alt turns x into the browser's close-tab shortcut.
+// Other frames stay silent: the first answer is the one that counts.
 chrome.runtime.onMessage.addListener((request, _sender, respond) => {
-  if (request?.handler !== "stepTabSwitcher" || !visible || request.overlayId !== overlayId) {
-    return false;
-  }
-  cycleNext();
+  if (!visible || request?.overlayId !== overlayId) return false;
+  if (request.handler === "stepTabSwitcher") cycleNext();
+  else if (request.handler === "closeTabSwitcherSelection") {
+    whenTabsLoaded(() => closeTab(selectedIndex));
+  } else return false;
   respond(true);
 });
 

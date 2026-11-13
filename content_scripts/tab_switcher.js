@@ -187,6 +187,7 @@ const TabSwitcher = {
       "closeSpecificTab",
       "endTabSwitcherCycle",
       "setTabSwitcherOverlay",
+      "shortcutKeyReleased",
     ];
     if (!allowed.includes(data.message?.handler)) return;
     let result, error;
@@ -624,6 +625,23 @@ if (globalThis.window != null) {
   );
   globalThis.addEventListener("keydown", recordKeyboardEvent, true);
   globalThis.addEventListener("keyup", recordKeyboardEvent, true);
+  // A key going up whose press this frame didn't see: a browser shortcut's (the browser takes the
+  // press), or one pressed in a tab that has since closed. The background closes one tab per press
+  // of Alt+X: see closeTab.
+  const keysDown = new Set();
+  globalThis.addEventListener("keydown", forTrusted((event) => keysDown.add(event.code)), true);
+  globalThis.addEventListener(
+    "keyup",
+    forTrusted((event) => {
+      if (keysDown.delete(event.code) || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) {
+        return;
+      }
+      if (chrome.runtime?.id) {
+        chrome.runtime.sendMessage({ handler: "shortcutKeyReleased" }).catch(() => {});
+      }
+    }),
+    true,
+  );
   if (DomUtils.isTopFrame()) {
     // A page's first animation frame comes when the browser first draws it.
     requestAnimationFrame(() => TabSwitcher.painted = true);

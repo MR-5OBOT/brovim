@@ -1074,6 +1074,69 @@ try {
     );
   }
   pass("Native Alt+X closes web pages, PDFs, error pages, page sources and New Tab");
+  // A held Alt+X repeats, and each tab that comes forward would close in turn: it closes one. The
+  // tab that comes forward sees the key go up, so a new press right after closes that one.
+  const exists = (id) =>
+    internalWorker.evaluate((id) => chrome.tabs.get(id).then(() => true, () => false), id);
+  const open = (url) =>
+    internalWorker.evaluate(
+      async (url) => (await chrome.tabs.create({ url, active: true })).id,
+      url,
+    );
+  const brovimRunning = (id) =>
+    internalWorker.evaluate((id) =>
+      chrome.scripting.executeScript({
+        target: { tabId: id, frameIds: [0] },
+        func: () => document.hasFocus() && typeof normalMode !== "undefined" && !!normalMode,
+      }).then(([state]) => state?.result, () => false), id);
+  const keep = await open(`${origin}/keep?title=Keep`);
+  const held = await open(`${origin}/held?title=Held`);
+  await until(() => brovimRunning(held), "Brovim did not start on the tab to close");
+  // A second after the last Alt+X: no page saw that one's key go up.
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await keys("down:Alt_L", "down:x", "sleep:1500", "up:x", "up:Alt_L");
+  await until(async () => !await exists(held), "A held Alt+X did not close its tab");
+  assert(await exists(keep), "A held Alt+X closed the next tab too");
+  await keys("down:Alt_L", "tap:x", "up:Alt_L");
+  await until(async () => !await exists(keep), "Alt+X right after a held one closed nothing");
+  pass("Native held Alt+X closes one tab, and the next press closes the next");
+  // Alt+X while the grid shows closes the selected card's tab, once however long it is held, and
+  // leaves the tab under the grid.
+  await open(`${origin}/peer-a?title=PeerA`);
+  await open(`${origin}/peer-b?title=PeerB`);
+  const hostUrl = `${origin}/host?title=Host`;
+  const host = await open(hostUrl);
+  const hostPage = await (await browser.waitForTarget((target) => target.url() === hostUrl)).page();
+  await until(() => brovimRunning(host), "Brovim did not start under the grid");
+  const tabCount = () => internalWorker.evaluate(async () => (await chrome.tabs.query({})).length);
+  const before = await tabCount();
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  await keys("down:Alt_L", "sleep:30", "tap:q");
+  const grid = await switcher(hostPage);
+  const selected = Number(await grid.$eval(".selected", (card) => card.dataset.id));
+  assert(selected !== host, "The grid selected its own tab");
+  await keys("down:x", "sleep:1500", "up:x");
+  await until(async () => !await exists(selected), "Alt+X did not close the selected card's tab");
+  assert(await tabCount() === before - 1, "A held Alt+X in the grid closed more than one tab");
+  assert(await exists(host), "Alt+X closed the tab under the grid");
+  await keys("up:Alt_L");
+  pass("Native Alt+X in the grid closes the selected card once, however long it is held");
+  // A held X reopens one tab: each reopen needs a new press.
+  await until(
+    async () =>
+      brovimRunning(
+        await internalWorker.evaluate(async () =>
+          (await chrome.tabs.query({ active: true, currentWindow: true }))[0].id
+        ),
+      ),
+    "Brovim did not start on the tab to reopen from",
+  );
+  const beforeReopen = await tabCount();
+  await keys("down:Shift_L", "down:x", "sleep:1500", "up:x", "up:Shift_L");
+  await until(async () => await tabCount() === beforeReopen + 1, "A held X reopened nothing");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  assert(await tabCount() === beforeReopen + 1, "A held X reopened more than one tab");
+  pass("Native held X reopens one tab");
   assert(errors.length === 0, errors.join("\n"));
   pass("No uncaught errors in native shortcut fixture pages");
 } finally {

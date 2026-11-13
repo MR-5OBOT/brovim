@@ -172,7 +172,6 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
   if (pressedOn != null && pressedOn !== tab.id && cycles.get(tab.windowId)?.currentId !== tab.id) {
     return;
   }
-  const sawPress = sawPressBegin(tab, pressedAt);
   // The early question went to this tab, unless the press's snapshot was obsolete.
   const pulse = early !== undefined && tab.id === pressedOn ? early : askPage(tab);
   await Settings.onLoaded();
@@ -374,13 +373,21 @@ async function awaitVerdict(source, cycle, quick, since) {
   }, { frameId: 0 }).catch(() => {});
 }
 
-// Whether the grid with this id is showing, and moved its selection.
-async function stepGrid(overlayId) {
+// Whether the grid with this id is showing, and did as asked: "stepTabSwitcher" moves its selection,
+// "closeTabSwitcherSelection" closes the selected card's tab.
+async function askGrid(handler, overlayId) {
   try {
-    return await chrome.runtime.sendMessage({ handler: "stepTabSwitcher", overlayId }) === true;
+    return await chrome.runtime.sendMessage({ handler, overlayId }) === true;
   } catch {
     return false; // No grid answered.
   }
+}
+
+// Alt+X while the grid shows on this tab: the held Alt turns the grid's x into the browser's
+// close-tab shortcut. Returns whether the grid closed its selected card's tab instead.
+export async function closeGridSelection(tab) {
+  const overlay = overlays.get(tab.windowId);
+  return overlay?.tabId === tab.id && await askGrid("closeTabSwitcherSelection", overlay.id);
 }
 
 // The shortcut assigned in the browser's extension-shortcut settings.
@@ -406,7 +413,7 @@ function snapshot(cycle) {
 // shortcut's modifier held past the tap window.
 async function askPageToOpen(tab, requestId, options) {
   // The grid on screen takes the press itself, while the page's scripts may be busy loading.
-  if (options.expectedOverlayId && await stepGrid(options.expectedOverlayId)) {
+  if (options.expectedOverlayId && await askGrid("stepTabSwitcher", options.expectedOverlayId)) {
     return { opened: true };
   }
   const wasVisible = !!options.expectedOverlayId || overlays.get(tab.windowId)?.tabId === tab.id;

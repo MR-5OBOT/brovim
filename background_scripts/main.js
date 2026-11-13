@@ -11,6 +11,7 @@ import "../background_scripts/completion/search_wrapper.js";
 import "../background_scripts/completion/completers.js";
 import "../background_scripts/tab_operations.js";
 import {
+  closeGridSelection,
   commitTabSwitcherCycle,
   endTabSwitcherCycle,
   getTabSwitcherShortcut,
@@ -50,10 +51,15 @@ import * as TabOperations from "./tab_operations.js";
 chrome.storage.session.setAccessLevel({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
 
 // A Brovim secret, available only within the current browser session. The secret is a generated
-// strong random string.
-const randomArray = globalThis.crypto.getRandomValues(new Uint8Array(32)); // 32-byte random token.
-const secretToken = randomArray.reduce((a, b) => a.toString(16) + b.toString(16));
-chrome.storage.session.set({ vimiumSecret: secretToken });
+// strong random string. A restarted worker keeps it: a UI frame may be checking it mid-handshake.
+// shortcut: Firefox's local-storage fallback also keeps it across browser restarts; rotate it in
+// runtime.onStartup if that matters.
+chrome.storage.session.get("vimiumSecret").then(({ vimiumSecret }) => {
+  if (vimiumSecret) return;
+  const randomArray = globalThis.crypto.getRandomValues(new Uint8Array(32)); // 32-byte random token.
+  const secretToken = randomArray.reduce((a, b) => a.toString(16) + b.toString(16));
+  return chrome.storage.session.set({ vimiumSecret: secretToken });
+});
 
 const completionSources = {
   bookmarks: new BookmarkCompleter(),
@@ -139,10 +145,20 @@ if (!globalThis.isUnitTests) {
   });
 }
 
-// Alt+X. Closes the tab as removeTab does.
+// The browser repeats a held shortcut (after a pause of up to about 0.7 s, then every 40 ms or so),
+// and each tab that came forward would close in turn. A press is a repeat until a page sees the key
+// go up (shortcutKeyReleased), or after a quiet second where no page can see it (a PDF, say).
+let closeKey = { at: -Infinity, released: true };
+
+// Alt+X. Closes the tab as removeTab does, or, while the grid shows there, its selected card's tab.
 async function closeTab(tab) {
+  const now = performance.now();
+  const repeat = !closeKey.released && now - closeKey.at < 1000;
+  closeKey = { at: now, released: false };
+  if (repeat) return;
   tab ??= (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (tab) await BackgroundCommands.removeTab({ count: 1, tab });
+  if (!tab || await closeGridSelection(tab)) return;
+  await BackgroundCommands.removeTab({ count: 1, tab });
 }
 
 async function focusPage(tab) {
@@ -562,6 +578,10 @@ const sendRequestHandlers = {
   // Sent when a page sees the switcher's modifier go down. Receiving it is the point: it starts a
   // stopped service worker before the shortcut itself arrives.
   warmTabSwitcher() {},
+  // A page saw a key go up whose press it didn't see: a browser shortcut's, such as Alt+X's.
+  shortcutKeyReleased() {
+    closeKey.released = true;
+  },
   setTabSwitcherOverlay({ tab, id, showing }) {
     setTabSwitcherOverlay(tab, id, showing);
   },

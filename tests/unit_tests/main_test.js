@@ -29,6 +29,34 @@ context("search destination", () => {
   });
 });
 
+context("Alt+X", () => {
+  should("close one tab per press, however long the browser repeats a held key", async () => {
+    let now = 100_000;
+    stub(performance, "now", () => now);
+    const tab = { id: 7, index: 0, windowId: 1, active: true, pinned: false };
+    stub(chrome.tabs, "query", () => Promise.resolve([tab]));
+    const closed = [];
+    stub(chrome.tabs, "remove", (id) => closed.push(id));
+    const press = async (ms) => {
+      now += ms;
+      await closeTab(tab);
+    };
+    // Held: the press, the browser's pause, then its repeats.
+    await press(0);
+    await press(660);
+    await press(40);
+    await press(40);
+    assert.equal(1, closed.length);
+    // A page saw the key go up: the next press is a new one, however soon it comes.
+    sendRequestHandlers.shortcutKeyReleased();
+    await press(120);
+    assert.equal(2, closed.length);
+    // No page could see the release (a PDF, say): a quiet second ends the press.
+    await press(1100);
+    assert.equal(3, closed.length);
+  });
+});
+
 context("Mute tab groups", () => {
   let tabs;
 
