@@ -557,6 +557,8 @@ UIComponentMessenger.registerHandler((event) => {
     // A key that reached the page under the grid instead of this frame.
     case "keydown":
       shiftIsDown = event.data.event.shiftKey;
+      // Its release comes here once this frame has the focus back: not a browser shortcut's.
+      keysDown.add(event.data.event.code);
       handleKey(event.data.event);
       break;
     case "hiddenConfirmed":
