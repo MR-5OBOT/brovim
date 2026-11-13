@@ -655,6 +655,25 @@ if (globalThis.window != null) {
     // A page's first animation frame comes when the browser first draws it.
     requestAnimationFrame(() => TabSwitcher.painted = true);
     globalThis.addEventListener("keydown", forTrusted((event) => TabSwitcher.warmUp(event)), true);
+    // The grid shows, but this page has the keyboard: the page or the browser took it back from the
+    // grid's frame, and only the shortcut, which comes through the background, still reached the
+    // grid. Pass the key on, before the page or Brovim's mappings act on it, and refocus the grid.
+    globalThis.addEventListener(
+      "keydown",
+      forTrusted((event) => {
+        const ui = TabSwitcher.tabSwitcherUI;
+        if (!ui?.showing || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const { key, code, repeat, altKey, ctrlKey, metaKey, shiftKey } = event;
+        ui.postMessage({
+          name: "keydown",
+          event: { key, code, repeat, altKey, ctrlKey, metaKey, shiftKey },
+        });
+        ui.focus();
+      }),
+      true,
+    );
     // The grid belongs to the tab the user is looking at. Left open in a tab that went away, it
     // would be waiting there, with a stale selection, when the user comes back.
     document.addEventListener("visibilitychange", () => {

@@ -490,20 +490,24 @@ function keyAction(event) {
   return null;
 }
 
+// Returns whether the switcher used the key.
+function handleKey(event) {
+  if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return false;
+  if (event.key === "Escape") {
+    cancel();
+    return true;
+  }
+  const action = keyAction(event);
+  if (action) whenTabsLoaded(action);
+  return action != null;
+}
+
 function handleKeydown(event) {
   shiftIsDown = event.shiftKey;
   keysDown.add(event.code);
-  if (!visible || ["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    cancel();
-    return;
-  }
-  const action = keyAction(event);
-  if (!action) return;
+  if (!handleKey(event)) return;
   event.preventDefault();
   event.stopPropagation();
-  whenTabsLoaded(action);
 }
 
 function handleKeyup(event) {
@@ -549,6 +553,11 @@ UIComponentMessenger.registerHandler((event) => {
       break;
     case "commitSelection":
       commit();
+      break;
+    // A key that reached the page under the grid instead of this frame.
+    case "keydown":
+      shiftIsDown = event.data.event.shiftKey;
+      handleKey(event.data.event);
       break;
     case "hiddenConfirmed":
       pageHid?.();

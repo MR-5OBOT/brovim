@@ -207,14 +207,22 @@ class UIComponent {
     this.setIframeVisible(true);
     if (this.focusOptions.focus) {
       this.previousFocus = this.focusOptions.restoreFocus ? DomUtils.deepActiveElement() : null;
-      this.takingFocus = true;
-      try {
-        this.iframeElement.focus();
-      } finally {
-        this.takingFocus = false;
-      }
+      this.focus();
     }
     this.showing = true;
+  }
+
+  // Gives the keyboard to the component's page.
+  focus() {
+    this.takingFocus = true;
+    try {
+      // A frame can stay the page's focused element after the page took the keyboard back, and
+      // focusing it again would then do nothing.
+      this.iframeElement.blur();
+      this.iframeElement.focus();
+    } finally {
+      this.takingFocus = false;
+    }
   }
 
   async hide(shouldRefocusOriginalFrame) {

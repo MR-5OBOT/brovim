@@ -1916,6 +1916,57 @@ try {
     }
   });
 
+  await check("keys that reach the page under the grid still move it", async () => {
+    await fresh();
+    const peers = [];
+    try {
+      for (let i = 0; i < 3; i++) {
+        const peer = await browser.newPage();
+        await peer.goto(`${origin}/keys-peer?title=Peer${i}&awake`);
+        peers.push(peer);
+      }
+      await page.bringToFront();
+      await pause(200);
+      await page.keyboard.down("Alt");
+      await openBrowserSwitcher();
+      const switcher = await ui("tab-switcher-frame");
+      await switcher.waitForSelector("#panel.ready .tab-card.selected");
+      // As when the page, or the browser, takes the keyboard back while the grid shows.
+      await worker.evaluate(
+        (id) =>
+          chrome.scripting.executeScript({
+            target: { tabId: id, frameIds: [0] },
+            func: () => {
+              TabSwitcher.tabSwitcherUI.takingFocus = true;
+              document.querySelector("#first").focus();
+              TabSwitcher.tabSwitcherUI.takingFocus = false;
+            },
+          }),
+        await tabId(),
+      );
+      assert(
+        await page.evaluate(() => document.activeElement.id === "first"),
+        "Page kept no focus",
+      );
+      const selected = () =>
+        switcher.$$eval(
+          ".tab-card",
+          (els) => els.findIndex((el) => el.classList.contains("selected")),
+        );
+      const before = await selected();
+      await key(["l"]);
+      assert(await selected() === before + 1, "l didn't move the grid");
+      assert(await page.$eval("#first", (el) => el.value === ""), "l reached the page");
+      await switcher.waitForFunction(() => document.hasFocus());
+      await key(["Escape"]);
+      await noUi("tab-switcher-frame");
+    } finally {
+      await page.keyboard.up("Alt");
+      for (const peer of peers) await peer.close();
+      await page.bringToFront();
+    }
+  });
+
   await check("a grid's page navigating away doesn't swallow the next press", async () => {
     await fresh();
     const peer = await browser.newPage();
