@@ -1,3 +1,5 @@
+import { isEnabledForUrl } from "./exclusions.js";
+
 // Tab switcher previews: one screenshot per page URL, so previews survive browser restarts and
 // changing tab IDs, and tabs showing the same page share one. Only the most recent
 // tabSwitcherMaxThumbnails are kept. Incognito previews stay in session storage, which is never
@@ -120,6 +122,8 @@ export async function storeThumbnail(url, incognito, dataUrl) {
 export async function captureThumbnail(tabId, url, allowLoading = false) {
   await Settings.onLoaded();
   if (!Settings.get("tabSwitcherAutoCapture") || !/^(https?|file):/.test(url || "")) return {};
+  // A site excluded from Brovim keeps its pages out of the previews too.
+  if (!isEnabledForUrl(url).isEnabledForUrl) return {};
   const showing = async () => {
     const tab = await chrome.tabs.get(tabId).catch(() => null);
     return tab?.active &&

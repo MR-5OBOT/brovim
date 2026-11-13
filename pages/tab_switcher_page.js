@@ -17,6 +17,7 @@ const hues = [350, 24, 40, 142, 172, 205, 235, 265];
 let allTabs = []; // Eligible tabs in this window, in switcher order: the current tab first.
 let tabs = []; // The visual order, fixed for this gesture, with pins in the leading cells.
 let layout = { columns: 8, rows: 1 }; // The grid's size for these tabs; see gridLayout.
+let previousId = null; // The last-used tab, where a gesture starts.
 let selectedIndex = 0;
 let selectedCard = null;
 let cardsById = new Map();
@@ -87,8 +88,7 @@ async function fetchTabs(options = {}) {
   }
   if (currentActivation !== activation) return;
   // A carried gesture keeps its original last-used tab across protected-page hops.
-  const previousId = options.cycle?.previousId ?? list.find((tab) => tab.lastUsed)?.id ??
-    list[1]?.id;
+  previousId = options.cycle?.previousId ?? list.find((tab) => tab.lastUsed)?.id ?? list[1]?.id;
   if (options.cycle) {
     const byId = new Map(list.map((tab) => [tab.id, tab]));
     const cycleIds = new Set(options.cycle.tabIds);
@@ -128,7 +128,7 @@ async function fetchTabs(options = {}) {
 const pageSize = () => layout.columns * layout.rows;
 
 function chooseTabs() {
-  tabs = orderTabSwitcherCards(allTabs);
+  tabs = orderTabSwitcherCards(allTabs, previousId);
   layout = gridLayout(tabs.length);
 }
 

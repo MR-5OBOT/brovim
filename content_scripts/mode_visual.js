@@ -176,8 +176,7 @@ class Movement {
 
   setSelectionRange(range) {
     this.selection.removeAllRanges();
-    // TODO(philc): Is this return needed?
-    return this.selection.addRange(range);
+    this.selection.addRange(range);
   }
 
   // For "aw", "as". We don't do "ap" (for paragraphs), because Chrome paragraph movements are
@@ -528,15 +527,10 @@ class VisualLineMode extends VisualMode {
 
   extendSelection() {
     const initialDirection = this.movement.getDirection();
-    // TODO(philc): Reformat this to be a plain loop rather than a closure.
-    return (() => {
-      const result = [];
-      for (const direction of [initialDirection, this.movement.opposite[initialDirection]]) {
-        this.movement.runMovement(direction, lineboundary);
-        result.push(this.movement.reverseSelection());
-      }
-      return result;
-    })();
+    for (const direction of [initialDirection, this.movement.opposite[initialDirection]]) {
+      this.movement.runMovement(direction, lineboundary);
+      this.movement.reverseSelection();
+    }
   }
 }
 

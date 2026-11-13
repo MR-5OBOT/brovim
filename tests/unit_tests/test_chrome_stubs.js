@@ -26,6 +26,7 @@ const createStorageAPI = (areaName) => {
       for (key of Object.keys(items)) {
         value = items[key];
         globalThis.chrome.storage.onChanged.call(key, value, areaName);
+        for (const listener of this.onChanged.listeners) listener({ [key]: { newValue: value } });
       }
     }),
 
@@ -51,6 +52,7 @@ const createStorageAPI = (areaName) => {
       for (const key of Array.isArray(keys) ? keys : [keys]) {
         delete this.store[key];
         globalThis.chrome.storage.onChanged.callEmpty(key, areaName);
+        for (const listener of this.onChanged.listeners) listener({ [key]: {} });
       }
     }),
 
@@ -58,6 +60,14 @@ const createStorageAPI = (areaName) => {
       // TODO: Consider firing the change listener if Chrome's API implementation does.
       this.store = {};
     }),
+  };
+
+  // Each area also reports its own changes, as chrome.storage.sync.onChanged does.
+  storage.onChanged = {
+    listeners: [],
+    addListener(listener) {
+      this.listeners.push(listener);
+    },
   };
 
   // The "session" storage has one API that the others don't.

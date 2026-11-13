@@ -17,8 +17,8 @@ context("private find history", () => {
         Object.assign(data, values);
         return Promise.resolve();
       },
+      onChanged: { addListener() {} },
     });
-    stub(chrome.storage.onChanged, "addListener", () => {});
   });
 
   should("reuse private queries when another tab or HUD initializes", async () => {

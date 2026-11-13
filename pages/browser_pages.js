@@ -148,9 +148,6 @@ document.addEventListener("keydown", (event) => {
     open(selection);
   }
 });
-chrome.runtime.onMessage.addListener((request) => {
-  if (request?.handler === "closeBrowserPages") close();
-});
 render();
 resolveReady();
 globalThis.addEventListener("focus", () => {

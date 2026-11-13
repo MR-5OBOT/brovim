@@ -57,6 +57,27 @@ context("Alt+X", () => {
   });
 });
 
+context("Closing tabs", () => {
+  should("close the tab itself, in its own window, and nothing if it has gone", async () => {
+    const queries = [];
+    let windowTabs;
+    stub(chrome.tabs, "query", (query) => {
+      queries.push(query);
+      return Promise.resolve(windowTabs);
+    });
+    const closed = [];
+    stub(chrome.tabs, "remove", (id) => closed.push(id));
+    // The tab moved since the command's snapshot of it.
+    windowTabs = [{ id: 5, index: 0, windowId: 2 }, { id: 6, index: 1, windowId: 2 }];
+    await BackgroundCommands.removeTab({ count: 1, tab: { id: 5, index: 1, windowId: 2 } });
+    assert.equal([5], closed);
+    assert.equal(2, queries[0].windowId);
+    windowTabs = [{ id: 6, index: 0, windowId: 2 }];
+    await BackgroundCommands.removeTab({ count: 1, tab: { id: 5, index: 0, windowId: 2 } });
+    assert.equal([5], closed);
+  });
+});
+
 context("Mute tab groups", () => {
   let tabs;
 

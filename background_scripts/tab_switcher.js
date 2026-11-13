@@ -265,7 +265,7 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
   if (current?.id !== tab.id) return;
   if (!cycle) {
     // The same cards, in the same order, as the grid shows.
-    const tabIds = orderTabSwitcherCards(tabs).map((tab) => tab.id);
+    const tabIds = orderTabSwitcherCards(tabs, previousId).map((tab) => tab.id);
     cycle = {
       id: crypto.randomUUID(),
       tabIds,

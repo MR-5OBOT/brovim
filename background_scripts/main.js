@@ -386,8 +386,13 @@ const BackgroundCommands = {
 };
 
 async function forCountTabs(count, currentTab, callback) {
-  const tabs = await chrome.tabs.query(visibleTabsQueryArgs);
-  const activeTabIndex = getTabIndex(currentTab, tabs);
+  // The tab's own window, found by its id: the last-focused window, or the tab's position, can
+  // have changed by the time the command arrives. A tab that has gone is left alone.
+  const query = { windowId: currentTab.windowId };
+  if (bgUtils.isFirefox()) query.hidden = false;
+  const tabs = await chrome.tabs.query(query);
+  const activeTabIndex = tabs.findIndex((tab) => tab.id === currentTab.id);
+  if (activeTabIndex < 0) return;
   const startTabIndex = Math.max(0, Math.min(activeTabIndex, tabs.length - count));
   for (const tab of tabs.slice(startTabIndex, startTabIndex + count)) {
     callback(tab);
@@ -769,9 +774,6 @@ chrome.tabs.onRemoved.addListener(async function () {
     // Windows or storage may be unavailable during browser shutdown.
   }
 });
-
-// Convenience function for development use.
-globalThis.runTests = () => open(chrome.runtime.getURL("tests/dom_tests/dom_tests.html"));
 
 //
 // Begin initialization.

@@ -165,6 +165,22 @@ context("configured switcher shortcut", () => {
     const afterVisit = [{ ...secondPin, frozen: false, active: true }, current, firstPin, previous];
     assert.equal([8010, 8011, 8012, 8013], orderTabSwitcherCards(afterVisit).map((tab) => tab.id));
   });
+  should("keep the current and last-used tabs among the 12 cards", () => {
+    const ids = (tabs) => tabs.map((tab) => tab.id);
+    const pins = Array.from({ length: 12 }, (_, i) => ({ id: 9000 + i, index: i, pinned: true }));
+    const current = { id: 9100, index: 12, active: true };
+    const previous = { id: 9101, index: 13 };
+    assert.equal(
+      [...ids(pins.slice(0, 10)), 9100, 9101],
+      ids(orderTabSwitcherCards([current, previous, ...pins], previous.id)),
+    );
+    // Tab-bar order can put the last-used tab far from the current one.
+    const between = Array.from({ length: 14 }, (_, i) => ({ id: 9200 + i, index: 20 + i }));
+    assert.equal(
+      [9100, ...ids(between.slice(0, 10)), 9101],
+      ids(orderTabSwitcherCards([current, ...between, previous], previous.id)),
+    );
+  });
   should("fill rows of the configured width, then widen only when no row fits", () => {
     const grid = (count, columns = 8) =>
       tabSwitcherGrid(count, { columns, maxColumns: 10, maxRows: 6 });
@@ -1585,6 +1601,25 @@ context("Tab switcher previews and order", () => {
     stub(chrome.tabs, "sendMessage", () => Promise.resolve({ allowed: false }));
     stub(chrome.tabs, "captureVisibleTab", () => {
       throw new Error("A visible dialog must not be captured");
+    });
+    assert.equal({}, await captureThumbnail(1, url));
+  });
+
+  should("take no previews of sites excluded from Brovim", async () => {
+    const url = "https://excluded-preview.example/inbox";
+    const get = Settings.get.bind(Settings);
+    stub(
+      Settings,
+      "get",
+      (key) =>
+        key === "exclusionRules"
+          ? [{ pattern: "https?://excluded-preview.example/*", passKeys: "" }]
+          : get(key),
+    );
+    stub(chrome.tabs, "get", () => Promise.resolve({ active: true, status: "complete", url }));
+    stub(chrome.tabs, "sendMessage", () => Promise.resolve({ allowed: true }));
+    stub(chrome.tabs, "captureVisibleTab", () => {
+      throw new Error("An excluded site must not be captured");
     });
     assert.equal({}, await captureThumbnail(1, url));
   });
