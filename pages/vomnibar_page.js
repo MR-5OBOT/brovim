@@ -70,7 +70,7 @@ class VomnibarUI {
     this.fitWidth();
   }
 
-  // The bar opens at half width, and doubles once it has text or results.
+  // The bar opens narrower, and widens once it has text or results.
   fitWidth() {
     this.box.classList.toggle(
       "compact",

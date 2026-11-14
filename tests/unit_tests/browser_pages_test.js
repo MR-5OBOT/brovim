@@ -1,9 +1,5 @@
 import "./test_helper.js";
-import {
-  detectBrowserProfile,
-  filterBrowserPages,
-  getBrowserPages,
-} from "../../lib/browser_pages.js";
+import { filterBrowserPages, getBrowserPages } from "../../lib/browser_pages.js";
 
 context("browser pages", () => {
   should("show browser destinations before any query", () => {
@@ -42,27 +38,5 @@ context("browser pages", () => {
       filterBrowserPages("helium", "browser keyboard")[0].url,
     );
     assert.equal([], filterBrowserPages("chrome", "helium"));
-  });
-  should("detect Brave through its API and Edge through client hints", async () => {
-    assert.equal(
-      "brave",
-      await detectBrowserProfile({ brave: { isBrave: () => Promise.resolve(true) } }),
-    );
-    assert.equal(
-      "edge",
-      await detectBrowserProfile({ userAgentData: { brands: [{ brand: "Microsoft Edge" }] } }),
-    );
-    assert.equal("helium", await detectBrowserProfile({ userAgent: "Helium/1.0" }));
-    assert.equal("chromium", await detectBrowserProfile({ userAgent: "Chrome/149" }));
-    assert.equal(
-      "chromium",
-      await detectBrowserProfile({
-        brave: {
-          isBrave: () => {
-            throw new Error("Hidden");
-          },
-        },
-      }),
-    );
   });
 });

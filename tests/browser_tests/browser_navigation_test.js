@@ -125,19 +125,6 @@ try {
         const before = (await browser.pages()).length;
         await source.keyboard.press("Enter");
         assert((await browser.pages()).length === before, "No-match search opened a web search");
-        await palette.select("#profile", "brave");
-        await palette.$eval("#search", (input) => {
-          input.value = "shields";
-          input.dispatchEvent(new Event("input"));
-        });
-        assert(
-          await palette.$$eval(".url", (rows) =>
-            rows.length > 0 && rows.every((row) =>
-              row.textContent.startsWith("brave://")
-            )),
-          "Brave profile missing",
-        );
-        await palette.select("#profile", "auto");
         await palette.$eval("#search", (input) => {
           input.value = "extensions";
           input.dispatchEvent(new Event("input"));

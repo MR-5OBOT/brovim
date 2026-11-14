@@ -1,4 +1,4 @@
-import { detectBrowserProfile, filterBrowserPages } from "../lib/browser_pages.js";
+import { filterBrowserPages } from "../lib/browser_pages.js";
 import * as UIComponentMessenger from "./ui_component_messenger.js";
 import "../lib/utils.js";
 
@@ -29,22 +29,17 @@ if (embedded) {
 const input = document.querySelector("#search");
 const list = document.querySelector("#results");
 const status = document.querySelector("#status");
-const profileSelect = document.querySelector("#profile");
-const detected = await detectBrowserProfile();
 let results = [];
 let selection = 0;
 let opening = false;
 document.body.classList.toggle("standalone", standalone);
 document.body.classList.toggle("embedded", embedded);
 
-const saved = (await chrome.storage.local.get("browserPagesProfile")).browserPagesProfile;
-profileSelect.value = [...profileSelect.options].some((option) => option.value === saved)
-  ? saved
-  : "auto";
-const profile = () => profileSelect.value === "auto" ? detected : profileSelect.value;
+// Brovim runs in Helium only.
+const profile = "helium";
 
 function render() {
-  results = filterBrowserPages(profile(), input.value);
+  results = filterBrowserPages(profile, input.value);
   selection = 0;
   list.replaceChildren();
   status.textContent = results.length ? "" : "No browser pages match.";
@@ -108,7 +103,7 @@ async function open(index) {
     const response = await chrome.runtime.sendMessage({
       handler: "openBrowserPage",
       id: results[index].id,
-      profile: profile(),
+      profile,
       targetTabId,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not open this browser page.");
@@ -122,11 +117,6 @@ async function open(index) {
 }
 
 input.addEventListener("input", render);
-profileSelect.addEventListener("change", async () => {
-  await chrome.storage.local.set({ browserPagesProfile: profileSelect.value });
-  render();
-  input.focus();
-});
 document.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
   if (key === "escape" || (event.altKey && key === "e")) {

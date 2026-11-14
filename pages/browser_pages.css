@@ -25,21 +25,3 @@ body.standalone {
   font-size: 13px;
   color: #ccc;
 }
-footer {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  color: #999;
-  font-size: 11px;
-  border-top: 1px solid #242424;
-}
-select {
-  color: #ddd;
-  background: #111;
-  border: 1px solid #333;
-  border-radius: 4px;
-  padding: 3px;
-}
