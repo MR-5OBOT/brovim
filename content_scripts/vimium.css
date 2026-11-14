@@ -192,7 +192,8 @@ iframe.vimium-hud-frame {
   min-width: 350px;
   height: 58px;
   bottom: -14px;
-  right: 20px;
+  /* Cancels the bar's 10px inset in hud_page.css, so it sits on the right edge. */
+  right: -10px;
   margin: 0 0 0 -40%;
   border: none;
   z-index: 2147483647;
