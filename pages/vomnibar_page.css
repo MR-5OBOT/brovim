@@ -53,7 +53,6 @@ ul {
   }
 }
 
-/* The input is the bar's only frame. */
 #vomnibar-search-area {
   display: flex;
   align-items: center;
@@ -68,16 +67,11 @@ ul {
   background-color: #0a0a0a;
   color: #ffffff;
   border-radius: 4px;
-  border: 2px solid #303030;
+  border: none;
   min-width: 0;
   width: 100%;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s ease;
-}
-
-#vomnibar input:focus {
-  border-color: #3b0258;
 }
 
 #vomnibar input::placeholder {
