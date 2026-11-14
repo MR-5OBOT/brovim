@@ -246,7 +246,9 @@ class UIComponent {
       if (hadFocus) previous.focus({ preventScroll: true });
       const restored = hadFocus && previous !== document.body &&
         DomUtils.deepActiveElement() === previous;
-      if (restored && ["IFRAME", "FRAME"].includes(previous.tagName)) {
+      // A script orphaned by an extension reload can't message the extension.
+      const connected = chrome.runtime?.id != null;
+      if (connected && restored && ["IFRAME", "FRAME"].includes(previous.tagName)) {
         // An embedded page has the focus again, but not the element in it that had it: see
         // FrameFocus.
         chrome.runtime.sendMessage({
@@ -255,7 +257,7 @@ class UIComponent {
         });
       }
       if (shouldRefocusOriginalFrame && !restored) {
-        if (this.focusOptions.sourceFrameId != null) {
+        if (connected && this.focusOptions.sourceFrameId != null) {
           chrome.runtime.sendMessage({
             handler: "sendMessageToFrames",
             frameId: this.focusOptions.sourceFrameId,

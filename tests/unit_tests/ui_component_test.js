@@ -74,4 +74,26 @@ context("UIComponent", () => {
     c.show();
     assert.equal(c.iframeElement.getRootNode().host, document.activeElement);
   });
+
+  should("hide without messaging the extension once a reload has orphaned the script", async () => {
+    c = new UIComponent();
+    await c.load("example.html", "example-class");
+    const posted = [];
+    c.iframePort = Promise.resolve({ postMessage: (data) => posted.push(data) });
+    c.showing = true;
+    c.focusOptions = { focus: true, sourceFrameId: 0 };
+    // What Chrome does to a content script left behind by an extension reload.
+    stub(chrome.runtime, "id", undefined);
+    stub(chrome.runtime, "sendMessage", () => {
+      throw new Error("Extension context invalidated.");
+    });
+    let pageFocused = false;
+    stub(globalThis, "focus", () => pageFocused = true);
+    await c.hide();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.isFalse(c.showing);
+    assert.equal([{ name: "hidden" }], posted);
+    // It can't ask the frame that opened it to take the focus back: this page takes it.
+    assert.isTrue(pageFocused);
+  });
 });
