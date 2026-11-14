@@ -70,6 +70,24 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
       { headers: { "content-type": "text/html" } },
     );
   }
+  if (url.pathname === "/dark-page-streaming") {
+    // A slow server: the head first, the body 300 ms later, the rest 1.5 s after that.
+    const encoder = new TextEncoder();
+    const body = new ReadableStream({
+      async start(controller) {
+        controller.enqueue(encoder.encode(
+          "<!doctype html><title>Dark page</title><style>body{background:#121212;color:#eee}</style>" +
+            " ".repeat(2048),
+        ));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        controller.enqueue(encoder.encode("<body><p>Dark</p>" + " ".repeat(2048)));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        controller.enqueue(encoder.encode("<p>Rest</p></body>"));
+        controller.close();
+      },
+    });
+    return new Response(body, { headers: { "content-type": "text/html; charset=utf-8" } });
+  }
   if (url.pathname === "/sandboxed") {
     // Like raw.githubusercontent.com: a CSP sandbox gives the page an opaque origin.
     return new Response("<!doctype html><title>Sandboxed</title><p>Raw file</p>", {
@@ -1156,6 +1174,17 @@ try {
       await page.waitForFunction(() => document.readyState === "complete");
       await pause(200);
       assert(!await page.$("#brovim-dark-mode"), "An already dark page was inverted");
+      // Nor while it loads, when its body comes long after its head.
+      page.goto(`${origin}/dark-page-streaming`).catch(() => {});
+      await page.waitForFunction(() =>
+        location.pathname === "/dark-page-streaming" && document.body?.textContent.includes("Dark")
+      );
+      assert(
+        await page.evaluate(() => document.readyState === "loading"),
+        "The streamed page finished before the check",
+      );
+      assert(!await page.$("#brovim-dark-mode"), "A dark page was inverted while it loaded");
+      await page.waitForFunction(() => document.readyState === "complete");
       await fresh();
       await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
       await worker.evaluate(() => Settings.set("darkModeExcludedSites", "example.com\n127.0.0.1"));

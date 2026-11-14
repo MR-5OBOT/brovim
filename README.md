@@ -142,17 +142,17 @@ liquid glass panel (off by default), direct swapping with two tabs (on by defaul
 settings below. Change the shortcut at `chrome://extensions/shortcuts`; if another extension already
 uses it, assign it to Brovim there.
 
-Previews are taken after the first paint when a page loads or you return to a tab, then refreshed
-after it settles. URL changes and long scrolls also refresh them. Saved previews are included in the
-grid's first draw; opening and cycling never wait for a new capture or for storage. Captures are
-deferred while Brovim's own UI is on screen. Previews are saved by page address on this device (the
-15 most recent by default, with options for 30 or 50 and a 6 MB cache limit), so they survive
-browser restarts. Existing 5- or 10-preview settings upgrade to 15 automatically. This screenshot
-cache does not limit the tab list or browsing history. Clearing browsing history deletes the
-previews of the pages it removes, and excluding a site deletes its previews. Incognito previews stay
-in memory and are dropped when Brovim's background stops (after about 30 idle seconds). A tab
-without a saved preview shows its site's first letter until you view it: Chrome can capture only the
-active tab in a window.
+Previews are taken after the first paint when a page loads or you return to a tab without one, then
+refreshed after it settles. URL changes and long scrolls also refresh them, at most every 5 seconds.
+Saved previews are included in the grid's first draw; opening and cycling never wait for a new
+capture or for storage. Captures are deferred while Brovim's own UI is on screen. Previews are saved
+by page address on this device (the 15 most recent by default, with options for 30 or 50 and a 6 MB
+cache limit), so they survive browser restarts. Existing 5- or 10-preview settings upgrade to 15
+automatically. This screenshot cache does not limit the tab list or browsing history. Clearing
+browsing history deletes the previews of the pages it removes, and excluding a site deletes its
+previews. Incognito previews stay in memory and are dropped when Brovim's background stops (after
+about 30 idle seconds). A tab without a saved preview shows its site's first letter until you view
+it: Chrome can capture only the active tab in a window.
 
 Browser pages use **the same tap, hold and release behavior as websites**. Where Chromium permits
 Brovim's scripts (including Helium's Extensions page with the launch flag below), holding shows the

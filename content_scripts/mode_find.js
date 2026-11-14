@@ -419,17 +419,33 @@ const isMatchAtOrAfterSelection = (range, selection) => {
     0;
 };
 
-// Join adjacent inline text for searching, then map each match back to its DOM endpoints. Block
-// boundaries and different DOM roots end a run, so highlighting never crosses unrelated content.
+// The page's text runs (see collectTextRuns), kept while the page doesn't change and find is in
+// use: typing a query or pressing n then searches them without walking the whole page again. They
+// take memory, so a minute without a search lets them go.
+// shortcut: a change made by CSS alone (a :hover menu) isn't seen within that minute; resizing is.
+let textRuns = null;
+let textRunsExpiry = null;
+const textRunsObserver = globalThis.MutationObserver &&
+  new MutationObserver(() => forgetTextRuns());
+const forgetTextRuns = () => {
+  textRuns = null;
+  textRunsObserver?.disconnect();
+};
+globalThis.addEventListener?.("resize", forgetTextRuns);
+const textRunsWatch = { subtree: true, childList: true, characterData: true, attributes: true };
+
+// Map each match in the page's text back to its DOM endpoints.
 const collectFindMatches = (pattern) => {
+  // A change made since, whose notice hasn't arrived yet, counts too.
+  if (textRunsObserver?.takeRecords().length) forgetTextRuns();
+  if (!textRuns) {
+    textRunsObserver?.observe(document, textRunsWatch);
+    textRuns = collectTextRuns();
+  }
+  clearTimeout(textRunsExpiry);
+  textRunsExpiry = setTimeout(forgetTextRuns, 60_000);
   const matches = [];
-  let parts = [], text = [], length = 0;
-  const flush = () => {
-    const value = text.join("");
-    // Collapsible whitespace at a block's edges is not rendered.
-    const leading = parts[0]?.collapsed ? 1 : 0;
-    const trailing = parts.at(-1)?.collapsed ? 1 : 0;
-    const rendered = value.slice(leading, value.length - trailing);
+  for (const { parts, leading, rendered } of textRuns) {
     pattern.lastIndex = 0;
     let match, startPart = 0, endPart = 0;
     while ((match = pattern.exec(rendered)) !== null) {
@@ -446,6 +462,23 @@ const collectFindMatches = (pattern) => {
         last.collapsed ? last.endOffset : last.offset + end - last.start,
       );
       matches.push({ text: match[0], range });
+    }
+  }
+  return matches;
+};
+
+// Join adjacent inline text for searching, and remember where each piece came from. Block
+// boundaries and different DOM roots end a run, so highlighting never crosses unrelated content.
+const collectTextRuns = () => {
+  const runs = [];
+  let parts = [], text = [], length = 0;
+  const flush = () => {
+    if (parts.length) {
+      const value = text.join("");
+      // Collapsible whitespace at a block's edges is not rendered.
+      const leading = parts[0].collapsed ? 1 : 0;
+      const trailing = parts.at(-1).collapsed ? 1 : 0;
+      runs.push({ parts, leading, rendered: value.slice(leading, value.length - trailing) });
     }
     parts = [];
     text = [];
@@ -491,15 +524,15 @@ const collectFindMatches = (pattern) => {
     ) {
       return;
     }
-    // This runs for every element on each keystroke, so read each computed style property once.
-    // ponytail: re-walks the page per keystroke (~40 ms at 18k elements); cache the text runs per
-    // find session, invalidated by a MutationObserver, if large pages lag while typing.
+    // This runs for every element, so read each computed style property once.
     const style = getComputedStyle(node);
     const display = style.display;
     if (display === "none" || style.contentVisibility === "hidden") return;
     const boundary = node.tagName === "BR" ||
       (display !== "contents" && !display.startsWith("inline") && !display.startsWith("ruby"));
     if (boundary) flush();
+    // The document's observer can't see into a shadow root: watch each one too.
+    if (node.shadowRoot) textRunsObserver?.observe(node.shadowRoot, textRunsWatch);
     const children = node.shadowRoot?.childNodes ??
       (node.tagName === "SLOT" && node.assignedNodes().length
         ? node.assignedNodes({ flatten: true })
@@ -510,7 +543,7 @@ const collectFindMatches = (pattern) => {
   };
   if (document.body) visit(document.body);
   flush();
-  return matches;
+  return runs;
 };
 
 globalThis.PostFindMode = PostFindMode;

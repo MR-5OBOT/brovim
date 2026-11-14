@@ -5,7 +5,6 @@ context("TabRecency", () => {
   let tabRecency;
 
   setup(async () => {
-    await chrome.storage.session.remove("tabRecency");
     await chrome.storage.local.remove("brovimSessionTabRecency");
     tabRecency = new TabRecency();
   });
@@ -53,10 +52,10 @@ context("TabRecency", () => {
     let replaced, resolveStorage;
     stub(chrome.tabs.onReplaced, "addListener", (fn) => replaced = fn);
     stub(chrome.tabs, "query", () => Promise.resolve([{ id: 2 }, { id: 3 }, { id: 4 }]));
-    stub(chrome.storage.session, "get", () => new Promise((resolve) => resolveStorage = resolve));
+    stub(chrome.storage.local, "get", () => new Promise((resolve) => resolveStorage = resolve));
     const loading = tabRecency.init();
     replaced(4, 1);
-    resolveStorage({ tabRecency: { 1: 10, 2: 20, 3: 30 } });
+    resolveStorage({ brovimSessionTabRecency: { 1: 10, 2: 20, 3: 30 } });
     await loading;
     assert.equal([3, 2, 4], tabRecency.getTabsByRecency());
   });
@@ -66,12 +65,12 @@ context("TabRecency", () => {
     stub(chrome.tabs.onActivated, "addListener", (fn) => activated = fn);
     stub(chrome.runtime.onStartup, "addListener", (fn) => startup = fn);
     stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }, { id: 2 }]));
-    stub(chrome.storage.session, "get", () => new Promise((resolve) => resolveStorage = resolve));
+    stub(chrome.storage.local, "get", () => new Promise((resolve) => resolveStorage = resolve));
     const loading = tabRecency.init();
     const resetting = startup();
     activated({ tabId: 1, windowId: 7 });
     activated({ tabId: 2, windowId: 7 });
-    resolveStorage({ tabRecency: { 1: 30, 2: 10 } });
+    resolveStorage({ brovimSessionTabRecency: { 1: 30, 2: 10 } });
     await Promise.all([loading, resetting]);
     assert.equal([2, 1], tabRecency.getTabsByRecency());
   });
@@ -97,10 +96,24 @@ context("TabRecency", () => {
     tabRecency.register(2);
     tabRecency.register(99);
     await tabRecency.saveToStorage();
-    await chrome.storage.session.remove("tabRecency");
     const reloaded = new TabRecency();
     await reloaded.init();
     assert.equal([2, 1], reloaded.getTabsByRecency());
+  });
+
+  should("keep visits out of session storage, which every page listens to", async () => {
+    stub(chrome.tabs, "query", () => Promise.resolve([{ id: 1 }, { id: 2 }]));
+    await tabRecency.init();
+    tabRecency.register(1);
+    tabRecency.register(2);
+    await tabRecency.saveToStorage();
+    assert.equal({}, await chrome.storage.session.get("tabRecency"));
+    assert.equal(
+      [2, 1],
+      Object.entries(
+        (await chrome.storage.local.get("brovimSessionTabRecency")).brovimSessionTabRecency,
+      ).sort(([, a], [, b]) => b - a).map(([id]) => Number(id)),
+    );
   });
 
   should("clear visits when the browser starts a new session", async () => {
@@ -184,8 +197,8 @@ context("TabRecency", () => {
     const tabs = [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }];
     stub(chrome.tabs, "query", () => Promise.resolve(tabs));
 
-    const storage = { tabRecency: { 1: 5, 2: 6 } };
-    stub(chrome.storage.session, "get", () => Promise.resolve(storage));
+    const storage = { brovimSessionTabRecency: { 1: 5, 2: 6 } };
+    stub(chrome.storage.local, "get", () => Promise.resolve(storage));
 
     // Even though the in-storage tab counters are higher than the in-memory tabs, during
     // loading, the in-memory tab counters are adjusted to be the most recent.
@@ -203,8 +216,8 @@ context("TabRecency", () => {
     const tabs = [{ id: 1 }];
     stub(chrome.tabs, "query", () => Promise.resolve(tabs));
 
-    const storage = { tabRecency: { 1: 5, 2: 6 } };
-    stub(chrome.storage.session, "get", () => Promise.resolve(storage));
+    const storage = { brovimSessionTabRecency: { 1: 5, 2: 6 } };
+    stub(chrome.storage.local, "get", () => Promise.resolve(storage));
     await tabRecency.init();
     assert.equal([1], tabRecency.getTabsByRecency());
   });

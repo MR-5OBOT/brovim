@@ -291,14 +291,18 @@ async function showTabSwitcher(tab, expectedOverlayId, pressedAt = performance.n
     // The tab switched to shows the grid while the shortcut is held, and sees the release that
     // ends a tap. See rememberTabSwitcherCycle in the content scripts.
     const quick = pressedAt >= workerStartMs && performance.now() - pressedAt <= handoffMs;
-    const reply = await chrome.tabs.sendMessage(cycle.currentId, {
+    // Whether the tab now in front sees the shortcut's modifier, and so ends the gesture itself.
+    // Not awaited: a busy page answers late, and the next press must not wait for it.
+    const target = cycle.currentId;
+    cycle.watched = false;
+    chrome.tabs.sendMessage(target, {
       handler: "rememberTabSwitcherCycle",
       cycle: snapshot(cycle),
       shortcut,
       handoff: answer?.held ? "held" : quick ? "unknown" : frozen ? "verdict" : undefined,
-    }, { frameId: 0 }).catch(() => null);
-    // Whether the tab now in front sees the shortcut's modifier, and so ends the gesture itself.
-    cycle.watched = reply?.watching === true;
+    }, { frameId: 0 }).then((reply) => {
+      if (cycle.currentId === target) cycle.watched = reply?.watching === true;
+    }, () => {});
     // The letter went down a moment before the shortcut reached the background.
     const since = Date.now() - (performance.now() - pressedAt) - 50;
     if (frozen) awaitVerdict(tab, cycle, quick, since);

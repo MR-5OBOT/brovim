@@ -769,6 +769,40 @@ context("configured switcher shortcut", () => {
       }
     },
   );
+  should("not hold up the next press while the tab it switched to is busy", async () => {
+    const tabs = [821, 822, 823].map((id, index) => ({
+      id,
+      index,
+      windowId: 892,
+      active: index === 0,
+      // A page Brovim can't run on: the background switches by itself.
+      url: index === 0 ? "data:text/html,source" : "https://example.com/",
+    }));
+    stub(
+      chrome.tabs,
+      "query",
+      (query) => Promise.resolve(tabs.filter((t) => !query.active || t.active)),
+    );
+    stub(chrome.tabs, "update", (id) => {
+      for (const tab of tabs) tab.active = tab.id === id;
+      return Promise.resolve(tabs.find((t) => t.id === id));
+    });
+    // The tab it lands on is busy: it answers nothing.
+    stub(chrome.tabs, "sendMessage", () => new Promise(() => {}));
+    await bgUtils.tabRecency.init();
+    for (const id of [823, 822, 821]) bgUtils.tabRecency.register(id);
+    try {
+      const done = await Promise.race([
+        SwitcherCommands.openTabSwitcher(tabs[0]).then(() => true),
+        new Promise((resolve) => setTimeout(() => resolve(false), 200)),
+      ]);
+      assert.isTrue(done);
+      assert.isTrue(tabs[1].active);
+    } finally {
+      SwitcherCommands.endTabSwitcherCycle(892);
+    }
+  });
+
   should(
     "show a handed-off gesture's grid after the tap window, and let a tap end it",
     async () => {
@@ -1456,6 +1490,9 @@ context("TabPreview first paint and repeat visits", () => {
     stub(TabPreview, "waitStart", 0);
     stub(TabPreview, "lastCapture", -Infinity);
     stub(TabPreview, "pending", null);
+    stub(TabPreview, "followUp", null);
+    stub(TabPreview, "lastRequest", -Infinity);
+    stub(TabPreview, "capturedUrl", null);
     stub(chrome.runtime, "sendMessage", (message) => {
       captures.push(message);
       return Promise.resolve({ captured: true });
@@ -1507,16 +1544,37 @@ context("TabPreview first paint and repeat visits", () => {
     assert.equal(2, captures.length);
   });
 
+  should("refresh a return to a captured page once it settles, with no early capture", async () => {
+    TabPreview.start("load");
+    await TabPreview.pending;
+    document.hidden = true;
+    TabPreview.start("visible");
+    document.hidden = false;
+    now += 100;
+    TabPreview.start("visible");
+    await TabPreview.pending;
+    assert.equal(1, captures.length);
+    now += 1000;
+    document.readyState = "complete";
+    TabPreview.check();
+    await TabPreview.pending;
+    assert.equal(2, captures.length);
+  });
+
   should(
-    "start a new early capture after leaving and quickly returning during settling",
+    "take an early capture of a page that keeps changing its address every 5s at most",
     async () => {
       TabPreview.start("load");
       await TabPreview.pending;
-      document.hidden = true;
-      TabPreview.start("visible");
-      document.hidden = false;
-      now += 100;
-      TabPreview.start("visible");
+      for (let i = 0; i < 16; i++) {
+        now += 250;
+        location.href = `https://preview.example/?at=${i}`;
+        TabPreview.start("route");
+        await TabPreview.pending;
+      }
+      assert.equal(1, captures.length);
+      now += 1000;
+      TabPreview.start("route");
       await TabPreview.pending;
       assert.equal(2, captures.length);
     },
@@ -1535,6 +1593,9 @@ context("TabPreview navigation while settling", () => {
     stub(TabPreview, "enabled", true);
     stub(TabPreview, "waitStart", 100);
     stub(TabPreview, "pending", null);
+    stub(TabPreview, "followUp", null);
+    stub(TabPreview, "lastRequest", -Infinity);
+    stub(TabPreview, "capturedUrl", null);
     stub(globalThis, "requestAnimationFrame", (callback) => callback());
     stub(globalThis, "requestIdleCallback", (callback) => callback());
     stub(chrome.runtime, "sendMessage", (message) => {
@@ -1557,6 +1618,9 @@ context("TabPreview navigation while settling", () => {
     stub(globalThis, "location", { href: "https://preview.example/" });
     stub(TabPreview, "enabled", true);
     stub(TabPreview, "pending", null);
+    stub(TabPreview, "followUp", null);
+    stub(TabPreview, "lastRequest", -Infinity);
+    stub(TabPreview, "capturedUrl", null);
     stub(chrome.runtime, "sendMessage", (message) => {
       captures.push(message.url);
       return captures.length === 1
@@ -1569,6 +1633,36 @@ context("TabPreview navigation while settling", () => {
     complete({});
     await Promise.all([previous, next]);
     assert.equal(["https://preview.example/", "https://preview.example/new-route"], captures);
+  });
+
+  should("answer many requests made during a pending capture with one more", async () => {
+    const captures = [];
+    let complete;
+    stub(globalThis, "document", {
+      hidden: false,
+      documentElement: { children: [] },
+      getElementById: () => null,
+    });
+    stub(globalThis, "location", { href: "https://map.example/?at=0" });
+    stub(TabPreview, "enabled", true);
+    stub(TabPreview, "pending", null);
+    stub(TabPreview, "followUp", null);
+    stub(TabPreview, "lastRequest", -Infinity);
+    stub(TabPreview, "capturedUrl", null);
+    stub(chrome.runtime, "sendMessage", (message) => {
+      captures.push(message.url);
+      return captures.length === 1
+        ? new Promise((resolve) => complete = resolve)
+        : Promise.resolve({ captured: true });
+    });
+    const requests = [TabPreview.capture(true)];
+    for (let i = 1; i <= 20; i++) {
+      location.href = `https://map.example/?at=${i}`;
+      requests.push(TabPreview.capture(true));
+    }
+    complete({});
+    await Promise.all(requests);
+    assert.equal(["https://map.example/?at=0", "https://map.example/?at=20"], captures);
   });
 });
 

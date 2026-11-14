@@ -434,17 +434,22 @@ const TabSwitcher = {
 // Keeps this page's switcher preview current. After the page loads, comes into
 // view, changes its URL or scrolls far, wait until it looks settled (nothing visible has changed,
 // shifted or finished painting for 800ms, or 4.8s have passed), then ask the background to capture
-// it. A first-paint capture supplies an early preview on every load and visit; the settled capture
-// refines it. Scroll captures are throttled to 5s. Never capture while Brovim's UI is showing.
+// it. A first-paint capture gives a page without a preview one at once; the settled capture
+// refines it. Scroll and URL-change captures come at most every 5s. Never capture while Brovim's
+// UI is showing.
 const TabPreview = {
   enabled: false,
   waitStart: 0, // When the current wait for the page to settle began, or 0.
   lastChange: 0,
   lastCapture: -Infinity,
   lastCaptureScrollY: 0,
+  lastRequest: -Infinity, // When a capture was last asked for.
+  capturedUrl: null, // The address of the last capture.
   timer: null,
   pending: null,
   pendingUrl: null,
+  followUp: null, // The capture that runs once the pending one is done.
+  followUpAllowsLoading: false,
   mutations: null,
   changed: new Set(), // Nodes changed since the last check for visible changes.
 
@@ -506,11 +511,17 @@ const TabPreview = {
       return;
     }
     const now = performance.now();
-    const firstPaint = ["load", "visible", "route"].includes(reason);
+    const recent = now - this.lastRequest < 5000;
     if (reason === "route") this.lastChange = now;
-    else if (!firstPaint && reason !== "retry" && now - this.lastCapture < 5000) return;
+    else if (reason === "scroll" && now - this.lastCapture < 5000) return;
+    // A tab shown again at the address it was captured at already has a preview, and a page that
+    // rewrites its address as it's used (maps, endless scrolling) gets an early one every 5s at
+    // most. The settled capture follows either way.
+    const early = reason === "load" ||
+      (reason === "visible" && location.href !== this.capturedUrl) ||
+      (reason === "route" && !recent);
     if (this.waitStart) {
-      if (reason === "route") this.scheduleCapture(true);
+      if (reason === "route" && early) this.scheduleCapture(true);
       return;
     }
     this.waitStart = now;
@@ -523,7 +534,7 @@ const TabPreview = {
       attributeFilter: ["class", "style", "src", "srcset", "hidden"],
     });
     this.timer = setInterval(() => this.check(), 250);
-    if (firstPaint) this.scheduleCapture(true);
+    if (early) this.scheduleCapture(true);
   },
 
   checkChanges() {
@@ -551,6 +562,7 @@ const TabPreview = {
   },
 
   scheduleCapture(allowLoading = false) {
+    this.lastRequest = performance.now();
     requestAnimationFrame(() =>
       requestIdleCallback(() => this.capture(allowLoading), { timeout: 150 })
     );
@@ -559,15 +571,21 @@ const TabPreview = {
   // Resolves once this page's preview has been captured, or that wasn't possible.
   capture(allowLoading = false) {
     if (!this.enabled || document.hidden || isBrovimUiVisible()) return Promise.resolve();
-    // A slow early capture must not swallow the settled refresh that follows it.
+    // A slow early capture must not swallow the settled refresh that follows it. Requests made
+    // meanwhile share one follow-up: a page rewriting its address as it's used asks again and again.
     if (this.pending && (!allowLoading || this.pendingUrl !== location.href)) {
-      return this.pending.then(() => this.capture(allowLoading));
+      this.followUpAllowsLoading = allowLoading;
+      return this.followUp ??= this.pending.then(() => {
+        this.followUp = null;
+        return this.capture(this.followUpAllowsLoading);
+      });
     }
     try {
-      this.pendingUrl = location.href;
+      const url = location.href;
+      this.pendingUrl = url;
       this.pending ??= chrome.runtime.sendMessage({
         handler: "captureTabThumbnail",
-        url: location.href,
+        url,
         allowLoading,
       }).then((result) => {
         if (result?.retry) {
@@ -578,6 +596,7 @@ const TabPreview = {
         } else if (result?.captured) {
           this.lastCapture = performance.now();
           this.lastCaptureScrollY = globalThis.scrollY;
+          this.capturedUrl = url;
         }
       }).catch(() => {}).finally(() => {
         this.pending = null;

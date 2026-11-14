@@ -146,7 +146,7 @@ handlerStack.push({
         (target.tagName === "A") &&
         (target.origin === document.location.origin) &&
         // Clicking the link will change the url of this frame.
-        ((target.pathName !== document.location.pathName) ||
+        ((target.pathname !== document.location.pathname) ||
           (target.search !== document.location.search)) &&
         (["", "_self"].includes(target.target) ||
           ((target.target === "_parent") && (globalThis.parent === window)) ||
@@ -533,7 +533,8 @@ const messageHandlers = {
   tabSwitcherKey({ event }) {
     if (DomUtils.isTopFrame()) TabSwitcher.recordKeyboardEvent(event, true);
   },
-  // The tab became active. Also tells the background that this page captures its own preview.
+  // The tab became active, or its page finished loading in front. Also tells the background that
+  // this page captures its own preview.
   startTabPreview() {
     TabPreview.start("visible");
   },
@@ -614,6 +615,45 @@ async function initializePreDomReady() {
   );
   // The DOM tests' page has no extension pages to load.
   if (DomUtils.isTopFrame() && !globalThis.vimiumDomTestsAreRunning) prebuildVomnibar();
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  // The browser is about to freeze this tab: its frames' memory goes first.
+  document.addEventListener("freeze", dropHiddenFrames);
+}
+
+// Brovim's hidden frames (the command bar, the grid, the HUD...) each keep a page in the
+// extension's process, in every tab that has them. A tab left in the background this long gives
+// them up; the command bar and the grid come back when it's shown again, the others on use.
+const dropFramesAfterMs = 5 * 60 * 1000;
+let dropFramesTimer = null;
+const brovimFrames = () => [
+  Vomnibar.vomnibarUI,
+  Vomnibar.browserPagesUI,
+  HelpDialog.helpUI,
+  HUD.hudUI,
+  TabSwitcher.tabSwitcherUI,
+];
+
+function dropHiddenFrames() {
+  // A frozen page runs this late, when it wakes: maybe in front again.
+  if (!document.hidden || TabSwitcher.isOpening) return;
+  // shortcut: each dropped frame leaves its head observer and focus listener behind (small); give
+  // UIComponent a way to dispose of them if long-lived tabs show it.
+  for (const ui of brovimFrames()) if (ui?.attached && !ui.showing) ui.shadowDOM.host.remove();
+}
+
+function onVisibilityChange() {
+  clearTimeout(dropFramesTimer);
+  if (document.hidden) {
+    if (brovimFrames().some((ui) => ui?.attached)) {
+      dropFramesTimer = setTimeout(dropHiddenFrames, dropFramesAfterMs);
+    }
+    return;
+  }
+  // Back in front: build again what was dropped, as for a page that has just loaded.
+  if (Vomnibar.vomnibarUI?.detached) prebuildVomnibar();
+  if (TabSwitcher.tabSwitcherUI?.detached && document.readyState === "complete") {
+    TabSwitcher.init();
+  }
 }
 
 // Builds the command bar's frame before the first o, once this tab is in front and the page has
@@ -757,4 +797,6 @@ Object.assign(globalThis, {
   focusThisFrame,
   // Exported only for tests.
   installModes,
+  dropHiddenFrames,
+  onVisibilityChange,
 });

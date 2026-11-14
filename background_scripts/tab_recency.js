@@ -2,8 +2,9 @@
 // The order of tabs as tracked by TabRecency is used to provide a recency-based ordering in the
 // tabs vomnibar.
 //
-// Session storage handles worker suspension; a local mirror survives extension reloads. The
-// mirror is reset on browser startup, so visits remain scoped to this browser session.
+// Kept in local storage, which survives worker suspension and extension reloads, and reset on
+// browser startup, so visits remain scoped to this browser session. Not in session storage: every
+// frame of every tab listens to that, and this changes on every tab switch.
 //
 // Callers must await TabRecency.init before calling recencyScore or getTabsByRecency.
 //
@@ -19,7 +20,7 @@ class TabRecency {
     this.resetOnLoad = false;
   }
 
-  // Add listeners to chrome.tabs, and load the index from session storage.
+  // Add listeners to chrome.tabs, and load the index from storage.
   async init() {
     if (this.initPromise) {
       await this.initPromise;
@@ -73,15 +74,12 @@ class TabRecency {
     resolveFn();
   }
 
-  // Loads the index from session storage.
+  // Loads the index from storage.
   async loadFromStorage() {
-    const tabsPromise = chrome.tabs.query({});
-    const [tabs, storage, backup] = await Promise.all([
-      tabsPromise,
-      chrome.storage.session.get("tabRecency"),
+    const [tabs, { brovimSessionTabRecency: storedRecency }] = await Promise.all([
+      chrome.tabs.query({}),
       chrome.storage.local.get("brovimSessionTabRecency"),
     ]);
-    const storedRecency = storage.tabRecency ?? backup.brovimSessionTabRecency;
     if (storedRecency == null) return;
 
     let maxCounter = 0;
@@ -111,10 +109,7 @@ class TabRecency {
   async saveToStorage() {
     try {
       const recency = structuredClone(this.tabIdToCounter);
-      await Promise.all([
-        chrome.storage.session.set({ tabRecency: recency }),
-        chrome.storage.local.set({ brovimSessionTabRecency: recency }),
-      ]);
+      await chrome.storage.local.set({ brovimSessionTabRecency: recency });
     } catch {
       // Storage operations can fail if the browser or extension is shutting down.
     }

@@ -13,6 +13,18 @@ const DarkMode = {
     if (!DomUtils.isTopFrame()) return;
     Settings.onLoaded().then(() => this.update());
     Settings.addEventListener("change", () => this.update());
+    // Look again as soon as the body arrives, long before a slow page has finished loading: until
+    // then a page dark only on its body would show inverted, bright.
+    if (!document.body) {
+      const bodyArrived = new MutationObserver(() => {
+        if (!document.body) return;
+        bodyArrived.disconnect();
+        this.update();
+      });
+      bodyArrived.observe(document, { childList: true, subtree: true });
+      // A document without a body (SVG, XML) never gets one.
+      DomUtils.documentReady().then(() => bodyArrived.disconnect());
+    }
     // Look again once the page's own styles are in, then after it loads.
     DomUtils.documentReady().then(() => this.update());
     globalThis.addEventListener("load", () => this.update(), { once: true });
@@ -89,7 +101,8 @@ iframe[src*="vimeo"], [style*="url("]:not(html, body) {
 
   // A page already looks dark when most points sampled across the window sit on a dark background.
   pageIsDark(canvas) {
-    if (!document.body) return false;
+    // Before the body arrives, the root's color is all there is.
+    if (!document.body) return this.isDark(canvas);
     let dark = 0;
     for (const x of [0.2, 0.5, 0.8]) {
       for (const y of [0.2, 0.5, 0.8]) {

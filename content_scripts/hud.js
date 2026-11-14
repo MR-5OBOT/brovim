@@ -70,8 +70,9 @@ const HUD = {
       // child frame.
       getComputedStyle(this.hudUI.iframeElement).display;
     } else {
-      classList.remove("vimium-non-clickable");
-      classList.add("vimium-clickable");
+      // A message lets clicks through to the page under it.
+      classList.remove("vimium-clickable");
+      classList.add("vimium-non-clickable");
     }
   },
 
@@ -229,10 +230,11 @@ const HUD = {
   },
 };
 
+// Fades an element with a CSS transition, which the browser runs smoothly, frame by frame.
 class Tween {
   constructor(cssSelector, insertionPoint) {
     this.opacity = 0;
-    this.intervalId = -1;
+    this.timer = null;
     this.styleElement = null;
     this.cssSelector = cssSelector;
     if (insertionPoint == null) insertionPoint = document.documentElement;
@@ -251,40 +253,29 @@ class Tween {
   }
 
   fade(toAlpha, duration, onComplete) {
-    clearInterval(this.intervalId);
-    const startTime = (new Date()).getTime();
-    const fromAlpha = this.opacity;
-    const alphaStep = toAlpha - fromAlpha;
-
-    const performStep = () => {
-      const elapsed = (new Date()).getTime() - startTime;
-      if (elapsed >= duration) {
-        clearInterval(this.intervalId);
-        this.updateStyle(toAlpha);
-        if (onComplete) {
-          onComplete();
-        }
-      } else {
-        const value = ((elapsed / duration) * alphaStep) + fromAlpha;
-        this.updateStyle(value);
-      }
-    };
-
-    this.updateStyle(this.opacity);
-    this.intervalId = setInterval(performStep, 50);
+    clearTimeout(this.timer);
+    this.updateStyle(toAlpha, duration);
+    this.timer = setTimeout(() => onComplete?.(), duration);
   }
 
   stop() {
-    clearInterval(this.intervalId);
+    clearTimeout(this.timer);
   }
 
-  updateStyle(opacity) {
+  // @starting-style: an element that has just been shown fades in from nothing.
+  updateStyle(opacity, duration = 0) {
     this.opacity = opacity;
     this.styleElement.innerHTML = `\
 ${this.cssSelector} {
-  opacity: ${this.opacity};
-}\
-`;
+  opacity: ${opacity};
+  transition: opacity ${duration}ms ease-out;
+}
+@starting-style {
+  ${this.cssSelector} { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  ${this.cssSelector} { transition: none; }
+}`;
   }
 }
 

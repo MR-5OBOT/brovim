@@ -120,16 +120,23 @@ const isScrollableElement = function (element, direction, amount, factor) {
 // From element and its parents, find the first which we should scroll and which does scroll.
 const findScrollableElement = function (element, direction, amount, factor) {
   const original = element;
+  // Whether the way up passed a pane that scrolls along this axis, but is at its end.
+  let paneAtEnd = false;
   while (
     (element !== getScrollingElement()) && !isScrollableElement(element, direction, amount, factor)
   ) {
+    paneAtEnd ||= isScrollableElement(element, direction, 1, 1) ||
+      isScrollableElement(element, direction, -1, 1);
     element = DomUtils.getContainingElement(element) || element.getRootNode?.().host ||
       getScrollingElement();
   }
   // Single-page apps can replace a scroll pane without changing the URL. The remembered element
   // then leads to a non-scrolling document; find the current pane instead of waiting for a click.
+  // Not for a pane at its end: it stays the one that moves, and searching the page on every press
+  // is slow.
   if (
-    element === getScrollingElement() && !isScrollableElement(element, direction, amount, factor)
+    !paneAtEnd && element === getScrollingElement() &&
+    !isScrollableElement(element, direction, amount, factor)
   ) {
     const replacement = firstScrollableElement();
     if (replacement && replacement !== original) {

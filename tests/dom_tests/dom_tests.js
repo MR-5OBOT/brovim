@@ -1243,3 +1243,138 @@ context("GrabBackFocus", () => {
     assert.isTrue(DomUtils.isEditable(document.activeElement));
   });
 });
+
+context("Find's page text", () => {
+  let fixture;
+  setup(() => {
+    initializeModeState();
+    fixture = document.getElementById("test-div");
+    fixture.innerHTML = "<p>cachedneedle one</p>";
+    stub(FindMode, "query", null);
+  });
+  teardown(() => {
+    fixture.innerHTML = "";
+    globalThis.getSelection().removeAllRanges();
+  });
+
+  should("read the page once while it doesn't change, and again once it does", () => {
+    assert.equal(1, FindMode.updateQuery("cachedneedle"));
+    let styleReads = 0;
+    const getStyle = globalThis.getComputedStyle;
+    stub(globalThis, "getComputedStyle", (...args) => (styleReads++, getStyle(...args)));
+    assert.equal(1, FindMode.updateQuery("cachedneedl"));
+    assert.equal(0, styleReads);
+    fixture.insertAdjacentHTML("beforeend", "<p>cachedneedle two</p>");
+    assert.equal(2, FindMode.updateQuery("cachedneedle"));
+    assert.isTrue(styleReads > 0);
+  });
+});
+
+context("Scroller", () => {
+  let fixture;
+  setup(() => {
+    initializeModeState();
+    stubSettings("smoothScroll", false);
+    fixture = document.getElementById("test-div");
+    // An app's layout: the document doesn't scroll; a small and a big pane do.
+    document.documentElement.style.overflow = "hidden";
+    fixture.innerHTML = `
+      <div id="side-pane" style="position:fixed;top:0;left:0;width:150px;height:150px;overflow:auto">
+        <div style="height:1000px"></div></div>
+      <div id="main-pane" style="position:fixed;top:0;left:200px;width:500px;height:400px;overflow:auto">
+        <div style="height:3000px"></div></div>
+      <div id="outside-label" style="position:fixed;top:200px;left:0;width:100px;height:20px">x</div>`;
+  });
+  teardown(() => {
+    fixture.innerHTML = "";
+    document.documentElement.style.overflow = "";
+    Scroller.reset();
+  });
+  const activate = (element) =>
+    handlerStack.bubbleEvent("DOMActivate", { target: element, composedPath: () => [element] });
+
+  should("keep a pane at its end as the one that moves, not jump to another", () => {
+    const side = document.getElementById("side-pane");
+    const main = document.getElementById("main-pane");
+    side.scrollTop = side.scrollHeight;
+    activate(side);
+    Scroller.scrollBy("y", 60);
+    assert.equal(0, main.scrollTop);
+    Scroller.scrollBy("y", -60);
+    assert.isTrue(side.scrollTop < side.scrollHeight - side.clientHeight);
+  });
+
+  should("find the page's pane from an element outside any pane", () => {
+    const main = document.getElementById("main-pane");
+    activate(document.getElementById("outside-label"));
+    Scroller.scrollBy("y", 60);
+    assert.equal(60, main.scrollTop);
+  });
+});
+
+context("HUD", () => {
+  // The setup's focusable HUD, as the other tests expect it.
+  teardown(() => HUD.init());
+
+  should("let clicks through a message to the page under it", async () => {
+    await HUD.init(false);
+    const frame = HUD.hudUI.iframeElement;
+    assert.isTrue(frame.classList.contains("vimium-non-clickable"));
+    assert.isFalse(frame.classList.contains("vimium-clickable"));
+  });
+
+  should("fade with a CSS transition, and finish on time", async () => {
+    const tween = new Tween(".tween-test", document.getElementById("test-div"));
+    let done = false;
+    tween.fade(1, 20, () => done = true);
+    assert.isTrue(tween.styleElement.textContent.includes("opacity: 1;"));
+    assert.isTrue(tween.styleElement.textContent.includes("transition: opacity 20ms"));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    assert.isTrue(done);
+    tween.styleElement.remove();
+  });
+});
+
+context("Hidden frames", () => {
+  let hidden;
+  setup(() => {
+    hidden = true;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
+  });
+  teardown(() => {
+    delete document.hidden;
+    document.getElementById("test-div").innerHTML = "";
+  });
+
+  should("drop a background tab's frames, keep one showing, and rebuild on return", () => {
+    const fixture = document.getElementById("test-div");
+    const frame = (showing) => {
+      const host = document.createElement("div");
+      fixture.append(host);
+      return {
+        attached: true,
+        showing,
+        shadowDOM: { host },
+        get detached() {
+          return !host.isConnected;
+        },
+      };
+    };
+    stub(Vomnibar, "vomnibarUI", frame(false));
+    stub(Vomnibar, "browserPagesUI", null);
+    stub(HelpDialog, "helpUI", frame(true));
+    stub(HUD, "hudUI", null);
+    stub(TabSwitcher, "tabSwitcherUI", frame(false));
+    stub(TabSwitcher, "isOpening", false);
+    dropHiddenFrames();
+    assert.isTrue(Vomnibar.vomnibarUI.detached);
+    assert.isTrue(TabSwitcher.tabSwitcherUI.detached);
+    assert.isFalse(HelpDialog.helpUI.detached);
+    const rebuilt = [];
+    stub(globalThis, "prebuildVomnibar", () => rebuilt.push("command bar"));
+    stub(TabSwitcher, "init", () => rebuilt.push("grid"));
+    hidden = false;
+    onVisibilityChange();
+    assert.equal(["command bar", "grid"], rebuilt);
+  });
+});
