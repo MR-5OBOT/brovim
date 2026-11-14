@@ -102,7 +102,8 @@ try {
         await invoke("browser_pages", "openBrowserPages", sourceId);
         const palette = await overlay(source, "browser-pages-frame", "browser_pages");
         await palette.waitForFunction(() => document.activeElement?.id === "search");
-        const box = await palette.$eval("#vomnibar", (element) => {
+        // The input sits at the window's center; the results hang below it.
+        const box = await palette.$eval("#search", (element) => {
           const rect = element.getBoundingClientRect();
           return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
         });
