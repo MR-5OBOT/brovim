@@ -2,6 +2,7 @@ import "./test_helper.js";
 import { withPromise } from "./test_helper.js";
 import "../../lib/settings.js";
 import "../../background_scripts/main.js";
+import * as bgUtils from "../../background_scripts/bg_utils.js";
 
 context("search destination", () => {
   should("search in the source tab after it loses the focus", async () => {
@@ -75,6 +76,19 @@ context("Closing tabs", () => {
     windowTabs = [{ id: 6, index: 0, windowId: 2 }];
     await BackgroundCommands.removeTab({ count: 1, tab: { id: 5, index: 0, windowId: 2 } });
     assert.equal([5], closed);
+  });
+
+  should("go back to the last visited tab, not the neighbour", async () => {
+    const x = { id: 1, index: 0, windowId: 2, active: true };
+    const tabs = [x, { id: 2, index: 1, windowId: 2 }, { id: 3, index: 2, windowId: 2 }];
+    stub(chrome.tabs, "query", () => Promise.resolve(tabs));
+    await bgUtils.tabRecency.init();
+    for (const id of [2, 3, 1]) bgUtils.tabRecency.register(id); // neighbour, YouTube, x.com
+    const calls = [];
+    stub(chrome.tabs, "update", (id) => calls.push(["show", id]) && Promise.resolve());
+    stub(chrome.tabs, "remove", (id) => calls.push(["close", id]));
+    await BackgroundCommands.removeTab({ count: 1, tab: x });
+    assert.equal([["show", 3], ["close", 1]], calls);
   });
 });
 

@@ -334,12 +334,28 @@ const BackgroundCommands = {
     return openBrowserPages(request.tab);
   },
   async removeTab({ count, tab }) {
+    const closing = [];
     await forCountTabs(count, tab, (tab) => {
       // In Firefox, Ctrl-W will not close a pinned tab, but on Chrome, it will. We try to be
       // consistent with each browser's UX for pinned tabs.
       if (tab.pinned && bgUtils.isFirefox()) return;
-      chrome.tabs.remove(tab.id);
+      closing.push(tab);
     });
+    const ids = closing.map((tab) => tab.id);
+    // Land on the last visited tab, sleeping or not, instead of the browser's neighbour. Switch
+    // before closing so the neighbour never flashes.
+    if (closing.some((tab) => tab.active)) {
+      const [windowTabs] = await Promise.all([
+        chrome.tabs.query({ windowId: tab.windowId }),
+        bgUtils.tabRecency.init(),
+      ]);
+      const open = new Set(
+        windowTabs.filter((t) => !t.hidden && !ids.includes(t.id)).map((t) => t.id),
+      );
+      const last = bgUtils.tabRecency.getTabsByRecency().find((id) => open.has(id));
+      if (last != null) await chrome.tabs.update(last, { active: true }).catch(() => {});
+    }
+    for (const id of ids) chrome.tabs.remove(id);
   },
   restoreTab: createRepeatCommand(async (_request) => {
     await chrome.sessions.restore(null);
