@@ -5,7 +5,12 @@ import { isEnabledForUrl } from "./exclusions.js";
 // tabSwitcherMaxThumbnails are kept. Incognito previews stay in this worker's memory only, and are
 // gone when it stops.
 
-const storageKey = "tabThumbnails";
+// Each preview has its own key, so saving one doesn't rewrite them all. The order key lists their
+// URLs, oldest capture first.
+const previewKey = (url) => `tabThumbnail:${url}`;
+const orderKey = "tabThumbnailOrder";
+// Where all previews used to be kept, in one key.
+const oldKey = "tabThumbnails";
 // Well under the 10 MB storage quota, whatever the preview limit.
 const maxBytes = 6 * 1024 * 1024;
 const caches = {};
@@ -18,13 +23,39 @@ const areaFor = (incognito) => incognito ? "session" : "local";
 // fallback for it (utils.js) would put it on disk.
 const previewStorage = (area) => area === "session" ? null : chrome.storage.local;
 
-// URL -> JPEG data URL, oldest capture first. Storage keeps the insertion order of these keys.
+// URL -> JPEG data URL, oldest capture first.
 function cacheFor(area) {
-  cacheLoads[area] ??= (previewStorage(area)?.get(storageKey) ?? Promise.resolve({})).then(
-    (items) => new Map(Object.entries(items[storageKey] ?? {})),
-    () => new Map(),
-  ).then((cache) => caches[area] = cache);
+  cacheLoads[area] ??= loadCache(previewStorage(area)).catch(() => new Map())
+    .then((cache) => caches[area] = cache);
   return cacheLoads[area];
+}
+
+async function loadCache(storage) {
+  if (!storage) return new Map();
+  const { [orderKey]: order = [], [oldKey]: old } = await storage.get([orderKey, oldKey]);
+  if (old) {
+    const cache = new Map(Object.entries(old));
+    await save(storage, cache, [], [...cache.keys()]);
+    await storage.remove(oldKey);
+    return cache;
+  }
+  const items = await storage.get(order.map(previewKey));
+  return new Map(
+    order.filter((url) => items[previewKey(url)]).map((url) => [url, items[previewKey(url)]]),
+  );
+}
+
+// Saves the order and the changed previews, and removes those the cache no longer has.
+// - before: the cache's URLs before the change.
+function save(storage, cache, before, changed = []) {
+  if (!storage) return;
+  const gone = before.filter((url) => !cache.has(url)).map(previewKey);
+  const previews = changed.map((url) => [previewKey(url), cache.get(url)]);
+  // Issued together, so storage applies them in the order the cache changed.
+  return Promise.all([
+    storage.set({ [orderKey]: [...cache.keys()], ...Object.fromEntries(previews) }),
+    gone.length && storage.remove(gone),
+  ]);
 }
 
 export async function warmThumbnailCaches() {
@@ -58,9 +89,8 @@ export async function trimThumbnailCaches() {
   await Settings.onLoaded();
   await Promise.all(["local", "session"].map(async (area) => {
     const cache = await cacheFor(area);
-    if (trimCache(cache)) {
-      await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
-    }
+    const before = [...cache.keys()];
+    if (trimCache(cache)) await save(previewStorage(area), cache, before);
   }));
 }
 
@@ -69,11 +99,9 @@ export async function forgetThumbnails(urls) {
   const pages = urls && new Set(urls.map(pageKey));
   await Promise.all(["local", "session"].map(async (area) => {
     const cache = await cacheFor(area);
-    const previousSize = cache.size;
-    for (const url of cache.keys()) if (!pages || pages.has(pageKey(url))) cache.delete(url);
-    if (cache.size !== previousSize) {
-      await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
-    }
+    const before = [...cache.keys()];
+    for (const url of before) if (!pages || pages.has(pageKey(url))) cache.delete(url);
+    if (cache.size !== before.length) await save(previewStorage(area), cache, before);
   }));
 }
 
@@ -119,15 +147,14 @@ export function getCachedThumbnails(urls, incognito) {
 export async function storeThumbnail(url, incognito, dataUrl) {
   const area = areaFor(incognito);
   const cache = await cacheFor(area);
+  const before = [...cache.keys()];
   const key = pageKey(url);
-  for (const oldUrl of cache.keys()) {
+  for (const oldUrl of before) {
     if (pageKey(oldUrl) === key) cache.delete(oldUrl);
   }
   cache.set(url, dataUrl);
   trimCache(cache);
-  // ponytail: rewrites every preview (at most 6 MB) on each capture. Store one key per URL
-  // plus an order list if these writes ever show up in profiles.
-  await previewStorage(area)?.set({ [storageKey]: Object.fromEntries(cache) });
+  await save(previewStorage(area), cache, before, cache.has(url) ? [url] : []);
 }
 
 // Captures the tab's visible area, if the tab is still active, loaded, and showing `url`.

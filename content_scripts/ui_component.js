@@ -36,6 +36,8 @@ class UIComponent {
   //   parsed. On a slow network that can be many seconds away. For components which a browser
   //   shortcut opens, whatever the page is doing.
   async load(iframeUrl, className, messageHandler, { early = false } = {}) {
+    // A script orphaned by an extension reload can't reach the extension: it builds nothing.
+    if (!chrome.runtime?.id) return;
     if (this.iframeElement) throw new Error("init should only be called once.");
     this.messageHandler = messageHandler;
     const isDomTests = iframeUrl.includes("?dom_tests=true");
@@ -84,25 +86,18 @@ class UIComponent {
     // The frame couldn't start here. Don't load it, so the component simply never shows.
     if (!DomUtils.canHostExtensionFrames()) return;
     this.iframeElement.src = chrome.runtime.getURL(iframeUrl);
-    if (early && !DomUtils.isReady()) {
-      // The head that DarkReader writes to may not have been parsed yet.
-      DomUtils.documentReady().then(() => this.handleDarkReaderFilter());
-    } else {
-      await DomUtils.documentReady();
-      this.handleDarkReaderFilter();
-    }
-    document.documentElement.appendChild(shadowWrapper);
-    this.attached = true;
 
-    const secret = (await chrome.storage.session.get("vimiumSecret")).vimiumSecret;
+    // Listen before the frame is added: on a busy page it can finish loading before the secret
+    // arrives.
+    const secret = chrome.storage.session.get("vimiumSecret").then((items) => items.vimiumSecret);
     const { port1, port2 } = new MessageChannel();
     this.messageChannelPorts = [port1, port2];
-    this.iframeElement.addEventListener("load", () => {
+    this.iframeElement.addEventListener("load", async () => {
       // Get vimiumSecret so the iframe can determine that our message isn't the page
       // impersonating us.
       // Outside of tests, target origin starts with chrome-extension://{vimium's-id}
       const targetOrigin = isDomTests ? "*" : chrome.runtime.getURL("");
-      this.iframeElement.contentWindow.postMessage(secret, targetOrigin, [port2]);
+      this.iframeElement.contentWindow.postMessage(await secret, targetOrigin, [port2]);
       port1.onmessage = (event) => {
         let eventName = null;
         // TODO: Why are we using both data and data.name as the name? Pick one.
@@ -139,6 +134,16 @@ class UIComponent {
         }
       };
     });
+
+    if (early && !DomUtils.isReady()) {
+      // The head that DarkReader writes to may not have been parsed yet.
+      DomUtils.documentReady().then(() => this.handleDarkReaderFilter());
+    } else {
+      await DomUtils.documentReady();
+      this.handleDarkReaderFilter();
+    }
+    document.documentElement.appendChild(shadowWrapper);
+    this.attached = true;
   }
 
   // Whether the page has since thrown the component away. Pages that rebuild their whole

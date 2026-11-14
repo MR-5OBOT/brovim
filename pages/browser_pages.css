@@ -15,7 +15,7 @@ body.standalone {
 }
 #vomnibar ul {
   display: block;
-  max-height: min(400px, max(0px, calc(100vh - 160px)));
+  max-height: min(400px, max(0px, calc(50vh - 80px)));
 }
 #vomnibar li {
   cursor: pointer;

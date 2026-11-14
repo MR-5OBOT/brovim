@@ -197,7 +197,8 @@ const HintCoordinator = {
   // information necessary for each frame to determine whether and when a hint from *any* frame is
   // selected.
   getHintDescriptors({ modeIndex, requestedByHelpDialog }, _sender) {
-    if (!DomUtils.isReady() || DomUtils.windowIsTooSmall()) return [];
+    // A page still loading gets hints for the part that has arrived.
+    if (DomUtils.windowIsTooSmall()) return [];
 
     const requireHref = [COPY_LINK_URL, OPEN_INCOGNITO].includes(availableModes[modeIndex]);
     // If link hints is launched within the help dialog, then we only offer hints from that frame.

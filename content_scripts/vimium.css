@@ -199,8 +199,12 @@ iframe.vimium-hud-frame {
   opacity: 0;
 }
 
-body.vimium-find-mode ::selection {
-  background: #ff9632;
+/* Every selection, Brovim's (find, visual and caret mode) and the user's own. Forced, so a page's
+   own selection colour can't hide it. Dark mode inverts pages, so it sets this colour pre-inverted:
+   see dark_mode.js. */
+::selection {
+  background: #4a026e !important;
+  color: #fff !important;
 }
 
 iframe.vomnibar-frame,

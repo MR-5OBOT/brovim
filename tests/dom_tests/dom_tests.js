@@ -877,7 +877,7 @@ context("FindMode rendered text", () => {
   should("highlight and cycle phrases across inline formatting in both directions", () => {
     fixture.innerHTML = "<p>Hello <b>world</b> and Hello <i>world</i></p>";
     assert.equal(2, FindMode.updateQuery("Hello world"));
-    assert.isTrue(FindMode.execute("Hello world", { colorSelection: false }));
+    assert.isTrue(FindMode.execute("Hello world"));
     assert.equal("Hello world", globalThis.getSelection().toString());
     assert.equal(
       fixture.querySelector("b").firstChild,
@@ -885,7 +885,7 @@ context("FindMode rendered text", () => {
     );
     for (const [backwards, expected] of [[false, 1], [false, 0], [true, 1]]) {
       const query = FindMode.getNextQueryFromRegexMatches(backwards);
-      assert.isTrue(FindMode.execute(query, { colorSelection: false }));
+      assert.isTrue(FindMode.execute(query));
       assert.equal(expected, FindMode.query.activeMatchIndex);
       assert.equal("Hello world", globalThis.getSelection().toString());
     }
@@ -895,7 +895,7 @@ context("FindMode rendered text", () => {
     fixture.innerHTML =
       '<style>.find-contents{display:contents}</style><p class="find-contents"><span>contentsneedle</span></p>';
     assert.equal(1, FindMode.updateQuery("contentsneedle"));
-    assert.isTrue(FindMode.execute("contentsneedle", { colorSelection: false }));
+    assert.isTrue(FindMode.execute("contentsneedle"));
     assert.equal("contentsneedle", globalThis.getSelection().toString());
   });
 
@@ -903,7 +903,7 @@ context("FindMode rendered text", () => {
     stub(FindModeHistory, "getQuery", () => "dynamicneedle");
     fixture.innerHTML = "<p>dynamicneedle old</p><p>dynamicneedle old</p>";
     FindMode.updateQuery("dynamicneedle");
-    FindMode.execute("dynamicneedle", { colorSelection: false });
+    FindMode.execute("dynamicneedle");
     fixture.innerHTML = "<p>replacement</p><p>dynamicneedle new</p>";
     FindMode.findNext(false);
     assert.equal("dynamicneedle", getSelection().toString());
@@ -920,6 +920,24 @@ context("FindMode rendered text", () => {
     FindMode.findNext(false);
     assert.isFalse(!!FindMode.query.hasResults);
     assert.equal(["No matches for 'dynamicneedle'"], messages);
+  });
+
+  should("cycle every match of a web component's slotted and shadow text", () => {
+    stub(FindModeHistory, "getQuery", () => "slotneedle");
+    fixture.innerHTML =
+      '<p>slotneedle 0</p><div id="slot-host"><span>slotneedle 2</span></div><p>slotneedle 4</p>';
+    fixture.querySelector("#slot-host").attachShadow({ mode: "open" }).innerHTML =
+      "<p>slotneedle 1</p><slot></slot><p>slotneedle 3</p>";
+    const visited = [];
+    for (let i = 0; i < 6; i++) {
+      FindMode.findNext(false);
+      visited.push(FindMode.query.activeMatchIndex);
+    }
+    for (let i = 0; i < 6; i++) {
+      FindMode.findNext(true);
+      visited.push(FindMode.query.activeMatchIndex);
+    }
+    assert.equal([0, 1, 2, 3, 4, 0, 4, 3, 2, 1, 0, 4], visited);
   });
 
   should("resume saved searches in either direction without skipping the first match", () => {
@@ -939,7 +957,7 @@ context("FindMode rendered text", () => {
     fixture.innerHTML = "<p>hello\n    <b> \tworld</b> again</p>" +
       '<pre>hello\n    world</pre><p style="white-space:pre-wrap">hello  world</p>';
     assert.equal(1, FindMode.updateQuery("hello world"));
-    assert.isTrue(FindMode.execute("hello world", { colorSelection: false }));
+    assert.isTrue(FindMode.execute("hello world"));
     assert.equal("hello world", getSelection().toString());
     assert.equal(
       fixture.querySelector("b").firstChild,
@@ -958,7 +976,7 @@ context("FindMode rendered text", () => {
     const outer = fixture.firstElementChild;
     const inner = outer.firstElementChild.firstElementChild;
     FindMode.updateQuery("paneneedle");
-    FindMode.execute("paneneedle", { colorSelection: false });
+    FindMode.execute("paneneedle");
     const rect = getSelection().getRangeAt(0).getBoundingClientRect();
     for (const pane of [inner, outer]) {
       const bounds = pane.getBoundingClientRect();
@@ -993,7 +1011,7 @@ context("FindMode rendered text", () => {
     host.attachShadow({ mode: "open" }).innerHTML =
       '<div style="height:1000px"></div>directshadowneedle';
     FindMode.updateQuery("directshadowneedle");
-    FindMode.execute("directshadowneedle", { colorSelection: false });
+    FindMode.execute("directshadowneedle");
     assert.isTrue(host.scrollTop > 0);
   });
 
@@ -1004,7 +1022,7 @@ context("FindMode rendered text", () => {
     root.innerHTML = "<p>shadow <b>needle</b></p>";
     assert.equal(1, FindMode.updateQuery("shadow needle"));
     assert.equal(root, FindMode.query.matches[0].range.startContainer.getRootNode());
-    assert.isTrue(FindMode.execute("shadow needle", { colorSelection: false }));
+    assert.isTrue(FindMode.execute("shadow needle"));
     assert.equal("shadow needle", globalThis.getSelection().toString());
   });
 
@@ -1023,7 +1041,7 @@ context("FindMode rendered text", () => {
     root.innerHTML = "<p>repeatneedle</p>";
     assert.equal(3, FindMode.updateQuery("repeatneedle"));
     for (let i = 0; i < 3; i++) {
-      assert.isTrue(FindMode.execute("repeatneedle", { colorSelection: false }));
+      assert.isTrue(FindMode.execute("repeatneedle"));
       assert.equal("repeatneedle", globalThis.getSelection().toString());
       assert.equal(
         i === 1 ? root : document,
@@ -1053,7 +1071,7 @@ context("FindMode rendered text", () => {
     assert.equal(2, FindMode.updateQuery("needle.*[x]"));
     assert.equal(1, FindMode.updateQuery("Needle.*[x]"));
     assert.equal(0, FindMode.updateQuery(""));
-    assert.isFalse(FindMode.execute("", { colorSelection: false }));
+    assert.isFalse(FindMode.execute(""));
   });
 });
 

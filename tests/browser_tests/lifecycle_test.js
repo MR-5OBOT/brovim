@@ -114,7 +114,7 @@ try {
     await page.bringToFront();
     const preview = await options.evaluate(async (url) => {
       for (let i = 0; i < 60; i++) {
-        const preview = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url];
+        const preview = Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0];
         if (preview) return preview;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
@@ -127,7 +127,7 @@ try {
         chrome.runtime.getURL("background_scripts/thumbnails.js")
       );
       await storeThumbnail(url, true, preview);
-      if ((await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url]) {
+      if (Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0]) {
         throw new Error("A private preview reached Firefox's local storage fallback");
       }
       if ((await findThumbnails([url], true))[0] !== preview) {
@@ -287,13 +287,14 @@ try {
     await privatePage.bringToFront();
     await pause(1500);
     const storage = await options.evaluate(async () => ({
-      local: (await chrome.storage.local.get("tabThumbnails")).tabThumbnails || {},
-      session: (await chrome.storage.session.get("tabThumbnails")).tabThumbnails || {},
+      local: await chrome.storage.local.get(null),
+      session: await chrome.storage.session.get(null),
     }));
-    assert(storage.local[`${origin}/normal`], "Normal preview is missing");
+    assert(storage.local[`tabThumbnail:${origin}/normal`], "Normal preview is missing");
     // Pages can read session storage: a private preview stays in the worker's memory.
     assert(
-      !storage.local[`${origin}/private`] && !storage.session[`${origin}/private`],
+      !storage.local[`tabThumbnail:${origin}/private`] &&
+        !storage.session[`tabThumbnail:${origin}/private`],
       "Incognito preview reached storage",
     );
     pass("Normal captures are stored, and incognito captures are not");

@@ -56,9 +56,12 @@ const Vomnibar = {
       this.browserPagesUI.hide();
       return;
     }
+    if (this.browserPagesUI?.detached) this.browserPagesUI = null;
     if (!this.browserPagesUI) {
       this.browserPagesUI = new UIComponent();
-      this.browserPagesUI.load("pages/browser_pages.html", "browser-pages-frame");
+      this.browserPagesUI.load("pages/browser_pages.html", "browser-pages-frame", null, {
+        early: true,
+      });
     }
     this.browserPagesUI.show({ name: "activate", targetTabId }, {
       sourceFrameId: 0,
@@ -67,10 +70,14 @@ const Vomnibar = {
     });
   },
 
+  // Also run ahead of the first o, once the page has a moment: see vimium_frontend.js.
   init() {
+    // Build the bar again if the page threw the last one away.
+    if (this.vomnibarUI?.detached) this.vomnibarUI = null;
     if (!this.vomnibarUI) {
       this.vomnibarUI = new UIComponent();
-      this.vomnibarUI.load("pages/vomnibar_page.html", "vomnibar-frame");
+      // A page still arriving on a slow network can take seconds to finish parsing.
+      this.vomnibarUI.load("pages/vomnibar_page.html", "vomnibar-frame", null, { early: true });
     }
   },
 

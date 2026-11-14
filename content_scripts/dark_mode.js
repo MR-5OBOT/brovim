@@ -5,7 +5,8 @@
 // ponytail: CSS background images from stylesheets stay inverted; a per-image pass (as dynamic
 // dark themes do) would fix them, at many times the code.
 const DarkMode = {
-  styleEl: null,
+  styleEl: null, // The filters.
+  canvasEl: null, // The root's background.
   colorCtx: null,
 
   init() {
@@ -19,30 +20,40 @@ const DarkMode = {
 
   update() {
     if (!Settings.isLoaded() || !document.documentElement) return;
-    // After an extension update, take over the style the previous content script left behind.
-    this.styleEl ??= document.getElementById("brovim-dark-mode") ??
-      Object.assign(DomUtils.createElement("style"), { id: "brovim-dark-mode" });
-    // Measure the page without this filter.
-    this.styleEl.remove();
-    if (!Settings.get("darkModeEnabled") || this.isExcluded(location.hostname)) return;
-    const canvas = this.canvasColor();
-    if (Settings.get("darkModeSkipDarkPages") && this.pageIsDark(canvas)) return;
-    this.styleEl.textContent = this.css(canvas);
-    document.documentElement.appendChild(this.styleEl);
+    // After an extension update, take over the styles the previous content script left behind.
+    const style = (id) =>
+      document.getElementById(id) ?? Object.assign(DomUtils.createElement("style"), { id });
+    this.styleEl ??= style("brovim-dark-mode");
+    this.canvasEl ??= style("brovim-dark-mode-canvas");
+    // Measure the page's own background. The filters stay: taking them off and putting them back
+    // restyles and repaints the whole page, and this runs as the page loads.
+    this.canvasEl.remove();
+    if (!Settings.get("darkModeEnabled") || this.isExcluded(location.hostname)) {
+      return this.styleEl.remove();
+    }
+    const [r, g, b] = this.canvasColor();
+    if (Settings.get("darkModeSkipDarkPages") && this.pageIsDark([r, g, b])) {
+      return this.styleEl.remove();
+    }
+    const css = this.css();
+    if (this.styleEl.textContent !== css) this.styleEl.textContent = css;
+    if (!this.styleEl.isConnected) document.documentElement.appendChild(this.styleEl);
+    this.canvasEl.textContent = `html { background: rgb(${r} ${g} ${b}) !important; }`;
+    document.documentElement.appendChild(this.canvasEl);
   },
 
-  css([r, g, b]) {
+  css() {
     const reverse = "invert(1) hue-rotate(180deg)";
     const percent = (name) => Settings.get(`darkMode${name}`);
     const filter = `${reverse} brightness(${percent("Brightness")}%) ` +
       `contrast(${percent("Contrast")}%) sepia(${percent("Sepia")}%) ` +
       `grayscale(${percent("Grayscale")}%)`;
-    // The browser's default white behind a page with no background isn't filtered; the root's own
-    // background is. Top-layer dialogs and popovers are drawn outside the root, so they get their
-    // own filter. Brovim's UI uses --brovim-reverse-filter to keep its colors (see vimium.css).
+    // Top-layer dialogs and popovers are drawn outside the root, so they get their own filter.
+    // Brovim's UI uses --brovim-reverse-filter to keep its colors (see vimium.css). The browser's
+    // default white behind a page with no background isn't filtered, so canvasEl gives the root
+    // one.
     return `html {
   filter: ${filter} !important;
-  background: rgb(${r} ${g} ${b}) !important;
   --brovim-reverse-filter: ${reverse};
 }
 :is(dialog:modal, [popover]:popover-open) { filter: ${filter} !important; }
@@ -50,7 +61,9 @@ img:not([src*=".svg"]):not([src*="image/svg+xml"]), video, svg image, embed, obj
 iframe[src*="vimeo"], [style*="url("]:not(html, body) {
   filter: ${reverse} !important;
 }
-:fullscreen, :fullscreen * { filter: none !important; }`;
+:fullscreen, :fullscreen * { filter: none !important; }
+/* The filter turns this into the dark purple and white of vimium.css. */
+::selection { background: rgb(255 207 255) !important; color: #000 !important; }`;
   },
 
   // The setting holds hosts like "example.com", one per line; subdomains are included.

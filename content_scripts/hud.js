@@ -1,6 +1,5 @@
 //
 // A heads-up-display (HUD) for showing Brovim page operations.
-// Note: you cannot interact with the HUD until document.body is available.
 //
 const HUD = {
   tween: null,
@@ -40,13 +39,17 @@ const HUD = {
     if (focusable == null) {
       focusable = true;
     }
+    // Build the HUD again if the page threw the last one away.
+    if (this.hudUI?.detached) this.hudUI = this.tween = null;
     if (this.hudUI == null) {
       const queryString = globalThis.vimiumDomTestsAreRunning ? "?dom_tests=true" : "";
       this.hudUI = new UIComponent();
+      // Find mode, copying and messages work while a page is still loading.
       this.hudUI.load(
         `pages/hud_page.html${queryString}`,
         "vimium-hud-frame",
         this.handleUIComponentMessage.bind(this),
+        { early: true },
       );
     }
     // this[data.name]? data
@@ -76,7 +79,6 @@ const HUD = {
   // messageName - an optional identifier for this message, exposed as a data attribute so the HUD
   // UI for each message can be targeted by a user's custom CSS. See #3112.
   async show(text, duration, messageName) {
-    await DomUtils.documentComplete();
     clearTimeout(this._showForDurationTimerId);
     // @hudUI.activate will take charge of making it visible
     await this.init(false);
@@ -90,7 +92,6 @@ const HUD = {
 
   async showFindMode(findMode = null) {
     this.findMode = findMode;
-    await DomUtils.documentComplete();
     await this.init();
     this.hudUI.show({ name: "showFindMode" });
     this.tween.fade(1.0, 150);
@@ -179,14 +180,12 @@ const HUD = {
   // * events.
   // * the HUD shouldn't be active for this frame while any of the copy/paste commands are running.
   async copyToClipboard(text) {
-    await DomUtils.documentComplete();
     await this.init();
     this.hudUI.postMessage({ name: "copyToClipboard", data: text });
   },
 
   async pasteFromClipboard(pasteListener) {
     this.pasteListener = pasteListener;
-    await DomUtils.documentComplete();
     await this.init();
     this.tween.fade(0, 0);
     this.hudUI.postMessage({ name: "pasteFromClipboard" });
@@ -214,7 +213,6 @@ const HUD = {
   // fail on non-HTTPS sites. See #4572.
   async showClipboardUnavailableMessage() {
     this.pasteListener = null;
-    await DomUtils.documentComplete();
     await this.init();
     // Since the message is long and surprising, show it for longer to allow more time to reading.
     this.show("Clipboard actions available only on HTTPS sites", 4000);

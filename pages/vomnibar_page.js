@@ -67,6 +67,15 @@ class VomnibarUI {
 
   setQuery(query) {
     this.input.value = query;
+    this.fitWidth();
+  }
+
+  // The bar opens at half width, and doubles once it has text or results.
+  fitWidth() {
+    this.box.classList.toggle(
+      "compact",
+      !this.input.value && !this.completionList.childElementCount,
+    );
   }
   setActiveUserSearchEngine(userSearchEngine) {
     this.activeUserSearchEngine = userSearchEngine;
@@ -359,6 +368,7 @@ class VomnibarUI {
   renderCompletions(completions) {
     this.completionList.innerHTML = completions.map((c) => `<li>${c.html}</li>`).join("\n");
     this.completionList.style.display = completions.length > 0 ? "block" : "";
+    this.fitWidth();
   }
 
   refreshCompletions() {
@@ -378,6 +388,7 @@ class VomnibarUI {
   }
 
   onInput() {
+    this.fitWidth();
     this.seenTabToOpenCompletionList = false;
     this.cancelCompletions();
 

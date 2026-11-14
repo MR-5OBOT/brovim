@@ -41,7 +41,11 @@ class NormalMode extends KeyHandlerMode {
     // Count prefixes are gone, but a mapping can still repeat a command: "map J scrollDown count=5".
     const count = registryEntry.options.count ?? 1;
 
-    if (registryEntry.topFrame) {
+    if (registryEntry.topFrame && DomUtils.isTopFrame()) {
+      // Already there. The trip through the background is slow on a page busy loading: its reply
+      // waits behind the page's work, where a key press doesn't.
+      NormalModeCommands[registryEntry.command](frameId, registryEntry);
+    } else if (registryEntry.topFrame) {
       // We never return to a UI-component frame (e.g. the help dialog), it might have lost the
       // focus.
       const sourceFrameId = globalThis.isVimiumUIComponent ? 0 : frameId;

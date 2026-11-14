@@ -280,7 +280,7 @@ try {
   const waitForPreview = (url, previous = null) =>
     worker.evaluate(async ({ url, previous }) => {
       for (let i = 0; i < 70; i++) {
-        const preview = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url];
+        const preview = Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0];
         if (preview && preview !== previous) return preview;
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
@@ -2403,7 +2403,7 @@ try {
     const id = await tabId();
     await worker.evaluate(async ({ id, url }) => {
       for (let i = 0; i < 60; i++) {
-        if ((await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url]) return;
+        if (Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0]) return;
         await sendRequestHandlers.captureTabThumbnail({ tab: await chrome.tabs.get(id), url });
         await new Promise((resolve) => setTimeout(resolve, 150));
       }
@@ -2461,7 +2461,7 @@ try {
       const preview = (url) =>
         worker.evaluate(async (url) => {
           for (let i = 0; i < 60; i++) {
-            const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url];
+            const stored = Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0];
             if (stored) return stored;
             await new Promise((resolve) => setTimeout(resolve, 100));
           }
@@ -2484,7 +2484,7 @@ try {
       const moved = `${origin}/moved-while-open`;
       assert(
         await worker.evaluate(
-          async (url) => (await chrome.storage.local.get("tabThumbnails")).tabThumbnails?.[url],
+          async (url) => Object.values(await chrome.storage.local.get(`tabThumbnail:${url}`))[0],
           moved,
         ) == null,
         "Captured the page while the switcher was showing",

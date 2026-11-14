@@ -92,6 +92,8 @@ globalThis.chrome = {
   },
 
   runtime: {
+    // A live extension: an orphaned content script finds no id.
+    id: "brovim",
     getURL() {
       return "";
     },

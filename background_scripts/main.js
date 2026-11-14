@@ -472,6 +472,12 @@ const HintCoordinator = {
       frameIds.push(originatingFrameId);
     }
     const timeout = 3000;
+    // Embedded frames of a page still loading (ads, say) can be busy for seconds. Once the top
+    // frame and the one the key was pressed in have answered, the others get 300 ms more.
+    const isKeyFrame = (frameId) => frameId === 0 || frameId === originatingFrameId;
+    let keyFramesAnswered;
+    const lateFrameCutoff = new Promise((resolve) => keyFramesAnswered = resolve)
+      .then(() => new Promise((resolve) => setTimeout(resolve, 300)));
     let promises = frameIds.map(async (frameId) => {
       let promise = chrome.tabs.sendMessage(
         tabId,
@@ -487,13 +493,15 @@ const HintCoordinator = {
       promise = Utils.promiseWithTimeout(promise, timeout)
         .catch((error) => Utils.debugLog("Swallowed getHintDescriptors error:", error));
 
-      const descriptors = await promise;
+      const descriptors =
+        await (isKeyFrame(frameId) ? promise : Promise.race([promise, lateFrameCutoff]));
 
       return {
         frameId,
         descriptors,
       };
     });
+    Promise.all(promises.filter((_, i) => isKeyFrame(frameIds[i]))).then(keyFramesAnswered);
 
     const responses = (await Promise.all(promises))
       .filter((r) => r.descriptors != null);

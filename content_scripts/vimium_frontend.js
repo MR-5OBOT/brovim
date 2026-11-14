@@ -612,6 +612,24 @@ async function initializePreDomReady() {
     Object.keys(messageHandlers),
     handleMessage,
   );
+  // The DOM tests' page has no extension pages to load.
+  if (DomUtils.isTopFrame() && !globalThis.vimiumDomTestsAreRunning) prebuildVomnibar();
+}
+
+// Builds the command bar's frame before the first o, once this tab is in front and the page has
+// loaded and has a moment, so o opens at once. Not sooner: pages that hydrate their whole document
+// (React 18) start again from scratch on finding a node they didn't render. An o while the page
+// loads builds the bar on the spot.
+function prebuildVomnibar() {
+  // A script orphaned by an extension reload can't reach the extension.
+  if (extensionHasBeenUnloaded()) return;
+  if (document.hidden) {
+    document.addEventListener("visibilitychange", prebuildVomnibar, { once: true });
+  } else if (document.readyState !== "complete") {
+    globalThis.addEventListener("load", prebuildVomnibar, { once: true });
+  } else if (isEnabledForUrl) {
+    requestIdleCallback(() => extensionHasBeenUnloaded() || Vomnibar.init());
+  }
 }
 
 // Check if Brovim should be enabled or not based on the top frame's URL.
@@ -700,15 +718,17 @@ const HelpDialog = {
     }
   },
 
-  async toggle(request) {
+  toggle(request) {
     // If we're in the help dialog page already and the user has typed a key to show the help
     // dialog, then we should hide it.
     if (globalThis.isVimiumHelpDialogPage) return HelpDialogPage.hide();
 
+    if (this.helpUI?.detached) this.helpUI = null;
     if (this.helpUI == null) {
-      await DomUtils.documentComplete();
       this.helpUI = new UIComponent();
-      this.helpUI.load("pages/help_dialog_page.html", "vimium-help-dialog-frame");
+      this.helpUI.load("pages/help_dialog_page.html", "vimium-help-dialog-frame", null, {
+        early: true,
+      });
     }
     if (this.isShowing()) {
       this.helpUI.hide();

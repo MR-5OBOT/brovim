@@ -155,6 +155,26 @@ context("HintCoordinator", () => {
     assert.equal([], activated);
   });
 
+  should(
+    "not wait seconds for a busy embedded frame once the key frames have answered",
+    async () => {
+      const activated = [];
+      stub(chrome.webNavigation, "getAllFrames", () => [0, 1, 2].map((frameId) => ({ frameId })));
+      stub(chrome.tabs, "sendMessage", (_tabId, message, { frameId }) => {
+        if (message.messageType === "getHintDescriptors") {
+          // Frame 1 is an ad still loading, too busy to answer.
+          return frameId === 1 ? new Promise(() => {}) : Promise.resolve([{ frameId }]);
+        }
+        if (message.messageType === "activateMode") activated.push(frameId);
+        return Promise.resolve();
+      });
+      const start = Date.now();
+      await HintCoordinator.prepareToActivateLinkHintsMode(0, 0, { modeIndex: 0 });
+      assert.isTrue(Date.now() - start < 1000);
+      assert.equal([0, 2], activated);
+    },
+  );
+
   should("prepareToActivateLinkHintsMode", async () => {
     let receivedMessages = [];
     const frameIdToHintDescriptors = {

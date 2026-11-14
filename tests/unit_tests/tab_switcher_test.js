@@ -1572,16 +1572,47 @@ context("TabPreview navigation while settling", () => {
   });
 });
 
+// The previews in local storage, as { url: preview } in their order.
+async function storedPreviews() {
+  const { tabThumbnailOrder: order = [] } = await chrome.storage.local.get("tabThumbnailOrder");
+  const items = await chrome.storage.local.get(order.map((url) => `tabThumbnail:${url}`));
+  return Object.fromEntries(order.map((url) => [url, items[`tabThumbnail:${url}`]]));
+}
+
+// A local storage area of its own for a freshly imported thumbnails module. Returns a reader of the
+// previews it holds, as { url: preview } in their order.
+function fakePreviewStorage(saved = {}) {
+  stub(chrome.storage.local, "get", (keys) =>
+    Promise.resolve(
+      Object.fromEntries(
+        [keys].flat().filter((key) => key in saved).map((key) => [key, saved[key]]),
+      ),
+    ));
+  stub(chrome.storage.local, "set", (items) => Promise.resolve(Object.assign(saved, items)));
+  stub(
+    chrome.storage.local,
+    "remove",
+    (keys) => Promise.resolve([keys].flat().forEach((key) => delete saved[key])),
+  );
+  return () => {
+    const order = saved.tabThumbnailOrder ?? [];
+    // Every stored preview is in the order, and nothing else is left behind.
+    assert.equal(order.length + 1, Object.keys(saved).length);
+    return Object.fromEntries(order.map((url) => [url, saved[`tabThumbnail:${url}`]]));
+  };
+}
+
 context("Tab switcher previews and order", () => {
   should("keep private previews in memory, out of every storage area", async () => {
     const normalUrl = "https://memory-preview.example/normal";
     const privateUrl = "https://memory-preview.example/private";
     await storeThumbnail(normalUrl, false, "normal-preview");
     await storeThumbnail(privateUrl, true, "private-preview");
-    const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
+    const stored = await storedPreviews();
     assert.equal("normal-preview", stored[normalUrl]);
     assert.equal(undefined, stored[privateUrl]);
-    assert.equal(undefined, (await chrome.storage.session.get("tabThumbnails")).tabThumbnails);
+    const session = Object.keys(await chrome.storage.session.get(null));
+    assert.equal([], session.filter((key) => key.startsWith("tabThumbnail")));
     assert.equal(["normal-preview", null], await findThumbnails([normalUrl, privateUrl], false));
     assert.equal([null, "private-preview"], await findThumbnails([normalUrl, privateUrl], true));
   });
@@ -1602,17 +1633,13 @@ context("Tab switcher previews and order", () => {
     );
     await trimThumbnailCaches();
     assert.equal([null, "allowed"], await findThumbnails([url, kept], false));
-    const stored = (await chrome.storage.local.get("tabThumbnails")).tabThumbnails;
-    assert.equal(undefined, stored[url]);
+    assert.equal(undefined, (await storedPreviews())[url]);
+    const key = `tabThumbnail:${url}`;
+    assert.equal(undefined, (await chrome.storage.local.get(key))[key]);
   });
 
   should("forget the previews of pages removed from history, or all of them", async () => {
-    stub(chrome.storage.local, "get", () => Promise.resolve({}));
-    let stored;
-    stub(chrome.storage.local, "set", (items) => {
-      stored = items.tabThumbnails;
-      return Promise.resolve();
-    });
+    const stored = fakePreviewStorage();
     const fresh = await import("../../background_scripts/thumbnails.js?forget");
     const [a, b] = ["https://forget.example/a", "https://forget.example/b"];
     await fresh.storeThumbnail(a, false, "a");
@@ -1621,11 +1648,22 @@ context("Tab switcher previews and order", () => {
     // History lists the page under another variant of its address.
     await fresh.forgetThumbnails([`${a}?utm_source=mail`]);
     assert.equal([null, "b"], await fresh.findThumbnails([a, b], false));
-    assert.equal({ [b]: "b" }, stored);
+    assert.equal({ [b]: "b" }, stored());
     await fresh.forgetThumbnails(null);
     assert.equal([null, null], await fresh.findThumbnails([a, b], false));
     assert.equal([null, null], await fresh.findThumbnails([a, b], true));
-    assert.equal({}, stored);
+    assert.equal({}, stored());
+  });
+
+  should("move previews saved in one key to a key each, keeping their order", async () => {
+    const urls = ["https://old-format.example/1", "https://old-format.example/2"];
+    const stored = fakePreviewStorage({ tabThumbnails: { [urls[0]]: "one", [urls[1]]: "two" } });
+    const migrated = await import("../../background_scripts/thumbnails.js?migrate");
+    assert.equal(["one", "two"], await migrated.findThumbnails(urls, false));
+    assert.equal({ [urls[0]]: "one", [urls[1]]: "two" }, stored());
+    // A worker started later reads them back from their own keys.
+    const restarted = await import("../../background_scripts/thumbnails.js?migrated");
+    assert.equal(["one", "two"], await restarted.findThumbnails(urls, false));
   });
 
   should("reject background preview requests while the page's Brovim UI is visible", async () => {
@@ -1756,17 +1794,13 @@ context("Tab switcher previews and order", () => {
   );
 
   should("keep the byte cap when retaining more previews", async () => {
-    stub(chrome.storage.local, "get", () => Promise.resolve({}));
-    let stored;
-    stub(chrome.storage.local, "set", (items) => {
-      stored = items.tabThumbnails;
-      return Promise.resolve();
-    });
+    const previews = fakePreviewStorage();
     const bounded = await import("../../background_scripts/thumbnails.js?byte-cap");
     const preview = "x".repeat(2 * 1024 * 1024);
     for (let i = 0; i < 4; i++) {
       await bounded.storeThumbnail(`https://large-preview.example/${i}`, false, preview);
     }
+    const stored = previews();
     assert.equal(3, Object.keys(stored).length);
     assert.equal(undefined, stored["https://large-preview.example/0"]);
     assert.equal(
@@ -1788,7 +1822,7 @@ context("Tab switcher previews and order", () => {
       assert.equal(["private", null, null], await findThumbnails(urls, true));
       assert.equal(
         ["https://a.com/2?gclid=x", "https://a.com/3"],
-        Object.keys((await chrome.storage.local.get("tabThumbnails")).tabThumbnails),
+        Object.keys(await storedPreviews()),
       );
     } finally {
       await Settings.set(
