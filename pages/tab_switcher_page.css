@@ -123,10 +123,15 @@ body.closed {
   outline: none;
 }
 
-/* Fewer cards than a full row: a centered cluster of normal-sized cards. */
+/* Fewer cards than a full row: normal-sized cards, and a panel that hugs them. */
 #tab-switcher.few {
   grid-template-columns: repeat(var(--columns), minmax(0, 220px));
   justify-content: center;
+}
+
+#panel:has(> .few) {
+  width: fit-content;
+  max-width: 90vw;
 }
 
 /* No transitions: the selection moves on every key press and must keep up. */

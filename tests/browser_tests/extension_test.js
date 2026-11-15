@@ -3175,6 +3175,20 @@ try {
         assert(titles.includes("Awake"), "Visited awake tab was omitted");
         assert(titles.includes("Unvisited"), "Unvisited tab was omitted");
         assert(!titles.includes("Sleeping"), "Discarded sleeping tab was included");
+        // A short row: the panel hugs its cards, with no empty space at the sides.
+        await switcher.waitForFunction(() => {
+          const panel = document.querySelector("#panel");
+          const cards = [...panel.querySelectorAll(".tab-card")].map((c) =>
+            c.getBoundingClientRect()
+          );
+          const style = getComputedStyle(panel);
+          const inner = panel.getBoundingClientRect().width - parseFloat(style.paddingLeft) -
+            parseFloat(style.paddingRight) - parseFloat(style.borderLeftWidth) -
+            parseFloat(style.borderRightWidth);
+          const used = Math.max(...cards.map((c) => c.right)) -
+            Math.min(...cards.map((c) => c.left));
+          return document.querySelector("#tab-switcher.few") && inner - used < 2;
+        }, { timeout: 5000 });
         await page.setViewport({ width: 640, height: 700 });
         await switcher.waitForFunction(() => {
           const rect = document.querySelector("#tab-switcher").getBoundingClientRect();
