@@ -460,6 +460,17 @@ context("multi completer", () => {
     assert.equal("http://example.com", results[0].url);
     assert.equal("http://other.com", results[1].url);
   });
+
+  should("return at most the 3 most relevant suggestions", async () => {
+    const fakeCompleter = {
+      filter: () =>
+        [1, 5, 2, 4, 3].map((n) =>
+          new Suggestion({ url: `http://${n}.com`, relevancy: n, html: `${n}` })
+        ),
+    };
+    const results = await filterCompleter(new MultiCompleter([fakeCompleter]), ["com"]);
+    assert.equal(["http://5.com", "http://4.com", "http://3.com"], results.map((s) => s.url));
+  });
 });
 
 context("tab completer", () => {

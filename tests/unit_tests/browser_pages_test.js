@@ -7,6 +7,7 @@ context("browser pages", () => {
     assert.equal("settings", pages[0].id);
     assert.isTrue(pages.some((page) => page.id === "extensions"));
     assert.isTrue(pages.some((page) => page.id === "performance"));
+    assert.equal(3, pages.length);
   });
   should("rank extension and performance prefixes and match aliases", () => {
     assert.equal("extensions", filterBrowserPages("helium", "ext")[0].id);
