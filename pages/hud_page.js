@@ -75,6 +75,9 @@ export function onKeyEvent(event) {
   return false;
 }
 
+// Whether the page this frame is in keeps a feature from it. Chrome only: elsewhere, false.
+const blockedByPage = (feature) => document.featurePolicy?.allowsFeature(feature) === false;
+
 // Navigator.clipboard is only available in secure contexts. Show a warning when clipboard actions
 // fail on non-HTTPS sites. See #4572.
 function ensureClipboardIsAvailable() {
@@ -184,6 +187,15 @@ export const handlers = {
 
   copyToClipboard(message) {
     if (!ensureClipboardIsAvailable()) return;
+    // Replace nbsp; characters with space. See #2217.
+    const text = message.data.replace(/\xa0/g, " ");
+    // The page keeps the clipboard to itself (Permissions-Policy: clipboard-write=(self)): calling
+    // it from this frame would fail, and Chrome would log the violation as Brovim's error. The
+    // page's own script can still copy, while this frame leaves it the focus.
+    if (blockedByPage("clipboard-write")) {
+      UIComponentMessenger.postMessage({ name: "copyInPage", data: text });
+      return;
+    }
     Utils.setTimeout(TIME_TO_WAIT_FOR_IPC_MESSAGES, async function () {
       const focusedElement = document.activeElement;
       // In Chrome, if we do not focus the current window before invoking navigator.clipboard APIs,
@@ -191,8 +203,7 @@ export const handlers = {
       globalThis.focus();
 
       try {
-        // Replace nbsp; characters with space. See #2217.
-        await navigator.clipboard.writeText(message.data.replace(/\xa0/g, " "));
+        await navigator.clipboard.writeText(text);
       } catch {
         UIComponentMessenger.postMessage({ name: "showClipboardError", action: "copy" });
       } finally {
@@ -205,6 +216,15 @@ export const handlers = {
 
   pasteFromClipboard() {
     if (!ensureClipboardIsAvailable()) return;
+    // Pasting through the page instead would show its permission prompt, naming the site.
+    if (blockedByPage("clipboard-read")) {
+      UIComponentMessenger.postMessage({
+        name: "showClipboardError",
+        action: "paste",
+        blockedByPage: true,
+      });
+      return;
+    }
     Utils.setTimeout(TIME_TO_WAIT_FOR_IPC_MESSAGES, async function () {
       const focusedElement = document.activeElement;
       // In Chrome, if we do not focus the current window before invoking navigator.clipboard APIs,

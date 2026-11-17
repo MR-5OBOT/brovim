@@ -27,6 +27,7 @@ const HUD = {
       pasteResponse: this.pasteResponse,
       showClipboardUnavailableMessage: this.showClipboardUnavailableMessage,
       showClipboardError: this.showClipboardError,
+      copyInPage: this.copyInPage,
     };
     const handler = handlers[data.name];
     if (handler) {
@@ -219,11 +220,23 @@ const HUD = {
     this.show("Clipboard actions available only on HTTPS sites", 4000);
   },
 
-  showClipboardError({ action }) {
+  // The page doesn't let the HUD's frame use the clipboard (see copyToClipboard in hud_page.js),
+  // but it may still use it itself. Its document must have the focus.
+  async copyInPage({ data }) {
+    const blockedByPage = document.featurePolicy?.allowsFeature("clipboard-write") === false;
+    if (!blockedByPage && !document.hasFocus()) globalThis.focus();
+    const copied = !blockedByPage &&
+      await navigator.clipboard?.writeText(data).then(() => true, () => false);
+    if (!copied) this.showClipboardError({ action: "copy", blockedByPage });
+  },
+
+  showClipboardError({ action, blockedByPage }) {
     if (action === "paste") this.pasteListener = null;
     this.unfocusIfFocused();
     this.show(
-      `Couldn't ${action}: clipboard access was blocked. Check your browser's site permissions.`,
+      blockedByPage
+        ? `Couldn't ${action}: this page blocks clipboard access.`
+        : `Couldn't ${action}: clipboard access was blocked. Check your browser's site permissions.`,
       5000,
       "clipboard-error",
     );

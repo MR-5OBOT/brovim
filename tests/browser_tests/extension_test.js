@@ -131,7 +131,13 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
     <p>Literal needle.*[x] first</p><p>Literal needle.*[x] second</p>
     <main>Scrollable area</main></body></html>`,
     {
-      headers: { "content-type": "text/html; charset=utf-8" },
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        // A page that keeps the clipboard to itself, out of Brovim's frames.
+        ...(url.searchParams.has("clipboard-self")
+          ? { "permissions-policy": "clipboard-write=(self), clipboard-read=(self)" }
+          : {}),
+      },
     },
   );
 });
@@ -217,9 +223,9 @@ try {
       }
     }
   };
-  const fresh = async () => {
+  const fresh = async (path = "/") => {
     await page.bringToFront();
-    await navigate(`${origin}/`);
+    await navigate(`${origin}${path}`);
     await page.waitForFunction(() => document.readyState === "complete");
     // The page answers Brovim's messages only once Brovim has started there, which can take
     // longer than the page's own load.
@@ -1674,6 +1680,43 @@ try {
     );
     await (await copiedTarget.page()).close();
   });
+
+  await check(
+    "a page that keeps the clipboard to itself: yy copies through the page, paste says why not",
+    async () => {
+      await fresh("/?clipboard-self");
+      // A browser grants the page in front clipboard-sanitized-write by itself; this override
+      // denies whatever it doesn't list.
+      await browser.defaultBrowserContext().overridePermissions(origin, [
+        "clipboard-read",
+        "clipboard-write",
+        "clipboard-sanitized-write",
+      ]);
+      const violations = [];
+      const listen = (message) => {
+        if (/permissions policy/i.test(message.text())) violations.push(message.text());
+      };
+      page.on("console", listen);
+      try {
+        await key(["y", "y"]);
+        await page.waitForFunction(
+          (url) => navigator.clipboard.readText().then((clip) => clip === url, () => false),
+          {},
+          page.url(),
+        );
+        const originalUrl = page.url();
+        await runCommand("openCopiedUrlInCurrentTab");
+        const hud = page.frames().find((frame) => frame.url().includes("/pages/hud_page.html"));
+        await hud.waitForFunction(() =>
+          document.querySelector("#hud")?.textContent.includes("this page blocks clipboard access")
+        );
+        assert(page.url() === originalUrl, "A blocked paste navigated the page");
+        assert(violations.length === 0, `Brovim's frame set off the page's policy: ${violations}`);
+      } finally {
+        page.off("console", listen);
+      }
+    },
+  );
 
   await check("Vomnibar submits a URL, finds bookmarks, and resolves search keywords", async () => {
     await fresh();
