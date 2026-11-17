@@ -50,6 +50,19 @@ context("browser shortcuts", () => {
   });
 });
 
+context("monitorChromeSessionStorage", () => {
+  should("pick up the value as a change when the page can't read the storage yet", async () => {
+    const values = [];
+    // The first page after the browser starts: "Access to storage is not allowed from this
+    // context."
+    stub(chrome.storage.session, "get", () => Promise.reject(new Error("Access not allowed")));
+    Utils.monitorChromeSessionStorage("monitorTestKey", (value) => values.push(value));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await chrome.storage.session.set({ monitorTestKey: "written" });
+    assert.equal(["written"], values);
+  });
+});
+
 context("forTrusted", () => {
   should("invoke an event handler if the event is trusted", () => {
     let called = false;
