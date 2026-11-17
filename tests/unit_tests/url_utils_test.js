@@ -48,6 +48,10 @@ context("convertToUrl", () => {
     assert.equal("http://xyz.museum", await UrlUtils.convertToUrl("xyz.museum"));
     assert.equal("chrome://extensions", await UrlUtils.convertToUrl("chrome://extensions"));
     assert.equal(
+      "chrome://settings/manageProfile",
+      await UrlUtils.convertToUrl("helium://settings/manageProfile"),
+    );
+    assert.equal(
       "http://user:pass@ftp.xyz.com/test",
       await UrlUtils.convertToUrl("user:pass@ftp.xyz.com/test"),
     );
