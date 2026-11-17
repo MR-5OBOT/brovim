@@ -11,6 +11,7 @@
   },
   "33002": {
     "removed": [
+      "Control+KeyR",
       "F5"
     ]
   },
@@ -210,6 +211,11 @@
       "Control+Shift+KeyD"
     ]
   },
+  "35002": {
+    "removed": [
+      "Control+KeyU"
+    ]
+  },
   "35003": {
     "removed": [
       "Control+KeyP"
@@ -263,6 +269,9 @@
     ]
   },
   "39001": {
+    "added": [
+      "Alt+KeyL"
+    ],
     "removed": [
       "Alt+KeyD",
       "Control+KeyL"
@@ -337,15 +346,10 @@
       "Control+Shift+Delete"
     ]
   },
-  "40015": {
-    "added": [
-      "Alt+KeyS"
-    ]
-  },
   "40021": {
     "removed": [
-      "Alt+KeyF",
-      "Alt+KeyE"
+      "Alt+KeyE",
+      "Alt+KeyF"
     ]
   },
   "40023": {
