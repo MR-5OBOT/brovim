@@ -75,7 +75,8 @@ iframe[src*="vimeo"], [style*="url("]:not(html, body) {
 }
 :fullscreen, :fullscreen * { filter: none !important; }
 /* The filter turns this into the dark purple and white of vimium.css. */
-::selection { background: rgb(255 207 255) !important; color: #000 !important; }`;
+::selection { background: rgb(255 207 255) !important; color: #000 !important; }
+::highlight(brovim-find) { background-color: rgb(255 207 255) !important; color: #000 !important; }`;
   },
 
   // The setting holds hosts like "example.com", one per line; subdomains are included.

@@ -208,6 +208,12 @@ iframe.vimium-hud-frame {
   color: #fff !important;
 }
 
+/* A find match, painted even where the page makes text unselectable (see mode_find.js). */
+::highlight(brovim-find) {
+  background-color: #4a026e !important;
+  color: #fff !important;
+}
+
 iframe.vomnibar-frame,
 iframe.browser-pages-frame {
   background-color: transparent;

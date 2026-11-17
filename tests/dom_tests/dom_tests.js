@@ -939,6 +939,19 @@ context("FindMode rendered text", () => {
     }
   });
 
+  should("paint a match in unselectable text until the selection moves", async () => {
+    fixture.innerHTML = '<p style="user-select: none">paintneedle</p><p>elsewhere</p>';
+    FindMode.updateQuery("paintneedle");
+    assert.isTrue(FindMode.execute("paintneedle"));
+    const [painted] = CSS.highlights.get("brovim-find");
+    assert.equal("paintneedle", painted.toString());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.isTrue(CSS.highlights.has("brovim-find"));
+    getSelection().selectAllChildren(fixture.lastChild);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.isFalse(CSS.highlights.has("brovim-find"));
+  });
+
   should("include text in elements styled with display contents through a class", () => {
     fixture.innerHTML =
       '<style>.find-contents{display:contents}</style><p class="find-contents"><span>contentsneedle</span></p>';

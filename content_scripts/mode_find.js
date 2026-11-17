@@ -359,10 +359,28 @@ const highlight = (matchRange) => {
   const range = matchRange.cloneRange();
   selection.removeAllRanges();
   selection.addRange(range);
+  // Pages can mark text unselectable (user-select: none), and Chrome doesn't paint a selection
+  // there, so paint the match itself too. vimium.css gives it the selection's colors.
+  if (globalThis.CSS?.highlights) {
+    findRange = range;
+    CSS.highlights.set("brovim-find", new Highlight(range));
+  }
 
   scrollRangeIntoView(range);
   return true;
 };
+
+// The match stays painted only while it is the selection: a click or a new selection clears it.
+// shortcut: a match inside a shadow root is reported as a different range, so it relies on the
+// selection's paint alone; compare with getComposedRanges if such text turns out unselectable.
+let findRange = null;
+globalThis.document?.addEventListener("selectionchange", () => {
+  const selection = getSelection();
+  if (findRange && !(selection.rangeCount && selection.getRangeAt(0) === findRange)) {
+    findRange = null;
+    CSS.highlights.delete("brovim-find");
+  }
+});
 
 const scrollRangeIntoView = (range) => {
   // Reveal the actual text range, rather than its potentially much larger parent element.
