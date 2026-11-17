@@ -63,7 +63,11 @@ class InsertMode extends Mode {
     if (this.global) {
       return true;
     }
-    return DomUtils.isFocusable(this.getActiveElement());
+    const element = this.getActiveElement();
+    // Nothing can be typed into a read-only field. Custom menus (antd, Mantine) are built on one and
+    // focus it when they open, which would otherwise swallow the next f meant for their options.
+    if (element?.readOnly && Settings.get("hintCustomMenus")) return false;
+    return DomUtils.isFocusable(element);
   }
 
   getActiveElement() {

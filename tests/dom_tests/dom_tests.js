@@ -134,6 +134,44 @@ context("False positives in link-hint", () => {
   });
 });
 
+context("Custom menu hints", () => {
+  setup(() => {
+    initializeModeState();
+    document.getElementById("test-div").innerHTML =
+      '<div id="menu" style="cursor: pointer"><div id="label">Select status</div></div>' +
+      '<div id="option" role="option">Active</div>';
+    stubSettings("filterLinkHints", false);
+    stubSettings("linkHintCharacters", "ab");
+    stub(globalThis, "windowIsFocused", () => true);
+  });
+
+  teardown(() => document.getElementById("test-div").innerHTML = "");
+
+  const hintedIds = () =>
+    LocalHints.getLocalHints().map((h) => h.element.id).filter(Boolean).sort();
+
+  should("hint hand-cursor elements and menu roles, not the children inheriting the cursor", () => {
+    stubSettings("hintCustomMenus", true);
+    assert.equal(["menu", "option"], hintedIds());
+  });
+
+  should("hint neither when the setting is off", () => {
+    stubSettings("hintCustomMenus", false);
+    assert.equal([], hintedIds());
+  });
+
+  should("click the element under the hint, where custom menus listen", () => {
+    stubSettings("hintCustomMenus", true);
+    const hint = LocalHints.getLocalHints().find((h) => h.element.id === "menu");
+    assert.isTrue(hint.byCursor);
+    assert.equal("label", LocalHints.getElementUnderHint(hint).id);
+    // Brovim's flash outline covers the element when the click lands.
+    const flash = DomUtils.addFlashRect(hint.rect);
+    assert.equal("label", LocalHints.getElementUnderHint(hint).id);
+    DomUtils.removeElement(flash);
+  });
+});
+
 context("jsaction matching", () => {
   let element;
 
@@ -770,6 +808,16 @@ context("Triggering insert mode", () => {
   should("trigger insert mode on focus of password input", () => {
     assert.isFalse(InsertMode.permanentInstance.isActive());
     document.getElementById("third").focus();
+    assert.isTrue(InsertMode.permanentInstance.isActive());
+  });
+
+  should("not trigger insert mode on a read-only input, which custom menus focus", () => {
+    const input = document.getElementById("first");
+    input.readOnly = true;
+    stubSettings("hintCustomMenus", true);
+    input.focus();
+    assert.isFalse(InsertMode.permanentInstance.isActive());
+    stubSettings("hintCustomMenus", false);
     assert.isTrue(InsertMode.permanentInstance.isActive());
   });
 

@@ -49,6 +49,9 @@ class LocalHint {
   // An element that may be clickable based on our heuristics. It's a "false positive" if one of its
   // child elements is detected as clickable.
   possibleFalsePositive;
+  // Found only by its hand cursor (the hintCustomMenus setting). Such a widget often listens on an
+  // inner element, so activating it clicks the element under the hint, as a real mouse would.
+  byCursor;
   constructor(o) {
     Object.seal(this);
     if (o) Object.assign(this, o);
@@ -712,11 +715,15 @@ class LinkHintsMode {
             });
           } else if (localHint.reason === "Open.") {
             return clickEl.open = !clickEl.open;
-          } else if (DomUtils.isSelectable(clickEl)) {
+          } else if (DomUtils.isSelectable(clickEl) && !localHint.byCursor) {
             globalThis.focus();
             return DomUtils.simulateSelect(clickEl);
           } else {
-            const clickActivator = (modifiers) => (link) => DomUtils.simulateClick(link, modifiers);
+            const clickActivator = (modifiers) => (link) =>
+              DomUtils.simulateClick(
+                localHint.byCursor ? LocalHints.getElementUnderHint(localHint) : link,
+                modifiers,
+              );
             const linkActivator = this.mode.linkActivator != null
               ? this.mode.linkActivator
               : clickActivator(this.mode.clickModifiers);
@@ -1159,6 +1166,8 @@ const LocalHints = {
         "radio",
         "textbox",
       ];
+      // Items of custom menus and lists (MUI, Radix, Headless UI) that often keep the plain cursor.
+      if (this.hintCustomMenus) clickableRoles.push("option", "treeitem", "switch");
       if (role != null && clickableRoles.includes(role.toLowerCase())) {
         isClickable = true;
       } else {
@@ -1258,6 +1267,20 @@ const LocalHints = {
       }
     }
 
+    // Custom menus and buttons (antd, Mantine, ...) attach their click handlers in JavaScript, which
+    // the HTML doesn't show. Sites give clickable things the hand cursor, so an element that shows
+    // it while its parent doesn't is the clickable one; its children only inherit the cursor.
+    let byCursor = false;
+    if (!isClickable && this.hintCustomMenus && tagName !== "body" && tagName !== "html") {
+      const parent = element.parentElement || element.getRootNode().host;
+      if (
+        getComputedStyle(element).cursor === "pointer" &&
+        (!parent || getComputedStyle(parent).cursor !== "pointer")
+      ) {
+        isClickable = byCursor = possibleFalsePositive = true;
+      }
+    }
+
     // If the span is clickable but wraps something else that is clickable, we want to instead favor
     // showing hints for descendants which are clickable. Flag the span as a possible false postive.
     if (tagName == "span") {
@@ -1297,6 +1320,7 @@ const LocalHints = {
             secondClassCitizen: onlyHasTabIndex,
             possibleFalsePositive,
             reason,
+            byCursor,
           });
           hints.push(hint);
         }
@@ -1304,6 +1328,15 @@ const LocalHints = {
     }
 
     return hints;
+  },
+
+  // The topmost element inside the hint's element at the hint's center: where a real mouse lands.
+  // Brovim's own flash outline sits on top at that moment, hence elementsFromPoint.
+  getElementUnderHint({ element, rect }) {
+    const x = rect.left + rect.width / 2, y = rect.top + rect.height / 2;
+    // A page may have detached the element since; its root node then has no elementsFromPoint.
+    return element.getRootNode().elementsFromPoint?.(x, y).find((e) => element.contains(e)) ??
+      element;
   },
 
   //
@@ -1342,6 +1375,8 @@ const LocalHints = {
   getLocalHints(requireHref) {
     // We need documentElement to be ready in order to find links.
     if (!document.documentElement) return [];
+    // Read once: getLocalHintsForElement runs for every element on the page.
+    this.hintCustomMenus = Settings.get("hintCustomMenus");
 
     // Find all elements, recursing into shadow DOM if present.
     const getAllElements = (root, elements) => {

@@ -16,6 +16,7 @@ const options = {
   grabBackFocus: "boolean",
   hideHud: "boolean",
   hideUpdateNotifications: "boolean",
+  hintCustomMenus: "boolean",
   ignoreKeyboardLayout: "boolean",
   keyMappings: "string",
   linkHintColor: "string",
