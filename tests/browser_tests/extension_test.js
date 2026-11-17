@@ -114,8 +114,8 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
     );
   }
   const title = url.searchParams.get("title") || "Brovim browser fixture";
-  // Headless Chromium freezes background tabs within seconds, which a window wouldn't; a frozen
-  // tab is asleep, and leaves the grid. A held Web Lock keeps a fixture awake.
+  // Helium freezes background tabs within seconds, and a frozen page answers nothing until it is
+  // shown again. A held Web Lock keeps a fixture awake.
   const awake = url.searchParams.has("awake")
     ? '<script>navigator.locks.request("awake", () => new Promise(() => {}))</script>'
     : "";

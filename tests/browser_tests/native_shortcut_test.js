@@ -385,11 +385,13 @@ try {
     "No actual browser command was delivered",
   );
   const ids = await frame.$$eval(".tab-card", (cards) => cards.map((card) => card.dataset.id));
-  // Every awake tab is listed, so the count depends on which background tabs the browser has
-  // frozen by now. The newest tabs are awake, and these few cards fit without paging.
+  // The 12 most recent tabs: this one and Native19 back to Native9. Two rows fit without paging.
+  // (Tabs Puppeteer is attached to don't get frozen, so this doesn't show frozen tabs staying
+  // listed; the unit tests do.)
   const titles = await frame.$$eval(".card-title", (els) => els.map((el) => el.textContent));
+  const recent = Array.from({ length: 11 }, (_, i) => `Native${19 - i}`);
   assert(
-    titles.includes("Native19") && titles.includes("Native18"),
+    titles.length === 12 && recent.every((title) => titles.includes(title)),
     `The grid left out recent tabs: ${titles}`,
   );
   assert(

@@ -259,6 +259,7 @@ context("configured switcher shortcut", () => {
         { id: 702, index: 1, windowId: 7, pinned: true, discarded: true },
         { id: 703, index: 2, windowId: 7, pinned: true, frozen: true },
         { id: 704, index: 3, windowId: 7, discarded: true },
+        // Frozen by the browser in the background, but drawn awake: listed.
         { id: 705, index: 4, windowId: 7, frozen: true },
         { id: 706, index: 5, windowId: 7, pinned: true, hidden: true },
         // Restored after a browser restart and never opened again: unloaded, not "discarded".
@@ -267,7 +268,7 @@ context("configured switcher shortcut", () => {
       ];
       stub(chrome.tabs, "query", () => Promise.resolve(tabs));
       const visible = await getRecentTabs(7);
-      assert.equal([701, 702, 703, 708], visible.map((tab) => tab.id));
+      assert.equal([701, 702, 703, 705, 708], visible.map((tab) => tab.id));
       stub(chrome.tabs, "get", (id) => Promise.resolve(tabs.find((tab) => tab.id === id)));
       stub(chrome.windows, "update", () => Promise.resolve());
       const selected = [];
@@ -277,7 +278,8 @@ context("configured switcher shortcut", () => {
       });
       await sendRequestHandlers.selectSpecificTab({ id: 702, awakeOnly: true, tab: tabs[0] });
       await sendRequestHandlers.selectSpecificTab({ id: 703, awakeOnly: true, tab: tabs[0] });
-      assert.equal([702, 703], selected);
+      await sendRequestHandlers.selectSpecificTab({ id: 705, awakeOnly: true, tab: tabs[0] });
+      assert.equal([702, 703, 705], selected);
     },
   );
   for (const columns of [3, 5, 8]) {
@@ -447,7 +449,7 @@ context("configured switcher shortcut", () => {
     SwitcherCommands.endTabSwitcherCycle(889);
   });
   for (
-    const state of [{ discarded: true }, { frozen: true }, { status: "unloaded" }, { hidden: true }]
+    const state of [{ discarded: true }, { status: "unloaded" }, { hidden: true }]
   ) {
     should(`not wake an unavailable grid selection: ${JSON.stringify(state)}`, async () => {
       stub(chrome.tabs, "get", () => Promise.resolve({ id: 901, windowId: 1, ...state }));
@@ -1352,7 +1354,7 @@ context("TabSwitcher", () => {
     }
   });
 
-  should("quick switching skips sleeping tabs and stays in the source window", async () => {
+  should("quick switching skips sleeping tabs, not frozen ones, in the source window", async () => {
     stub(chrome.tabs, "query", (query) => {
       assert.equal({ windowId: 7 }, query);
       return Promise.resolve([
@@ -1371,7 +1373,7 @@ context("TabSwitcher", () => {
       tab: { id: 201, windowId: 7, active: true },
     });
     assert.isTrue(result.switched);
-    assert.equal({ id: 204, active: true }, selected);
+    assert.equal({ id: 203, active: true }, selected);
   });
 
   should("give a tab still waiting for its first page the address it is loading", async () => {
@@ -1457,7 +1459,8 @@ context("TabSwitcher", () => {
       const windowTabs = Array.from({ length: 15 }, (_, i) => ({ id: 100 + i, index: i }));
       windowTabs[0].active = true;
       windowTabs[1].discarded = true;
-      windowTabs[2].frozen = true;
+      windowTabs[2].status = "unloaded";
+      windowTabs[3].frozen = true;
       const expected = [100, ...windowTabs.slice(3).reverse().map((t) => t.id)];
       stub(chrome.tabs, "query", () => Promise.resolve(windowTabs));
       await bgUtils.tabRecency.init();

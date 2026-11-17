@@ -111,8 +111,9 @@ fields keep their normal typing behavior.
 ### Tab switcher
 
 The switcher is a grid of tab previews, most recently used first. Sleeping unpinned tabs (discarded,
-frozen, or not loaded since the browser restarted) and hidden tabs are excluded. Pinned tabs stay
-eligible while sleeping and wake only when selected; awake background tabs remain available.
+or not loaded since the browser restarted) and hidden tabs are excluded. Tabs the browser has only
+frozen in the background look awake, and are listed. Pinned tabs stay eligible while sleeping and
+wake only when selected; awake background tabs remain available.
 
 The switcher is keyboard-only. Tap your assigned shortcut (`Alt+Q` by default, or `Ctrl+Q` if
 reassigned) to switch directly to the previous tab. Hold its modifier to see the grid and repeat its

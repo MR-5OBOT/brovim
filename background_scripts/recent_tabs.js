@@ -1,15 +1,16 @@
 import * as bgUtils from "./bg_utils.js";
 
-// Sleeping as the browser shows it: discarded, frozen, or not loaded since the browser started
+// Sleeping as the browser shows it, greyed out: discarded, or not loaded since the browser started
 // (restored tabs that were never opened again are "unloaded" without being marked discarded).
+// Not frozen: Helium freezes every background tab but the few most recent within seconds, and
+// draws them like any other, so the grid would drop tabs used a moment ago.
 export function isSleeping(tab) {
-  return tab.discarded || tab.frozen || tab.status === "unloaded";
+  return tab.discarded || tab.status === "unloaded";
 }
 
 // Eligible tabs in this window: the active tab first, then tabs used this session (most recent
 // first), then other tabs by lastAccessed. Sleeping unpinned tabs and hidden tabs stay out of both
-// the grid and the quick-switch path; pinned sleepers remain. (Headless Chromium freezes background
-// tabs within seconds, so tests must open the grid soon after creating background fixtures.)
+// the grid and the quick-switch path; pinned sleepers remain.
 export async function getRecentTabs(windowId) {
   const [tabs] = await Promise.all([
     chrome.tabs.query({ windowId }),
