@@ -447,6 +447,25 @@ try {
       )
     );
 
+  // Alt+3 in the grid picks its third card, not the tab bar's third tab, which the browser's own
+  // Alt+3 picks. Alt is still held after the switch; its release changes nothing.
+  await source.bringToFront();
+  await keys("focus:Brovim Native Source");
+  await until(() => source.evaluate(() => document.hasFocus()), "Native source did not gain focus");
+  await keys("down:Alt_L", "tap:q");
+  const numbered = await switcher(source);
+  const third = Number(await numbered.$eval(".tab-card:nth-child(3)", (card) => card.dataset.id));
+  const barThird = await worker.evaluate(async () =>
+    (await chrome.tabs.query({ currentWindow: true, index: 2 }))[0].id
+  );
+  assert(third !== barThird, "The grid's third card is the tab bar's third tab: no proof");
+  await keys("tap:3");
+  await until(async () => await activeTabId() === third, "Alt+3 did not switch to the third card");
+  await keys("up:Alt_L");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert(await activeTabId() === third, "Releasing Alt after Alt+3 switched again");
+  pass("Native Alt+3 in the grid switches to its third card");
+
   const typing = await browser.newPage();
   typing.setDefaultTimeout(5000);
   await typing.goto(`${origin}/typing?title=Typing`);

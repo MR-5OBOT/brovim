@@ -6,7 +6,8 @@ import * as UIComponentMessenger from "./ui_component_messenger.js";
 // Keyboard-only tab switcher: a fixed MRU list for each gesture, shown as one grid of cards: pins and
 // the most recent tabs, at most 12. Cycling wraps through all of them. Hold
 // the assigned modifier and repeat the shortcut to move; releasing it switches. Arrows, h/j/k/l
-// and Tab also move, Enter switches, x/Delete/Backspace close the selected tab, and Escape cancels.
+// and Tab also move, Enter or a card's number (1–9, 0) switches, x/Delete/Backspace close the
+// selected tab, and Escape cancels.
 
 const panel = document.getElementById("panel");
 const grid = document.getElementById("tab-switcher");
@@ -474,6 +475,17 @@ function keyAction(event) {
   }
   if (key === "Enter") return commit;
   if (key === "Tab") return () => step(event.shiftKey ? -1 : 1);
+  // 1–9 and 0 switch to that card of the visible page, as Enter would. By code: Alt and the
+  // keyboard layout (AZERTY's shifted digits) don't change it.
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(event.code)?.[1];
+  if (digit) {
+    return () => {
+      const index = visiblePage * pageSize() + (Number(digit) + 9) % 10;
+      if (index >= tabs.length) return;
+      select(index);
+      commit();
+    };
+  }
   switch (vimDirections[key] ?? key) {
     case "ArrowLeft":
       return () => step(-1);

@@ -170,6 +170,30 @@ context("tab switcher page", () => {
     assert.equal(["hide"], steps());
   });
 
+  should("switch to a card by its number, with Alt held or not", async () => {
+    const selections = () =>
+      messages.filter((request) => request.message?.handler === "selectSpecificTab")
+        .map((request) => request.message.id);
+    // An AZERTY key: the code names the digit, the key doesn't.
+    const digit = async (code, altKey = true) => {
+      document.dispatchEvent(
+        new domWindow.KeyboardEvent("keydown", { key: "&", code, altKey, bubbles: true }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    };
+    await open();
+    // No 9th card: nothing happens.
+    await digit("Digit9");
+    assert.isFalse(document.body.classList.contains("closed"));
+    assert.equal(4, cards().length);
+    await digit("Digit3");
+    assert.isTrue(document.body.classList.contains("closed"));
+    assert.equal([3], selections());
+    await open();
+    await digit("Numpad4", false);
+    assert.equal([3, 4], selections());
+  });
+
   should("return to a handed-off gesture's first tab when it is cancelled", async () => {
     const selections = () =>
       messages.filter((request) => request.message?.handler === "selectSpecificTab")

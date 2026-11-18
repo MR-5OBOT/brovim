@@ -132,9 +132,10 @@ rows fit in the frame without scrolling; a screen too small for them adds column
 keyboard navigation pages through them with a page indicator. A quick tap swaps to the last-used
 tab. Holding starts at that tab's visible cell; further presses move to the next cell, wrapping from
 the last cell back to cell 0. Closing a card moves the following cards up. Arrow keys, `h` `j` `k`
-`l` and Tab also move, `Enter` switches, `x`, Delete or Backspace close the selected tab, and `Esc`
-cancels. Mouse movement, clicks, middle clicks, touch and wheel input do not operate the switcher;
-there are no close buttons.
+`l` and Tab also move, `Enter` switches, `1`–`9` and `0` switch to that card (counted along the
+rows; Alt can stay held), `x`, Delete or Backspace close the selected tab, and `Esc` cancels. Mouse
+movement, clicks, middle clicks, touch and wheel input do not operate the switcher; there are no
+close buttons.
 
 In shortcut order, the current tab comes first, then tabs used this session (new background tabs
 come right after the current tab, including tabs created without an opener), then the rest by when
