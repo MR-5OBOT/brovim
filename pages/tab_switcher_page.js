@@ -36,7 +36,6 @@ let activation = 0;
 // Alt before that, so commits and cycling wait on it.
 let tabsLoaded = Promise.resolve();
 let closing = null; // The pending close request.
-let focusGuard = null;
 // Keys whose press this frame saw: see handleKeyup.
 const keysDown = new Set();
 
@@ -122,7 +121,6 @@ async function fetchTabs(options = {}) {
   panel.classList.add("ready");
   sendRequest({ handler: "setTabSwitcherOverlay", id: overlayId, showing: true }).catch(() => {});
   postPanel();
-  guardFocus();
   loadScreenshots(currentActivation, missingScreenshots);
 }
 
@@ -430,7 +428,6 @@ function hide() {
   cancelPendingReads();
   visible = false;
   isAltCycling = false;
-  clearInterval(focusGuard);
   panel.classList.remove("ready");
   document.body.classList.add("closed");
   UIComponentMessenger.postMessage({ name: "hide" });
@@ -448,17 +445,6 @@ function endCycle() {
     sendRequest({ handler: "endTabSwitcherCycle", id: cycleId }).catch(() => {});
   }
   cycleId = null;
-}
-
-// If the browser or another app takes the focus, possibly without delivering the Alt release,
-// what the user wanted is unknown, so cancel.
-function guardFocus() {
-  clearInterval(focusGuard);
-  let focused = false;
-  focusGuard = setInterval(() => {
-    if (document.hasFocus()) focused = true;
-    else if (focused) hide();
-  }, 100);
 }
 
 const vimDirections = { h: "ArrowLeft", j: "ArrowDown", k: "ArrowUp", l: "ArrowRight" };
@@ -582,7 +568,6 @@ UIComponentMessenger.registerHandler((event) => {
     case "hidden":
       visible = false;
       isAltCycling = false;
-      clearInterval(focusGuard);
       activation++;
       cancelPendingReads();
       endCycle();

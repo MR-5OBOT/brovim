@@ -129,13 +129,31 @@ const TabSwitcher = {
           reverse: options?.reverse,
           commitOnOpen: this.pendingCommit,
         },
-        { sourceFrameId, focus: true, restoreFocus: true },
+        { sourceFrameId, focus: true, restoreFocus: true, coversPage: true },
       );
+      if (!globalThis.isUnitTests) this.guardFocus(ui, generation);
       return generation === this.openingGeneration && !this.isUnavailable;
     })().finally(() => {
       if (generation === this.openingGeneration) this.isOpening = false;
     });
     return this.opening;
+  },
+
+  // If the browser or another app takes the focus, possibly without delivering the modifier's
+  // release, what the user wanted is unknown: close the grid. Not when the page under it takes the
+  // keyboard (a field focusing itself as the page loads): keys still reach the grid, see the
+  // keydown listener below. Only this page can tell the two apart.
+  // A grid handed to this tab can show before the browser gives it the focus: wait for it then.
+  guardFocus(ui, generation) {
+    let focused = document.hasFocus();
+    const timer = setInterval(() => {
+      if (!ui.showing || generation !== this.openingGeneration) clearInterval(timer);
+      else if (document.hasFocus()) focused = true;
+      else if (focused) {
+        clearInterval(timer);
+        ui.postMessage({ name: "hide" });
+      }
+    }, 100);
   },
 
   // The shortcut's modifier goes down before its letter. Tell the background, which wakes it and

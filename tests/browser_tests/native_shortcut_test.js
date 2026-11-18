@@ -39,6 +39,9 @@ for action in sys.argv[2:]:
     if kind == 'sleep':
         x.XFlush(d)
         time.sleep(int(key)/1000)
+    elif kind == 'unfocus':
+        # Another app takes the keyboard.
+        x.XSetInputFocus(d,0,0,0)
     elif kind == 'focus':
         a,b,n = c.c_ulong(),c.c_ulong(),c.c_uint()
         children = c.POINTER(c.c_ulong)()
@@ -202,6 +205,22 @@ const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (re
         }
       }).observe(document.documentElement, { childList: true })</script>`,
       { headers: { "content-type": "text/html" } },
+    );
+  }
+  if (pathname === "/focusing") {
+    // Drawn at once, but an image keeps it loading for 2 s. Then it focuses its field, as search
+    // and sign-in pages do.
+    return new Response(
+      `<!doctype html><title>${title}</title><h1>${title}</h1><input id="editor"><img src="/focusing.gif"><script>addEventListener("load", () => document.getElementById("editor").focus())</script>`,
+      html,
+    );
+  }
+  if (pathname === "/focusing.gif") {
+    return new Promise((resolve) =>
+      setTimeout(
+        () => resolve(new Response("", { headers: { "content-type": "image/gif" } })),
+        2000,
+      )
     );
   }
   if (pathname === "/embedding") {
@@ -747,6 +766,53 @@ try {
   await keys("tap:Escape", "up:Alt_L");
   pass("Native held Alt+Q on a page still arriving shows the grid on it");
   await removeTab(arriving);
+
+  // A page that focuses its field as it finishes loading takes the keyboard from the grid on it.
+  // The grid stays, and keys and the release still reach it.
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  const focusing = await loading("/focusing?title=Focusing");
+  await until(
+    () => worker.evaluate(async (id) => (await chrome.tabs.get(id)).url !== "", focusing),
+    "The focusing page did not start",
+  );
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  await keys("down:Alt_L", "tap:q");
+  await until(() => loadingGrid(focusing), "Holding Alt+Q on a loading page showed no grid on it");
+  await until(
+    () =>
+      worker.evaluate(async (id) => (await chrome.tabs.get(id)).status === "complete", focusing),
+    "The focusing page did not finish loading",
+  );
+  assert(
+    await worker.evaluate(async (tabId) =>
+      (await chrome.scripting.executeScript({
+        target: { tabId, frameIds: [0] },
+        func: () => DomUtils.deepActiveElement() !== TabSwitcher.tabSwitcherUI.iframeElement,
+      }))[0].result, focusing),
+    "The page did not take the keyboard from the grid: no proof",
+  );
+  assert(await loadingGrid(focusing), "A page taking the keyboard as it loaded closed the grid");
+  // From the previous tab's card to the next one.
+  await keys("tap:l", "up:Alt_L");
+  await until(
+    async () => ![focusing, typingId].includes(await activeTabId()),
+    "After the page took the keyboard, l and the release did not reach the grid",
+  );
+  pass("Native grid stays when its loading page takes the keyboard, and keys still reach it");
+  await removeTab(focusing);
+
+  // Another app takes the keyboard while the grid shows: the release may never come back.
+  await typing.bringToFront();
+  await keys("focus:Typing");
+  await until(() => typing.evaluate(() => document.hasFocus()), "Typing page did not gain focus");
+  await keys("down:Alt_L", "tap:q");
+  await switcher(typing);
+  await keys("unfocus:x");
+  await until(async () => !await gridVisible(typing), "The grid stayed after another app took it");
+  await keys("up:Alt_L", "focus:Typing");
+  assert(await activeTabId() === typingId, "The grid switched tabs as another app took the focus");
+  pass("Native grid closes when another app takes the keyboard");
 
   await typing.bringToFront();
   const blocked = await loading("/blocked?title=Blocked");

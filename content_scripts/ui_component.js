@@ -113,7 +113,12 @@ class UIComponent {
               forTrusted((event) => {
                 // Taking the focus from another frame (an embedded page, a PDF) focuses this
                 // window for an instant on the way. That isn't the user returning to the page.
-                if ((event.target === window) && this.focusOptions.focus && !this.takingFocus) {
+                // A component covering the whole page can't have been clicked away: a script on
+                // the page took the focus.
+                if (
+                  event.target === window && this.focusOptions.focus && !this.takingFocus &&
+                  !this.focusOptions.coversPage
+                ) {
                   this.hide(false);
                 }
                 // Continue propagating the event.
@@ -203,7 +208,12 @@ class UIComponent {
   async show(messageData = {}, focusOptions = {}) {
     if (focusOptions) {
       Utils.assertType(
-        { focus: "boolean", sourceFrameId: "number", restoreFocus: "boolean" },
+        {
+          focus: "boolean",
+          sourceFrameId: "number",
+          restoreFocus: "boolean",
+          coversPage: "boolean",
+        },
         focusOptions,
       );
     }
