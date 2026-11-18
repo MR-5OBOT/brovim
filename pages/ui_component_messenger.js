@@ -29,6 +29,7 @@ export function unregister() {
 
 export function init() {
   globalThis.addEventListener("message", registerPortWithOwnerPage);
+  Utils.listenForFocusPageKey(() => chrome.runtime.sendMessage({ handler: "focusPage" }));
 }
 
 function openPort(port) {

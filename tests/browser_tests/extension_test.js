@@ -786,9 +786,9 @@ try {
       const command = await worker.evaluate(async () =>
         (await chrome.commands.getAll()).find((command) => command.name === "focus_page")
       );
-      assert(command?.shortcut === "Alt+Z", "The default browser recovery shortcut is missing");
-      const id = await tabId();
-      await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+      // An extension shortcut on Alt+Z would take it from Helium's "Focus page content" everywhere.
+      assert(command && !command.shortcut, "The recovery command took a browser shortcut");
+      await key(["Alt+KeyZ"]);
       await page.waitForFunction(() => document.activeElement === document.documentElement);
       assert(
         await page.evaluate(() => document.documentElement.tabIndex === -1),
@@ -831,7 +831,8 @@ try {
     await page.waitForFunction(() => scrollY > 0);
     await key(["o"]);
     await ui("vomnibar-frame");
-    await worker.evaluate(async (id) => focusPage(await chrome.tabs.get(id)), id);
+    // The key reaches the Vomnibar's own frame.
+    await key(["Alt+KeyZ"]);
     await noUi("vomnibar-frame");
     await key(["d"]);
     await page.waitForFunction(() => scrollY > 300);

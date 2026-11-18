@@ -65,9 +65,11 @@ example `map J scrollDown count=5`.
 
 Replaced scrolling panes are rediscovered automatically, including inside open shadow roots. Escape
 also resets a stale scroll target. If a text field or overlay keeps your keys, press **Alt+Z** to
-return focus to the page, leave temporary Brovim modes and rediscover the scrolling pane. It is a
-browser shortcut with no custom mapping required; change it in the browser's extension-shortcut
-settings. Typing keeps its normal focus until you leave the editor.
+return focus to the page, leave temporary Brovim modes and rediscover the scrolling pane. From the
+address bar, the find bar or the toolbar, Alt+Z is Helium's own **Focus page content**, which
+`helium/setup.js` assigns; Brovim then finishes the job in the page. To add it by hand in
+`chrome://settings/system/shortcuts`, turn Brovim off while you press the keys: it takes Alt+Z
+first. Typing keeps its normal focus until you leave the editor.
 
 Brovim runs on every site by default. Add excluded sites in Options or the toolbar popup. **Keep
 focus on the page** is on by default for new settings: websites cannot auto-focus a text field

@@ -255,6 +255,7 @@ const onFocus = forTrusted(function (event) {
 // to receive events when Brovim is not enabled.
 globalThis.addEventListener("focus", onFocus, true);
 globalThis.addEventListener("hashchange", checkEnabledAfterURLChange, true);
+Utils.listenForFocusPageKey(() => chrome.runtime.sendMessage({ handler: "focusPage" }));
 
 const onUnload = Utils.makeIdempotent(() => {
   HintCoordinator.exit({ isSuccess: false });

@@ -242,14 +242,17 @@ const errors = [];
 let browser;
 const testProfile = await Deno.makeTempDir({ prefix: "brovim-native-" });
 await Deno.mkdir(`${testProfile}/Default`);
-// Free Alt+E using the checked-in Helium menu entry. Keep Ctrl+L for the address-bar fixture.
+// Free Alt+E and give Helium's "Focus page content" Alt+Z, as the checked-in Helium shortcuts do.
+// Keep Ctrl+L for the address-bar fixture.
+const heliumShortcuts = JSON.parse(await Deno.readTextFile(`${root}/helium/shortcuts.json`));
 await Deno.writeTextFile(
   `${testProfile}/Default/Preferences`,
   JSON.stringify({
     helium: {
       browser: {
         custom_accelerators: {
-          "40021": JSON.parse(await Deno.readTextFile(`${root}/helium/shortcuts.json`))["40021"],
+          "40021": heliumShortcuts["40021"],
+          "39009": heliumShortcuts["39009"],
         },
       },
     },
@@ -279,11 +282,9 @@ try {
     .worker();
   await worker.evaluate(() => {
     globalThis.nativeCommands = 0;
-    globalThis.nativeFocusCommands = 0;
     globalThis.nativeBrowserPageCommands = 0;
     chrome.commands.onCommand.addListener((command) => {
       if (command === "open_tab_switcher") nativeCommands++;
-      if (command === "focus_page") nativeFocusCommands++;
       if (command === "open_browser_pages") nativeBrowserPageCommands++;
     });
   });
@@ -383,11 +384,24 @@ try {
     () => source.evaluate(() => document.activeElement === document.documentElement),
     "Alt+Z did not leave the text editor",
   );
-  assert(
-    await worker.evaluate(() => nativeFocusCommands) >= 1,
-    "Recovery did not use the actual browser command",
+  pass("Native Alt+Z leaves text inputs");
+  // From the address bar, Alt+Z is Helium's "Focus page content". It brings the focus back to the
+  // editor, and Brovim, seeing the key go up, leaves it too.
+  await source.evaluate(() => document.querySelector("#editor").focus());
+  await keys("down:Control_L", "tap:l", "up:Control_L");
+  await until(() => source.evaluate(() => !document.hasFocus()), "Ctrl+L kept the page focused");
+  await keys("down:Alt_L", "tap:z", "up:Alt_L");
+  await until(
+    () =>
+      source.evaluate(() =>
+        document.hasFocus() && document.activeElement === document.documentElement
+      ),
+    "Alt+Z did not bring the focus from the address bar to the page",
   );
-  pass("Native Alt+Z leaves text inputs without a custom page mapping");
+  await source.evaluate(() => scrollTo(0, 0));
+  await keys("tap:j");
+  await until(() => source.evaluate(() => scrollY > 0), "Scrolling did not resume after Alt+Z");
+  pass("Native Alt+Z leaves the address bar and the text field behind it");
   // Browsers refuse Alt+D as an extension shortcut (it focuses the address bar), so it is a page
   // mapping. The page must get the key first.
   await keys("down:Alt_L", "tap:d", "up:Alt_L");

@@ -598,6 +598,7 @@ const sendRequestHandlers = {
   },
 
   selectSpecificTab,
+  focusPage: ({ tab }) => focusPage(tab),
   async quickSwitchTab({ tab, cycle }) {
     // A busy page can report its tap after the background already switched away from it.
     if (!tab.active) return { switched: true };

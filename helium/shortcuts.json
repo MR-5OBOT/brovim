@@ -312,6 +312,9 @@
     ]
   },
   "39009": {
+    "added": [
+      "Alt+KeyZ"
+    ],
     "removed": [
       "Control+F6"
     ]

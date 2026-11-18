@@ -172,7 +172,6 @@ async function initBrowserShortcut() {
     const shortcut = commands.find((command) => command.name === "open_tab_switcher")?.shortcut;
     const shortcutOf = (name) =>
       commands.find((command) => command.name === name)?.shortcut || "Not assigned";
-    document.querySelector("#focus-page-shortcut").textContent = shortcutOf("focus_page");
     document.querySelector("#close-tab-shortcut").textContent = shortcutOf("close_tab");
     document.querySelector("#tab-switcher-shortcut").textContent = shortcut || "Not assigned";
     if (!shortcut) {

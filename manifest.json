@@ -114,11 +114,9 @@
       },
       "description": "Search browser settings, extensions and internal pages"
     },
+    // No key: Alt+Z is a page key, and Helium's own "Focus page content" while a browser control
+    // has the focus. An extension shortcut on it would take the key from the address bar too.
     "focus_page": {
-      "suggested_key": {
-        "default": "Alt+Z",
-        "mac": "Alt+Z"
-      },
       "description": "Return focus to the page and recover scrolling"
     },
     "open_tab_switcher": {

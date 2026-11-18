@@ -834,6 +834,21 @@ context("Triggering insert mode", () => {
   });
 });
 
+context("Focus recovery", () => {
+  teardown(() => document.getElementById("test-div").innerHTML = "");
+
+  should("leave a text field in a modal dialog, where the rest of the page is inert", () => {
+    document.getElementById("test-div").innerHTML = "<dialog><input></dialog>";
+    const dialog = document.querySelector("#test-div dialog");
+    dialog.showModal();
+    const input = dialog.querySelector("input");
+    input.focus();
+    DomUtils.focusPage();
+    assert.isFalse(document.activeElement === input);
+    dialog.close();
+  });
+});
+
 const createMode = (options) => {
   const mode = new Mode();
   mode.init(options);
