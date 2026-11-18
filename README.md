@@ -176,12 +176,13 @@ It covers tabs still loading, too. A loading tab shows the grid itself as soon a
 drawn, unless its scripts are busy. Before that (its server hasn't answered, a tab woken from sleep
 is still getting its page back, or the page waits for a script or stylesheet), the browser shows
 nothing and gives the page no keys, so the grid opens on the previous tab. Brovim keeps its
-background running while such a tab is in front, so this works on the first press; if the browser
-stopped it anyway, a press switches without a grid, which shows on your next press. When the tab a
-gesture moved to can't see the keys either (two PDFs, say), a press within 0.4 s of the last one
-continues a held gesture, and a slower one is a new tap: taps flip between the two, and quick
-presses while holding walk on through the list. The switcher never opens a separate window, and the
-shortcut also works on excluded sites and while an input is focused.
+background running while such a tab is in front, so this works on the first press. If the browser
+stopped it anyway, or took more than 0.1 s to switch tabs (it can while busy loading), a press
+switches without a grid, which shows on your next press. When the tab a gesture moved to can't see
+the keys either (two PDFs, say), a press within 0.4 s of the last one continues a held gesture, and
+a slower one is a new tap: taps flip between the two, and quick presses while holding walk on
+through the list. The switcher never opens a separate window, and the shortcut also works on
+excluded sites and while an input is focused.
 
 A page whose scripts are busy (a heavy page loading, YouTube stalling for hundreds of milliseconds)
 can't tell a tap from a hold until it catches up. If it doesn't answer the shortcut within 30 ms,
