@@ -57,12 +57,7 @@ const HelpDialogPage = {
   // Returns: { group: [[command, args, keys], ...], ... }
   getRowsForDialog(commandToOptionsToKeys) {
     const result = {};
-    const byGroup = Object.groupBy
-      ? Object.groupBy(allCommands, (o) => o.group)
-      : allCommands.reduce((acc, o) => {
-        (acc[o.group] ??= []).push(o);
-        return acc;
-      }, {});
+    const byGroup = Object.groupBy(allCommands, (o) => o.group);
     for (const [group, commands] of Object.entries(byGroup)) {
       const list = [];
       for (const command of commands) {

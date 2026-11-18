@@ -64,7 +64,8 @@ function createFirefoxManifest(manifest) {
         // Firefox needs a stable ID in development mode, or many extension APIs don't work. This is
         // Brovim's own ID.
         "id": "brovim@mr-5obot.github.io",
-        "strict_min_version": "112.0",
+        // Object.groupBy (the help dialog and the command reference) needs 119.
+        "strict_min_version": "119.0",
         "data_collection_permissions": {
           "required": ["none"],
         },

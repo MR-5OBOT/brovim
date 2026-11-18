@@ -464,7 +464,8 @@ function keyAction(event) {
   // 1–9 and 0 switch to that card of the visible page, as Enter would. By code: Alt and the
   // keyboard layout (AZERTY's shifted digits) don't change it.
   const digit = /^(?:Digit|Numpad)(\d)$/.exec(event.code)?.[1];
-  if (digit) {
+  // Without Num Lock the numpad's digits are arrows (handled below).
+  if (digit && !(event.code.startsWith("Numpad") && key !== digit)) {
     return () => {
       const index = visiblePage * pageSize() + (Number(digit) + 9) % 10;
       if (index >= tabs.length) return;

@@ -175,9 +175,9 @@ context("tab switcher page", () => {
       messages.filter((request) => request.message?.handler === "selectSpecificTab")
         .map((request) => request.message.id);
     // An AZERTY key: the code names the digit, the key doesn't.
-    const digit = async (code, altKey = true) => {
+    const digit = async (code, altKey = true, key = "&") => {
       document.dispatchEvent(
-        new domWindow.KeyboardEvent("keydown", { key: "&", code, altKey, bubbles: true }),
+        new domWindow.KeyboardEvent("keydown", { key, code, altKey, bubbles: true }),
       );
       await new Promise((resolve) => setTimeout(resolve, 10));
     };
@@ -190,7 +190,12 @@ context("tab switcher page", () => {
     assert.isTrue(document.body.classList.contains("closed"));
     assert.equal([3], selections());
     await open();
-    await digit("Numpad4", false);
+    await digit("Numpad4", false, "4");
+    assert.equal([3, 4], selections());
+    // Num Lock off: the numpad's 2 is ArrowDown, which moves instead of switching.
+    await open();
+    await digit("Numpad2", false, "ArrowDown");
+    assert.isFalse(document.body.classList.contains("closed"));
     assert.equal([3, 4], selections());
   });
 
