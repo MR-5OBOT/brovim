@@ -366,10 +366,12 @@ const BackgroundCommands = {
     });
   },
   toggleMuteTab,
-  // Alt+D. Every open tab follows the setting through its settings listener (dark_mode.js).
+  // Alt+D. On or off belongs to this computer, so it's kept in local storage, not synced with the
+  // settings. Session storage, which every page already listens to, tells open tabs (dark_mode.js).
   async toggleDarkMode({ tabId }, sender) {
-    const enabled = !Settings.get("darkModeEnabled");
-    await Settings.set("darkModeEnabled", enabled);
+    const enabled = !(await chrome.storage.local.get("darkModeEnabled")).darkModeEnabled;
+    await chrome.storage.local.set({ darkModeEnabled: enabled });
+    await chrome.storage.session.set({ darkModeEnabled: enabled });
     chrome.tabs.sendMessage(tabId, {
       handler: "showMessage",
       message: `Dark mode ${enabled ? "on" : "off"}`,
@@ -656,7 +658,7 @@ const sendRequestHandlers = {
       await chrome.tabs.remove(id);
       return { closed: true };
     } catch {
-      // Always reply: a rejected runtime handler leaves the grid waiting indefinitely.
+      // A tab that closed meanwhile is a normal race: answer without logging a warning.
       return { closed: false };
     }
   },

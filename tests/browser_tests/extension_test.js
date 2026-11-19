@@ -1160,7 +1160,13 @@ try {
       await fresh();
       await key(["Alt+d"]);
       await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
-      assert(await worker.evaluate(() => Settings.get("darkModeEnabled")), "Alt+D was not saved");
+      const darkMode = (area) =>
+        worker.evaluate(
+          async (area) => (await chrome.storage[area].get("darkModeEnabled")).darkModeEnabled,
+          area,
+        );
+      assert(await darkMode("local") === true, "Alt+D was not saved");
+      assert(await darkMode("sync") === undefined, "Alt+D was synced to other computers");
       const hud = await ui("vimium-hud-frame");
       await hud.waitForFunction(() => document.body.textContent.includes("Dark mode on"));
       assert(
@@ -1200,10 +1206,7 @@ try {
       await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
       await key(["Alt+d"]);
       await page.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
-      assert(
-        !await worker.evaluate(() => Settings.get("darkModeEnabled")),
-        "Alt+D did not turn off",
-      );
+      assert(await darkMode("local") === false, "Alt+D did not turn off");
     },
   );
 

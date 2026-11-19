@@ -6,7 +6,6 @@ import * as userSearchEngines from "../background_scripts/user_search_engines.js
 const options = {
   darkModeBrightness: "number",
   darkModeContrast: "number",
-  darkModeEnabled: "boolean",
   darkModeExcludedSites: "string",
   darkModeGrayscale: "number",
   darkModeSepia: "number",
@@ -344,6 +343,12 @@ function getValidationErrors() {
     results["linkHintNumbers"] = "This must be at least two characters long.";
   }
 
+  // A setting the browser would refuse to sync is marked on its field, before saving.
+  for (const [name, type] of Object.entries(options)) {
+    const problem = type === "string" && Settings.sizeProblem(name, getOptionEl(name).value.trim());
+    if (problem) results[name] ??= `This is ${problem}.`;
+  }
+
   return results;
 }
 
@@ -404,7 +409,13 @@ export async function saveOptions() {
     return;
   }
 
-  await Settings.setSettings(getSettingsFromForm());
+  try {
+    await Settings.setSettings(getSettingsFromForm());
+  } catch (error) {
+    // The form keeps the changes, so saving can be tried again.
+    document.querySelector("#save-status").textContent = `Couldn't save: ${error.message}`;
+    return;
+  }
   const el = document.querySelector("#save");
   el.disabled = true;
   el.textContent = "Saved";
@@ -500,9 +511,5 @@ if (!testEnv) {
     DomUtils.injectUserCss();
     await Commands.init();
     await init();
-    // Alt+D changes dark mode while this page is open. Show it, so saving doesn't undo it.
-    Settings.addEventListener("change", () => {
-      getOptionEl("darkModeEnabled").checked = Settings.get("darkModeEnabled");
-    });
   });
 }

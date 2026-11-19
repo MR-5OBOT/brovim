@@ -82,10 +82,8 @@ then press Enter. The palette appears centered like `o`/`O`, focuses its search 
 and **always opens the result in a new tab**. Arrow keys, Tab and Ctrl+J/K move through results;
 Escape closes it. Searches only match the built-in browser-page list.
 
-**Browser: Automatic** uses the browser's exposed identity and falls back to common Chromium pages.
-If a browser hides its identity, select Helium or Brave to include its specific pages. The choice is
-saved on this device. Helium's keyboard-shortcuts page and Brave's Shields/filter pages are
-included. The palette targets Chromium browsers; Firefox-specific destinations are not included.
+The list is Helium's `chrome://` pages, including its keyboard-shortcuts page. Firefox pages are not
+included.
 
 If a browser page blocks overlays, or the address bar owns focus, the same centered palette opens in
 a temporary extension tab. Choosing a result or pressing Escape closes that temporary tab. The
@@ -221,13 +219,14 @@ website tabs recover their Brovim controls automatically after an extension upda
 
 ### Dark mode
 
-Press `Alt+D` on any page to turn dark mode on or off in every tab. Light websites go dark; photos
-and videos are not inverted, and pages that already have a dark theme are left alone. Options › Dark
-mode sets brightness, contrast, sepia and grayscale, and lists sites that should never be darkened
-(one per line, like `example.com`; subdomains are included). The default list includes Gmail,
-WhatsApp Web, YouTube, GitHub, Reddit, Discord, Telegram Web, X, Facebook, Messenger, Instagram,
-Twitch, Spotify, Wikipedia, Outlook, ChatGPT, Notion and Slack. Enable each site's own dark theme in
-its settings. You can add or remove entries; an existing custom list is preserved.
+Press `Alt+D` on any page to turn dark mode on or off in every tab. The switch belongs to this
+computer: it isn't synced to your other ones, while the settings below are. Light websites go dark;
+photos and videos are not inverted, and pages that already have a dark theme are left alone. Options
+› Dark mode sets brightness, contrast, sepia and grayscale, and lists sites that should never be
+darkened (one per line, like `example.com`; subdomains are included). The default list includes
+Gmail, WhatsApp Web, YouTube, GitHub, Reddit, Discord, Telegram Web, X, Facebook, Messenger,
+Instagram, Twitch, Spotify, Wikipedia, Outlook, ChatGPT, Notion and Slack. Enable each site's own
+dark theme in its settings. You can add or remove entries; an existing custom list is preserved.
 
 `Alt+D` is a page key like `<a-p>`: it works when the page has the focus, not while you type in a
 text field. Browsers keep `Alt+D` for the address bar, so it can't be a browser-wide extension

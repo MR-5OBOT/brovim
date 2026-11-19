@@ -96,8 +96,8 @@ class GrabBackFocus extends Mode {
     // other frames detecting this. When one GrabBackFocus mode exits, we broadcast a message to
     // inform all GrabBackFocus modes that they should exit; see #2296.
     chrome.runtime.onMessage.addListener(
-      listener = ({ name }) => {
-        if (name === "userIsInteractingWithThePage") {
+      listener = ({ handler }) => {
+        if (handler === "userIsInteractingWithThePage") {
           chrome.runtime.onMessage.removeListener(listener);
           if (this.modeIsActive) {
             this.exit();

@@ -1318,6 +1318,29 @@ context("GrabBackFocus", () => {
     assert.isTrue(document.activeElement);
     assert.isTrue(DomUtils.isEditable(document.activeElement));
   });
+
+  // Each frame of a tab runs its own GrabBackFocus. A key in one frame releases the others through
+  // the message the background relays to every frame, which also retires their listeners.
+  should("exit when the user interacts with another frame", () => {
+    const listeners = [];
+    stub(chrome.runtime, "onMessage", {
+      addListener: (listener) => listeners.push(listener),
+      removeListener: (listener) => listeners.splice(listeners.indexOf(listener), 1),
+    });
+    const relayed = [];
+    stub(chrome.runtime, "sendMessage", (request) => {
+      if (request.handler === "sendMessageToFrames") relayed.push(request.message);
+      return Promise.resolve();
+    });
+    initializeModeState();
+    sendKeyboardEvent("a");
+    assert.equal(1, relayed.length);
+    new GrabBackFocus(); // Another frame's, which saw no key.
+    for (const listener of [...listeners]) listener(relayed[0]);
+    document.getElementById("input").focus();
+    assert.isTrue(DomUtils.isEditable(document.activeElement));
+    assert.equal(0, listeners.length);
+  });
 });
 
 context("Find's page text", () => {

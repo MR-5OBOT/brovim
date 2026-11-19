@@ -92,6 +92,24 @@ context("Closing tabs", () => {
   });
 });
 
+context("Dark mode", () => {
+  should(
+    "keep Alt+D on this computer: saved locally, announced to tabs, never synced",
+    async () => {
+      stub(chrome.tabs, "sendMessage", () => Promise.resolve());
+      const value = async (area) =>
+        (await chrome.storage[area].get("darkModeEnabled")).darkModeEnabled;
+      await BackgroundCommands.toggleDarkMode({ tabId: 1 }, { frameId: 0 });
+      assert.isTrue(await value("local"));
+      assert.isTrue(await value("session"));
+      assert.equal(undefined, await value("sync"));
+      await BackgroundCommands.toggleDarkMode({ tabId: 1 }, { frameId: 0 });
+      assert.isFalse(await value("local"));
+      assert.isFalse(await value("session"));
+    },
+  );
+});
+
 context("Mute tab groups", () => {
   let tabs;
 

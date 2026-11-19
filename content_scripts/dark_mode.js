@@ -8,10 +8,21 @@ const DarkMode = {
   styleEl: null, // The filters.
   canvasEl: null, // The root's background.
   colorCtx: null,
+  enabled: null, // On or off, on this computer: see toggleDarkMode in main.js. Null until read.
 
   init() {
     if (!DomUtils.isTopFrame()) return;
-    Settings.onLoaded().then(() => this.update());
+    Promise.all([Settings.onLoaded(), chrome.storage.local.get("darkModeEnabled")])
+      .then(([, { darkModeEnabled }]) => {
+        // An Alt+D that arrived meanwhile is newer.
+        this.enabled ??= darkModeEnabled === true;
+        this.update();
+      });
+    chrome.storage.session.onChanged.addListener(({ darkModeEnabled }) => {
+      if (!darkModeEnabled) return;
+      this.enabled = darkModeEnabled.newValue === true;
+      this.update();
+    });
     Settings.addEventListener("change", () => this.update());
     // Look again as soon as the body arrives, long before a slow page has finished loading: until
     // then a page dark only on its body would show inverted, bright.
@@ -40,7 +51,7 @@ const DarkMode = {
     // Measure the page's own background. The filters stay: taking them off and putting them back
     // restyles and repaints the whole page, and this runs as the page loads.
     this.canvasEl.remove();
-    if (!Settings.get("darkModeEnabled") || this.isExcluded(location.hostname)) {
+    if (!this.enabled || this.isExcluded(location.hostname)) {
       return this.styleEl.remove();
     }
     const [r, g, b] = this.canvasColor();

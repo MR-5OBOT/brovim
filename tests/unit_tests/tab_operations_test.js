@@ -3,6 +3,9 @@ import "../../lib/settings.js";
 import * as to from "../../background_scripts/tab_operations.js";
 
 context("TabOperations openurlInCurrentTab", () => {
+  // The stubs' getURL returns "", which every URL starts with.
+  setup(() => stub(chrome.runtime, "getURL", (path) => `chrome-extension://abc/${path}`));
+
   should("keep a search in the requesting tab when another tab becomes active", async () => {
     let query;
     stub(chrome.search, "query", (info) => query = info);
@@ -47,11 +50,26 @@ context("TabOperations openurlInCurrentTab", () => {
     });
     const expected = "javascript:console.log('hello')";
     // The vomnibar's iframe is a distinct frame with its own (non-zero) frameId, so it's
-    // identified as trusted via its chrome-extension:// URL rather than via frameId.
+    // identified as trusted via its extension URL rather than via frameId.
     const sender = { frameId: 7, url: "chrome-extension://abc/pages/vomnibar_page.html" };
     await to.openUrlInCurrentTab({ url: expected }, sender);
     assert.equal(expected, details.args[0]);
   });
+
+  should(
+    "allow the vomnibar's javascript URL in Firefox, whose pages are moz-extension:",
+    async () => {
+      let details = null;
+      stub(chrome.runtime, "getURL", (path) => `moz-extension://abc/${path}`);
+      stub(chrome.scripting, "executeScript", (_details) => {
+        details = _details;
+      });
+      const expected = "javascript:console.log('hello')";
+      const sender = { frameId: 7, url: "moz-extension://abc/pages/vomnibar_page.html" };
+      await to.openUrlInCurrentTab({ url: expected }, sender);
+      assert.equal(expected, details?.args[0]);
+    },
+  );
 
   should("disallow opening a javascript URL requested from an untrusted subframe", async () => {
     let called = false;

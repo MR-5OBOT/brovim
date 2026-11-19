@@ -40,6 +40,19 @@ context("browser shortcuts", () => {
     stub(chrome, "runtime", runtime);
     assert.isFalse(Utils.addChromeRuntimeOnMessageListener([], () => {}));
   });
+  should("reply even when the handler fails, so the sender isn't left waiting", async () => {
+    let listener;
+    stub(chrome.runtime, "onMessage", { addListener: (fn) => listener = fn });
+    stub(console, "warn", () => {});
+    Utils.addChromeRuntimeOnMessageListener(["selectSpecificTab"], () => {
+      throw new Error("No tab with id: 5.");
+    });
+    const reply = new Promise((resolve) => {
+      listener({ handler: "selectSpecificTab" }, {}, (result) => resolve({ result }));
+      setTimeout(() => resolve("no reply"), 100);
+    });
+    assert.equal({ result: undefined }, await reply);
+  });
   should("keep unrelated registration errors visible", () => {
     stub(chrome.runtime, "onMessage", {
       addListener() {

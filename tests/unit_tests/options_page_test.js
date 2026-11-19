@@ -103,6 +103,31 @@ context("options page", () => {
     assert.isFalse(field.classList.contains("validation-error"));
   });
 
+  should("refuse a setting too large for the browser to sync, and say why", async () => {
+    const field = optionsPage.getOptionEl("keyMappings");
+    field.value = "# " + "x".repeat(9000);
+    await optionsPage.saveOptions();
+    assert.isTrue(field.classList.contains("validation-error"));
+    assert.isTrue(document.querySelector(".validation-message").textContent.includes("8 KB"));
+    assert.equal(Settings.defaultOptions.keyMappings, Settings.get("keyMappings"));
+    field.value = "# " + "x".repeat(8000);
+    await optionsPage.saveOptions();
+    assert.isFalse(field.classList.contains("validation-error"));
+    assert.equal(field.value, Settings.get("keyMappings"));
+  });
+
+  should("say why a save failed, keeping the changes to try again", async () => {
+    stub(chrome.storage.sync, "set", () => Promise.reject(new Error("Quota exceeded")));
+    const field = optionsPage.getOptionEl("scrollStepSize");
+    field.value = "90";
+    await optionsPage.saveOptions();
+    assert.equal(
+      "Couldn't save: Quota exceeded",
+      document.querySelector("#save-status").textContent,
+    );
+    assert.equal("90", field.value);
+  });
+
   should("show exclusion rule editor for exclusion rules", async () => {
     const rule = {
       passKeys: "",
@@ -170,6 +195,26 @@ context("options page", () => {
       },
     );
 
+    should(
+      "refuse a backup with a setting too large to sync, before changing anything",
+      async () => {
+        await Settings.set("scrollStepSize", 90);
+        const stored = await chrome.storage.sync.get(null);
+        let error;
+        try {
+          await optionsPage.restoreBackup(JSON.stringify({
+            settingsVersion: "2.4.2",
+            keyMappings: "# " + "x".repeat(9000),
+          }));
+        } catch (caught) {
+          error = caught;
+        }
+        assert.isTrue(error?.message.includes("8 KB"));
+        assert.equal(stored, await chrome.storage.sync.get(null));
+        assert.equal(90, Settings.get("scrollStepSize"));
+      },
+    );
+
     should("restore a valid backup and reset omitted values to defaults", async () => {
       await Settings.set("smoothScroll", false);
       await optionsPage.restoreBackup(JSON.stringify({
@@ -191,7 +236,8 @@ context("options page", () => {
         darkModeBrightness: 120,
         darkModeExcludedSites: "example.com",
       }));
-      assert.isTrue(Settings.get("darkModeEnabled"));
+      // On or off stays with each computer: an older backup's switch is ignored.
+      assert.equal(undefined, Settings.get("darkModeEnabled"));
       assert.equal(0, Settings.get("darkModeSepia"));
       assert.equal("120", optionsPage.getOptionEl("darkModeBrightness").value);
       assert.equal("example.com", optionsPage.getOptionEl("darkModeExcludedSites").value);

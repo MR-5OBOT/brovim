@@ -22,7 +22,8 @@ export async function openUrlInCurrentTab(request, sender) {
     // subframe with a different origin from being able to run javascript on the main frame's
     // origin.
     const isTopFrame = sender.frameId === 0;
-    const isVimiumPage = sender.url?.startsWith("chrome-extension://");
+    // Brovim's own pages: chrome-extension:// in Chromium, moz-extension:// in Firefox.
+    const isVimiumPage = sender.url?.startsWith(chrome.runtime.getURL(""));
     if (!isTopFrame && !isVimiumPage) {
       console.warn(
         "openUrlInCurrentTab: error: a javascript: URL was requested from an untrusted frame",
