@@ -37,7 +37,7 @@ context("Alt+X", () => {
     const tab = { id: 7, index: 0, windowId: 1, active: true, pinned: false };
     stub(chrome.tabs, "query", () => Promise.resolve([tab]));
     const closed = [];
-    stub(chrome.tabs, "remove", (id) => closed.push(id));
+    stub(chrome.tabs, "remove", withPromise((id) => closed.push(id)));
     const press = async (ms) => {
       now += ms;
       await closeTab(tab);
@@ -67,7 +67,7 @@ context("Closing tabs", () => {
       return Promise.resolve(windowTabs);
     });
     const closed = [];
-    stub(chrome.tabs, "remove", (id) => closed.push(id));
+    stub(chrome.tabs, "remove", withPromise((id) => closed.push(id)));
     // The tab moved since the command's snapshot of it.
     windowTabs = [{ id: 5, index: 0, windowId: 2 }, { id: 6, index: 1, windowId: 2 }];
     await BackgroundCommands.removeTab({ count: 1, tab: { id: 5, index: 1, windowId: 2 } });
@@ -86,7 +86,7 @@ context("Closing tabs", () => {
     for (const id of [2, 3, 1]) bgUtils.tabRecency.register(id); // neighbour, YouTube, x.com
     const calls = [];
     stub(chrome.tabs, "update", (id) => calls.push(["show", id]) && Promise.resolve());
-    stub(chrome.tabs, "remove", (id) => calls.push(["close", id]));
+    stub(chrome.tabs, "remove", withPromise((id) => calls.push(["close", id])));
     await BackgroundCommands.removeTab({ count: 1, tab: x });
     assert.equal([["show", 3], ["close", 1]], calls);
   });
@@ -122,6 +122,26 @@ context("Dark mode", () => {
   );
 });
 
+context("Tab actions on a tab that closed first", () => {
+  should("leave no unhandled error, and X stays quiet with nothing to restore", async () => {
+    const gone = () => Promise.reject(new Error("No tab with id: 5."));
+    const tab = { id: 5, index: 0, windowId: 1, pinned: false, mutedInfo: { muted: false } };
+    stub(chrome.tabs, "query", () => Promise.resolve([tab]));
+    stub(chrome.tabs, "sendMessage", () => Promise.resolve());
+    for (const method of ["update", "remove", "reload", "setZoom"]) stub(chrome.tabs, method, gone);
+    stub(chrome.sessions, "restore", () => Promise.reject(new Error("No recently closed tabs.")));
+    const request = { count: 1, tab, tabId: 5, registryEntry: { options: {} } };
+    await BackgroundCommands.togglePinTab(request);
+    await BackgroundCommands.reload(request);
+    BackgroundCommands.zoomReset(request);
+    BackgroundCommands.toggleMuteTab(request, { frameId: 0 });
+    await BackgroundCommands.removeTab(request);
+    await BackgroundCommands.restoreTab(request);
+    // An unhandled rejection is reported once the current task ends.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});
+
 context("Mute tab groups", () => {
   let tabs;
 
@@ -135,9 +155,13 @@ context("Mute tab groups", () => {
     stub(chrome.tabs, "query", (query, callback) => {
       callback(tabs.filter((tab) => query.audible == null || tab.audible === query.audible));
     });
-    stub(chrome.tabs, "update", (id, { muted }) => {
-      tabs.find((tab) => tab.id === id).mutedInfo.muted = muted;
-    });
+    stub(
+      chrome.tabs,
+      "update",
+      withPromise((id, { muted }) => {
+        tabs.find((tab) => tab.id === id).mutedInfo.muted = muted;
+      }),
+    );
     stub(chrome.tabs, "sendMessage", () => Promise.resolve());
   });
 

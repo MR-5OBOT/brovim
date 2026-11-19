@@ -179,7 +179,7 @@ globalThis.chrome = {
       return true;
     },
     sendMessage(_id, _properties) {},
-    update(_id, _properties) {},
+    update: withPromise(function (_id, _properties) {}),
   },
 
   webNavigation: {

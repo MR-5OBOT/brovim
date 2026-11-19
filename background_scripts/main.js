@@ -186,8 +186,9 @@ async function previewTab(tabId) {
   }
 }
 
+// A tab can close before a tab action reaches it. That's no error, so these calls end in catch.
 function muteTab(tab) {
-  chrome.tabs.update(tab.id, { muted: !tab.mutedInfo.muted });
+  chrome.tabs.update(tab.id, { muted: !tab.mutedInfo.muted }).catch(() => {});
 }
 
 function toggleMuteTab(request, sender) {
@@ -283,7 +284,7 @@ function moveTab({ count, tab, registryEntry }) {
     const moveIndex = Math.max(minIndex, Math.min(maxIndex, getTabIndex(tab, tabs) + count));
     return chrome.tabs.move(tab.id, {
       index: tabs[moveIndex].index,
-    });
+    }).catch(() => {});
   });
 }
 
@@ -355,14 +356,15 @@ const BackgroundCommands = {
       const last = bgUtils.tabRecency.getTabsByRecency().find((id) => open.has(id));
       if (last != null) await chrome.tabs.update(last, { active: true }).catch(() => {});
     }
-    for (const id of ids) chrome.tabs.remove(id);
+    for (const id of ids) chrome.tabs.remove(id).catch(() => {});
   },
   restoreTab: createRepeatCommand(async (_request) => {
-    await chrome.sessions.restore(null);
+    // Nothing left to restore is no error either.
+    await chrome.sessions.restore(null).catch(() => {});
   }),
   async togglePinTab({ count, tab }) {
     await forCountTabs(count, tab, (tab) => {
-      chrome.tabs.update(tab.id, { pinned: !tab.pinned });
+      chrome.tabs.update(tab.id, { pinned: !tab.pinned }).catch(() => {});
     });
   },
   toggleMuteTab,
@@ -388,27 +390,27 @@ const BackgroundCommands = {
     const level = registryEntry.options?.["level"] ?? "1";
     const newZoom = parseFloat(level);
     if (!isNaN(newZoom)) {
-      chrome.tabs.setZoom(tabId, newZoom);
+      chrome.tabs.setZoom(tabId, newZoom).catch(() => {});
     }
   },
   async zoomIn({ count, tabId }) {
     const currentZoom = await chrome.tabs.getZoom(tabId);
     const newZoom = nextZoomLevel(currentZoom, count);
-    chrome.tabs.setZoom(tabId, newZoom);
+    chrome.tabs.setZoom(tabId, newZoom).catch(() => {});
   },
   async zoomOut({ count, tabId }) {
     const currentZoom = await chrome.tabs.getZoom(tabId);
     const newZoom = nextZoomLevel(currentZoom, -count);
-    chrome.tabs.setZoom(tabId, newZoom);
+    chrome.tabs.setZoom(tabId, newZoom).catch(() => {});
   },
   zoomReset({ tabId }) {
-    chrome.tabs.setZoom(tabId, 0); // setZoom of 0 sets to the tab default.
+    chrome.tabs.setZoom(tabId, 0).catch(() => {}); // setZoom of 0 sets to the tab default.
   },
 
   async reload({ count, tab, registryEntry }) {
     const bypassCache = registryEntry.options.hard != null ? registryEntry.options.hard : false;
     await forCountTabs(count, tab, (tab) => {
-      chrome.tabs.reload(tab.id, { bypassCache });
+      chrome.tabs.reload(tab.id, { bypassCache }).catch(() => {});
     });
   },
 };
