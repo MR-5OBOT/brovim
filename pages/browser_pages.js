@@ -35,11 +35,8 @@ let opening = false;
 document.body.classList.toggle("standalone", standalone);
 document.body.classList.toggle("embedded", embedded);
 
-// Brovim runs in Helium only.
-const profile = "helium";
-
 function render() {
-  results = filterBrowserPages(profile, input.value);
+  results = filterBrowserPages(input.value);
   selection = 0;
   list.replaceChildren();
   status.textContent = results.length ? "" : "No browser pages match.";
@@ -103,7 +100,6 @@ async function open(index) {
     const response = await chrome.runtime.sendMessage({
       handler: "openBrowserPage",
       id: results[index].id,
-      profile,
       targetTabId,
     });
     if (!response?.ok) throw new Error(response?.error || "Could not open this browser page.");

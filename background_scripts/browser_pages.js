@@ -1,4 +1,4 @@
-import { browserProfiles, getBrowserPages } from "../lib/browser_pages.js";
+import { browserPages } from "../lib/browser_pages.js";
 import { ensureContentScripts } from "./content_script_bootstrap.js";
 
 const pagePath = "pages/browser_pages.html";
@@ -45,10 +45,7 @@ export function initializeBrowserPages() {
       ) {
         throw new Error("This palette belongs to a different tab.");
       }
-      if (!browserProfiles.includes(request.profile) || request.profile === "auto") {
-        throw new Error("Choose a browser first.");
-      }
-      const destination = getBrowserPages(request.profile).find((page) => page.id === request.id);
+      const destination = browserPages.find((page) => page.id === request.id);
       if (!destination) throw new Error("This browser page is unavailable.");
       const target = Number.isInteger(request.targetTabId)
         ? await chrome.tabs.get(request.targetTabId).catch(() => null)

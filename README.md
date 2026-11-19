@@ -6,7 +6,7 @@ purple accents, and ready-made search engine keywords.
 
 ## Install from source
 
-**Chrome, Chromium, Brave, Helium, Edge:**
+**Chrome, Chromium, Brave, Helium:**
 
 1. Open `chrome://extensions` and turn on Developer Mode.
 1. Click "Load unpacked" and select this directory.

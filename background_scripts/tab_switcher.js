@@ -318,7 +318,7 @@ function isScriptable(tab) {
   const url = tab.url || "";
   const ownPage = /^(chrome|moz)-extension:/i.test(url) &&
     url.startsWith(chrome.runtime.getURL(""));
-  return ownPage || /^(https?|file|chrome|brave|edge|about):/i.test(url);
+  return ownPage || /^(https?|file|chrome|brave|about):/i.test(url);
 }
 
 // Whether this tab's page said the press began (see noteModifierDown), or a held gesture moved to it.
