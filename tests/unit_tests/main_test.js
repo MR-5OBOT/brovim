@@ -94,17 +94,29 @@ context("Closing tabs", () => {
 
 context("Dark mode", () => {
   should(
-    "keep Alt+D on this computer: saved locally, announced to tabs, never synced",
+    "switch Alt+D's site only, on this computer: saved locally, announced to tabs, never synced",
     async () => {
-      stub(chrome.tabs, "sendMessage", () => Promise.resolve());
-      const value = async (area) =>
-        (await chrome.storage[area].get("darkModeEnabled")).darkModeEnabled;
-      await BackgroundCommands.toggleDarkMode({ tabId: 1 }, { frameId: 0 });
+      let message;
+      stub(chrome.tabs, "sendMessage", (_id, request) => {
+        message = request.message;
+        return Promise.resolve();
+      });
+      const value = async (area, site = "example.com") =>
+        (await chrome.storage[area].get(`darkMode:${site}`))[`darkMode:${site}`];
+      const toggle = () =>
+        BackgroundCommands.toggleDarkMode(
+          { tab: { url: "https://example.com/page" }, tabId: 1 },
+          { frameId: 0 },
+        );
+      await toggle();
+      assert.equal("Dark mode on for example.com", message);
       assert.isTrue(await value("local"));
       assert.isTrue(await value("session"));
       assert.equal(undefined, await value("sync"));
-      await BackgroundCommands.toggleDarkMode({ tabId: 1 }, { frameId: 0 });
-      assert.isFalse(await value("local"));
+      assert.equal(undefined, await value("local", "other.example.com"));
+      await toggle();
+      assert.equal("Dark mode off for example.com", message);
+      assert.equal(undefined, await value("local"));
       assert.isFalse(await value("session"));
     },
   );

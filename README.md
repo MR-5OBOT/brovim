@@ -58,7 +58,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `i` `gi`        | Insert mode, focus the first text input                         |
 | `Alt+Z`         | Return focus to the page and recover scrolling                  |
 | `zi` `zo` `z0`  | Zoom in / out / reset                                           |
-| `Alt+D`         | Dark mode for light websites on / off                           |
+| `Alt+D`         | Dark mode on / off for this site                                |
 
 Brovim has no count prefixes: digits go to the page. A mapping can still repeat a command, for
 example `map J scrollDown count=5`.
@@ -219,14 +219,12 @@ website tabs recover their Brovim controls automatically after an extension upda
 
 ### Dark mode
 
-Press `Alt+D` on any page to turn dark mode on or off in every tab. The switch belongs to this
-computer: it isn't synced to your other ones, while the settings below are. Light websites go dark;
-photos and videos are not inverted, and pages that already have a dark theme are left alone. Options
-› Dark mode sets brightness, contrast, sepia and grayscale, and lists sites that should never be
-darkened (one per line, like `example.com`; subdomains are included). The default list includes
-Gmail, WhatsApp Web, YouTube, GitHub, Reddit, Discord, Telegram Web, X, Facebook, Messenger,
-Instagram, Twitch, Spotify, Wikipedia, Outlook, ChatGPT, Notion and Slack. Enable each site's own
-dark theme in its settings. You can add or remove entries; an existing custom list is preserved.
+Press `Alt+D` on a site to turn dark mode on or off for that site: its open tabs follow at once, and
+it stays dark until you press `Alt+D` there again. Other sites are untouched. A site is its host, so
+`docs.example.com` and `example.com` are separate. The choice stays on this computer and isn't
+synced to your other ones; the settings below are. Light websites go dark; photos and videos are not
+inverted, and pages that already have a dark theme are left alone. Options › Dark mode sets
+brightness, contrast, sepia and grayscale.
 
 `Alt+D` is a page key like `<a-p>`: it works when the page has the focus, not while you type in a
 text field. Browsers keep `Alt+D` for the address bar, so it can't be a browser-wide extension

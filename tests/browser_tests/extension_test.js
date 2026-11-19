@@ -223,9 +223,10 @@ try {
       }
     }
   };
+  // - path: on the fixture server, or a whole URL.
   const fresh = async (path = "/") => {
     await page.bringToFront();
-    await navigate(`${origin}${path}`);
+    await navigate(path.startsWith("http") ? path : `${origin}${path}`);
     await page.waitForFunction(() => document.readyState === "complete");
     // The page answers Brovim's messages only once Brovim has started there, which can take
     // longer than the page's own load.
@@ -1155,14 +1156,15 @@ try {
   });
 
   await check(
-    "Alt+D darkens light pages, but not dark pages, listed sites or Brovim's UI",
+    "Alt+D darkens its site's light pages, not other sites, dark pages or Brovim's UI",
     async () => {
       await fresh();
       await key(["Alt+d"]);
       await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
       const darkMode = (area) =>
         worker.evaluate(
-          async (area) => (await chrome.storage[area].get("darkModeEnabled")).darkModeEnabled,
+          async (area) =>
+            (await chrome.storage[area].get("darkMode:127.0.0.1"))["darkMode:127.0.0.1"],
           area,
         );
       assert(await darkMode("local") === true, "Alt+D was not saved");
@@ -1198,15 +1200,22 @@ try {
       );
       assert(!await page.$("#brovim-dark-mode"), "A dark page was inverted while it loaded");
       await page.waitForFunction(() => document.readyState === "complete");
+      // Another site (the same server under another host name) stays light.
+      await fresh(`http://localhost:${server.addr.port}/`);
+      const id = await tabId();
+      const otherSite = await worker.evaluate(
+        (id) =>
+          chrome.scripting.executeScript({ target: { tabId: id }, func: () => DarkMode.enabled })
+            .then(([state]) => state?.result),
+        id,
+      );
+      assert(otherSite === false, `Another site's switch read ${otherSite}`);
+      assert(!await page.$("#brovim-dark-mode"), "Another site was darkened");
       await fresh();
-      await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
-      await worker.evaluate(() => Settings.set("darkModeExcludedSites", "example.com\n127.0.0.1"));
-      await page.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
-      await worker.evaluate(() => Settings.set("darkModeExcludedSites", ""));
       await page.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
       await key(["Alt+d"]);
       await page.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
-      assert(await darkMode("local") === false, "Alt+D did not turn off");
+      assert(await darkMode("local") === undefined, "Alt+D did not turn off");
     },
   );
 

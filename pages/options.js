@@ -6,7 +6,6 @@ import * as userSearchEngines from "../background_scripts/user_search_engines.js
 const options = {
   darkModeBrightness: "number",
   darkModeContrast: "number",
-  darkModeExcludedSites: "string",
   darkModeGrayscale: "number",
   darkModeSepia: "number",
   darkModeSkipDarkPages: "boolean",

@@ -8,19 +8,19 @@ const DarkMode = {
   styleEl: null, // The filters.
   canvasEl: null, // The root's background.
   colorCtx: null,
-  enabled: null, // On or off, on this computer: see toggleDarkMode in main.js. Null until read.
+  enabled: null, // This site's switch, on this computer: see toggleDarkMode in main.js. Null until read.
 
   init() {
     if (!DomUtils.isTopFrame()) return;
-    Promise.all([Settings.onLoaded(), chrome.storage.local.get("darkModeEnabled")])
-      .then(([, { darkModeEnabled }]) => {
-        // An Alt+D that arrived meanwhile is newer.
-        this.enabled ??= darkModeEnabled === true;
-        this.update();
-      });
-    chrome.storage.session.onChanged.addListener(({ darkModeEnabled }) => {
-      if (!darkModeEnabled) return;
-      this.enabled = darkModeEnabled.newValue === true;
+    const key = `darkMode:${location.hostname}`;
+    Promise.all([Settings.onLoaded(), chrome.storage.local.get(key)]).then(([, stored]) => {
+      // An Alt+D that arrived meanwhile is newer.
+      this.enabled ??= stored[key] === true;
+      this.update();
+    });
+    chrome.storage.session.onChanged.addListener((changes) => {
+      if (!changes[key]) return;
+      this.enabled = changes[key].newValue === true;
       this.update();
     });
     Settings.addEventListener("change", () => this.update());
@@ -51,9 +51,7 @@ const DarkMode = {
     // Measure the page's own background. The filters stay: taking them off and putting them back
     // restyles and repaints the whole page, and this runs as the page loads.
     this.canvasEl.remove();
-    if (!this.enabled || this.isExcluded(location.hostname)) {
-      return this.styleEl.remove();
-    }
+    if (!this.enabled) return this.styleEl.remove();
     const [r, g, b] = this.canvasColor();
     if (Settings.get("darkModeSkipDarkPages") && this.pageIsDark([r, g, b])) {
       return this.styleEl.remove();
@@ -88,14 +86,6 @@ iframe[src*="vimeo"], [style*="url("]:not(html, body) {
 /* The filter turns this into the dark purple and white of vimium.css. */
 ::selection { background: rgb(255 207 255) !important; color: #000 !important; }
 ::highlight(brovim-find) { background-color: rgb(255 207 255) !important; color: #000 !important; }`;
-  },
-
-  // The setting holds hosts like "example.com", one per line; subdomains are included.
-  isExcluded(hostname) {
-    return Settings.get("darkModeExcludedSites").split(/\s+/).some((site) => {
-      site = site.toLowerCase().replace(/^[a-z]+:\/\//, "").replace(/^\*?\./, "").split(/[/:]/)[0];
-      return site && (hostname === site || hostname.endsWith(`.${site}`));
-    });
   },
 
   // The window's background: the root's, else the body's, else the browser's default.

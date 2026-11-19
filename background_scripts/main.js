@@ -366,15 +366,19 @@ const BackgroundCommands = {
     });
   },
   toggleMuteTab,
-  // Alt+D. On or off belongs to this computer, so it's kept in local storage, not synced with the
-  // settings. Session storage, which every page already listens to, tells open tabs (dark_mode.js).
-  async toggleDarkMode({ tabId }, sender) {
-    const enabled = !(await chrome.storage.local.get("darkModeEnabled")).darkModeEnabled;
-    await chrome.storage.local.set({ darkModeEnabled: enabled });
-    await chrome.storage.session.set({ darkModeEnabled: enabled });
+  // Alt+D. Each site (host) has its own switch, on this computer only: a local storage key per site
+  // that is darkened, not synced with the settings. Session storage, which every page already
+  // listens to, tells the site's open tabs (dark_mode.js).
+  async toggleDarkMode({ tab, tabId }, sender) {
+    const site = new URL(tab.url).hostname;
+    const key = `darkMode:${site}`;
+    const enabled = !(await chrome.storage.local.get(key))[key];
+    if (enabled) await chrome.storage.local.set({ [key]: true });
+    else await chrome.storage.local.remove(key);
+    await chrome.storage.session.set({ [key]: enabled });
     chrome.tabs.sendMessage(tabId, {
       handler: "showMessage",
-      message: `Dark mode ${enabled ? "on" : "off"}`,
+      message: `Dark mode ${enabled ? "on" : "off"} for ${site}`,
     }, { frameId: sender.frameId }).catch(() => {});
   },
   moveTabLeft: moveTab,
