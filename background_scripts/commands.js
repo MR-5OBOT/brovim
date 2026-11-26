@@ -415,6 +415,15 @@ const defaultKeyMappings = {
   "L": "goForward",
 
   // Manipulating tabs
+  "<a-1>": "selectTab count=1",
+  "<a-2>": "selectTab count=2",
+  "<a-3>": "selectTab count=3",
+  "<a-4>": "selectTab count=4",
+  "<a-5>": "selectTab count=5",
+  "<a-6>": "selectTab count=6",
+  "<a-7>": "selectTab count=7",
+  "<a-8>": "selectTab count=8",
+  "<a-9>": "selectTab count=9",
   "<<": "moveTabLeft",
   ">>": "moveTabRight",
   "X": "restoreTab",

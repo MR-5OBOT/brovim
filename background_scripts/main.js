@@ -385,6 +385,13 @@ const BackgroundCommands = {
   },
   moveTabLeft: moveTab,
   moveTabRight: moveTab,
+  // Alt+1..9: count is the tab's position; past the last tab, nothing happens.
+  async selectTab({ count, tab }) {
+    const target = (await chrome.tabs.query(visibleTabsQueryArgs))[count - 1];
+    if (target && target.id !== tab.id) {
+      await chrome.tabs.update(target.id, { active: true }).catch(() => {});
+    }
+  },
 
   setZoom({ tabId, registryEntry }) {
     const level = registryEntry.options?.["level"] ?? "1";

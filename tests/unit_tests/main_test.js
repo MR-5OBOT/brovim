@@ -374,3 +374,14 @@ context("majorVersionHasIncreased", () => {
     assert.equal(true, majorVersionHasIncreased("2.0.0"));
   });
 });
+
+context("Alt+1..9", () => {
+  should("go to the tab at that position, and do nothing past the last tab", async () => {
+    const tabs = [{ id: 10 }, { id: 11 }, { id: 12 }];
+    stub(chrome.tabs, "query", () => Promise.resolve(tabs));
+    const activated = [];
+    stub(chrome.tabs, "update", withPromise((id) => activated.push(id)));
+    for (const count of [2, 9, 1]) await BackgroundCommands.selectTab({ count, tab: tabs[0] });
+    assert.equal([11], activated);
+  });
+});

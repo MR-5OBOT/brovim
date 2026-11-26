@@ -1879,6 +1879,27 @@ try {
     await other.close();
   });
 
+  await check("Alt+1..9 go to the tab at that position; past the last tab, nothing", async () => {
+    await fresh();
+    const other = await browser.newPage();
+    await other.goto(`${origin}/other`);
+    await page.bringToFront();
+    await pause(200);
+    const bar = await worker.evaluate(async () =>
+      (await chrome.tabs.query({ currentWindow: true })).map((tab) => tab.id)
+    );
+    const [pageId, otherId] = [await tabId(), await tabId(other)];
+    assert(bar.length < 9, `Too many tabs for this check: ${bar.length}`);
+    const isActive = (id) => worker.evaluate(async (id) => (await chrome.tabs.get(id)).active, id);
+    await key([`Alt+${bar.indexOf(otherId) + 1}`]);
+    assert(await isActive(otherId), "Alt+N did not switch to the other tab");
+    await key([`Alt+${bar.indexOf(pageId) + 1}`], other);
+    assert(await isActive(pageId), "Alt+N did not switch back");
+    await key(["Alt+9"]);
+    assert(await isActive(pageId), "Alt+9 past the last tab switched tabs");
+    await other.close();
+  });
+
   await check("switcher Enter selects a tab, x closes it, and j/k move by rows", async () => {
     await fresh();
     const extras = [];

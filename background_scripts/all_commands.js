@@ -359,6 +359,13 @@ const allCommands = [
   },
 
   {
+    name: "selectTab",
+    desc: "Go to the tab at position count",
+    group: "tabs",
+    background: true,
+  },
+
+  {
     name: "moveTabLeft",
     desc: "Move tab to the left",
     group: "tabs",

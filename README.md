@@ -50,6 +50,7 @@ settings and `t` command have been removed. Use `Alt+Q` for tab switching; `J`, 
 | `Alt+Q`         | Visual tab switcher, Alt+Tab style (browser shortcut)           |
 | `Alt+E`         | Search browser settings, extensions and internal pages          |
 | `Alt+X` `X`     | Close any tab (browser shortcut) / restore closed tab           |
+| `<a-1>`…`<a-9>` | Go to tab 1–9 (page key)                                        |
 | `<<` `>>`       | Move the tab left / right                                       |
 | `<a-p>` `<a-m>` | Pin / mute the tab                                              |
 | `H` `L`         | History back / forward                                          |
