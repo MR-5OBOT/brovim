@@ -316,6 +316,8 @@ function focusThisFrame(request) {
     // A previous dialog's delayed focus restoration must not dismiss a newly opened one.
     const focusedUi = document.activeElement?.shadowRoot?.activeElement;
     if (request.restoreFocus && focusedUi?.matches("iframe.vimium-ui-component-visible")) return;
+    // Pages that forbid focus without a click (claude.ai artifacts) would log a policy violation.
+    if (document.featurePolicy?.allowsFeature("focus-without-user-activation") === false) return;
     globalThis.focus();
     // On Firefox, window.focus doesn't always draw focus back from a child frame (bug 554039). We
     // blur the active element if it is an iframe, which gives the window back focus as intended.
