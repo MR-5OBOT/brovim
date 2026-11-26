@@ -3406,6 +3406,8 @@ try {
             ).map((
               tab,
             ) => tab.id);
+            // Helium 0.22 reopens a pinned tab an extension closes; unpinned, it stays closed.
+            for (const id of ids) await chrome.tabs.update(id, { pinned: false });
             if (ids.length) await chrome.tabs.remove(ids);
           },
           urls,
@@ -3581,6 +3583,8 @@ try {
           const ids = (await chrome.tabs.query({})).filter((tab) => tab.url.startsWith(prefix)).map(
             (tab) => tab.id,
           );
+          // Helium 0.22 reopens a pinned tab an extension closes; unpinned, it stays closed.
+          for (const id of ids) await chrome.tabs.update(id, { pinned: false });
           if (ids.length) await chrome.tabs.remove(ids);
         }, { prefix, previousRules });
         await page.bringToFront();
@@ -3663,7 +3667,15 @@ try {
         );
       } finally {
         await source?.keyboard.up("Alt").catch(() => {});
-        if (windowId != null) await worker.evaluate((id) => chrome.windows.remove(id), windowId);
+        if (windowId != null) {
+          await worker.evaluate(async (windowId) => {
+            // Helium 0.22 moves a closing window's pinned tabs to another window.
+            for (const tab of await chrome.tabs.query({ windowId, pinned: true })) {
+              await chrome.tabs.update(tab.id, { pinned: false });
+            }
+            await chrome.windows.remove(windowId);
+          }, windowId);
+        }
         await worker.evaluate((order) => Settings.set("tabSwitcherOrder", order), originalOrder);
         await page.bringToFront();
       }
