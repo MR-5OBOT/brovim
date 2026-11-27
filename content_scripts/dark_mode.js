@@ -9,18 +9,33 @@ const DarkMode = {
   canvasEl: null, // The root's background.
   colorCtx: null,
   enabled: null, // This site's switch, on this computer: see toggleDarkMode in main.js. Null until read.
+  ownSwitch: false, // Whether this private window has its own switch for the site.
 
   init() {
     if (!DomUtils.isTopFrame()) return;
-    const key = `darkMode:${location.hostname}`;
-    Promise.all([Settings.onLoaded(), chrome.storage.local.get(key)]).then(([, stored]) => {
+    const site = location.hostname;
+    const key = `darkMode:${site}`;
+    // A private window's own switch for this site, once set (see toggleDarkMode in main.js).
+    const own = (switches) => chrome.extension?.inIncognitoContext ? switches?.[site] : undefined;
+    // Else this browser session's latest switch, else the saved one. The first page after the
+    // browser starts can't read session storage yet: nothing has been switched by then.
+    Promise.all([
+      Settings.onLoaded(),
+      chrome.storage.session.get([key, "darkModeIncognito"]).catch(() => ({})),
+      chrome.storage.local.get(key),
+    ]).then(([, session, local]) => {
+      const mine = own(session.darkModeIncognito);
+      this.ownSwitch ||= mine !== undefined;
       // An Alt+D that arrived meanwhile is newer.
-      this.enabled ??= stored[key] === true;
+      this.enabled ??= (mine ?? session[key] ?? local[key]) === true;
       this.update();
     });
     chrome.storage.session.onChanged.addListener((changes) => {
-      if (!changes[key]) return;
-      this.enabled = changes[key].newValue === true;
+      const mine = own(changes.darkModeIncognito?.newValue);
+      if (mine !== undefined) this.ownSwitch = true;
+      const value = mine ?? (this.ownSwitch ? undefined : changes[key]?.newValue);
+      if (value === undefined || value === this.enabled) return;
+      this.enabled = value === true;
       this.update();
     });
     Settings.addEventListener("change", () => this.update());

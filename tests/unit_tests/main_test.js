@@ -120,6 +120,46 @@ context("Dark mode", () => {
       assert.isFalse(await value("session"));
     },
   );
+
+  // A private window's switch: its own, saved nowhere, and gone with the last private window.
+  const privateSwitchesStayApart = async (site) => {
+    stub(chrome.tabs, "sendMessage", () => Promise.resolve());
+    const key = `darkMode:${site}`;
+    const value = async (area, name = key) => (await chrome.storage[area].get(name))[name];
+    const own = async () => (await value("session", "darkModeIncognito"))?.[site];
+    const toggle = (incognito) =>
+      BackgroundCommands.toggleDarkMode(
+        { tab: { url: `https://${site}/`, incognito }, tabId: 1 },
+        { frameId: 0 },
+      );
+    await toggle(false); // On, saved, in a normal window.
+    await toggle(true); // Off in a private one, which starts from the normal switch.
+    assert.isFalse(await own());
+    assert.isTrue(await value("local"));
+    assert.isTrue(await value("session"));
+    await toggle(true);
+    assert.isTrue(await own());
+    stub(chrome.windows, "getAll", () => Promise.resolve([{ incognito: true }]));
+    await forgetIncognitoData();
+    assert.isTrue(await own());
+    stub(chrome.windows, "getAll", () => Promise.resolve([{ incognito: false }]));
+    await forgetIncognitoData();
+    assert.equal(undefined, await value("session", "darkModeIncognito"));
+    assert.isTrue(await value("local"));
+  };
+
+  should(
+    "give private windows their own switches, gone with the last private window",
+    () => privateSwitchesStayApart("private.example"),
+  );
+
+  should(
+    "keep private switches off the saved ones where session storage is local (Firefox)",
+    () => {
+      stub(chrome.storage, "session", chrome.storage.local);
+      return privateSwitchesStayApart("firefox.example");
+    },
+  );
 });
 
 context("Tab actions on a tab that closed first", () => {
@@ -375,13 +415,41 @@ context("majorVersionHasIncreased", () => {
   });
 });
 
-context("Alt+1..9", () => {
-  should("go to the tab at that position, and do nothing past the last tab", async () => {
-    const tabs = [{ id: 10 }, { id: 11 }, { id: 12 }];
-    stub(chrome.tabs, "query", () => Promise.resolve(tabs));
-    const activated = [];
-    stub(chrome.tabs, "update", withPromise((id) => activated.push(id)));
-    for (const count of [2, 9, 1]) await BackgroundCommands.selectTab({ count, tab: tabs[0] });
-    assert.equal([11], activated);
+context("Alt+1..9 and << >>", () => {
+  // Not the last-focused window: the focus can move to another window before the key arrives.
+  let queries;
+  const stubTabs = (tabs) => {
+    queries = [];
+    stub(chrome.tabs, "query", (query) => {
+      queries.push(query);
+      return Promise.resolve(tabs);
+    });
+  };
+
+  should(
+    "go to the tab at that position in the key's window, and do nothing past the last",
+    async () => {
+      const tabs = [10, 11, 12].map((id) => ({ id, windowId: 4 }));
+      stubTabs(tabs);
+      const activated = [];
+      stub(chrome.tabs, "update", withPromise((id) => activated.push(id)));
+      for (const count of [2, 9, 1]) await BackgroundCommands.selectTab({ count, tab: tabs[0] });
+      assert.equal([11], activated);
+      assert.equal([{ windowId: 4 }, { windowId: 4 }, { windowId: 4 }], queries);
+    },
+  );
+
+  should("move the tab within its own window", async () => {
+    const tabs = [0, 1, 2].map((index) => ({ id: 20 + index, index, windowId: 6, pinned: false }));
+    stubTabs(tabs);
+    const moves = [];
+    stub(chrome.tabs, "move", (id, { index }) => {
+      moves.push([id, index]);
+      return Promise.resolve();
+    });
+    const registryEntry = { command: "moveTabRight" };
+    await BackgroundCommands.moveTabRight({ count: 1, tab: tabs[0], registryEntry });
+    assert.equal([{ windowId: 6 }], queries);
+    assert.equal([[20, 1]], moves);
   });
 });

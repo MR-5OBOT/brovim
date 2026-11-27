@@ -299,6 +299,44 @@ try {
     );
     pass("Normal captures are stored, and incognito captures are not");
 
+    const altD = async () => {
+      await privatePage.keyboard.down("Alt");
+      await privatePage.keyboard.press("d");
+      await privatePage.keyboard.up("Alt");
+    };
+    const darkMode = () =>
+      options.evaluate(async (key) => {
+        const session = await chrome.storage.session.get([key, "darkModeIncognito"]);
+        return {
+          local: (await chrome.storage.local.get(key))[key],
+          normal: session[key],
+          private: session.darkModeIncognito?.["127.0.0.1"],
+        };
+      }, "darkMode:127.0.0.1");
+    const expectDark = async (expected) => {
+      const state = await darkMode();
+      assert(
+        state.private === expected && state.local === undefined && state.normal === undefined,
+        `Private Alt+D: ${JSON.stringify(state)}`,
+      );
+    };
+    await altD();
+    await privatePage.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
+    await expectDark(true);
+    await pause(300);
+    assert(
+      !await normalPage.evaluate(() => document.querySelector("#brovim-dark-mode")),
+      "Private Alt+D darkened the site's normal-window tab",
+    );
+    // The site stays dark while you browse it.
+    await privatePage.reload();
+    await privatePage.waitForFunction(() => document.querySelector("#brovim-dark-mode"));
+    await pause(300);
+    await altD();
+    await privatePage.waitForFunction(() => !document.querySelector("#brovim-dark-mode"));
+    await expectDark(false);
+    pass("Alt+D in a private window is its own, saves nothing and leaves normal windows alone");
+
     const privateTabs = await options.evaluate(async (url) => {
       const source = (await chrome.tabs.query({})).find((tab) => tab.url === url);
       const peer = await chrome.tabs.create({

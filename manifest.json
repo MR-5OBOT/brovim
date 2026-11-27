@@ -147,8 +147,9 @@
         "pages/help_dialog_page.html",
         "pages/doc_search_completion.html",
         "pages/command_listing.html",
-        "resources/tlds.txt",
-        "_favicon/*"
+        // Not _favicon/*: any site could ask it which pages you've visited. Brovim's own frames
+        // load favicons without it.
+        "resources/tlds.txt"
       ],
       "matches": [
         "<all_urls>"

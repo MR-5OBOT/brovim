@@ -17,14 +17,15 @@ Temporary Add-on", and pick any file in this directory.
 The Options page opens from the help dialog (type `?`) or from the extension's details page.
 
 **Helium setup:** `helium/shortcuts.json` holds your Helium keyboard shortcuts (the defaults
-removed, such as `Ctrl+Tab`, `Ctrl+T`, `Ctrl+W` and `Alt+D`, plus `Alt+S` for Settings; Brovim's
-`Alt+X` closes tabs, so `Ctrl+X` stays Cut). On a new machine or profile, start Helium once, close
-it, then run `deno run -A helium/setup.js`. It applies those shortcuts and adds
-`--extensions-on-chrome-urls` to `~/.config/helium-browser-flags.conf` so Brovim also runs on
-Helium's own pages. Shortcuts changed only in the profile stay, and the first run backs up the
-profile's settings to `Preferences.before-brovim-setup`. After changing shortcuts in
-`chrome://settings/system/shortcuts`, run `deno run -A helium/setup.js save` to copy them back into
-the file. Use `--profile <dir>` for a profile other than `~/.config/net.imput.helium/Default`.
+removed, such as `Ctrl+Tab`, `Ctrl+T`, `Ctrl+W` and `Alt+D`, plus `Alt+L` for the address bar,
+`Alt+Tab` for the next pane and `Alt+Z` for Focus page content; Brovim's `Alt+X` closes tabs, so
+`Ctrl+X` stays Cut). On a new machine or profile, start Helium once, close it, then run
+`deno run -A helium/setup.js`. It applies those shortcuts and adds `--extensions-on-chrome-urls` to
+`~/.config/helium-browser-flags.conf` so Brovim also runs on Helium's own pages. Shortcuts changed
+only in the profile stay, and the first run backs up the profile's settings to
+`Preferences.before-brovim-setup`. After changing shortcuts in `chrome://settings/system/shortcuts`,
+run `deno run -A helium/setup.js save` to copy them back into the file. Use `--profile <dir>` for a
+profile other than `~/.config/net.imput.helium/Default`.
 
 ## Key bindings
 

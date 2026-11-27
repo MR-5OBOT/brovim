@@ -80,11 +80,13 @@ const completers = {
   tabs: new MultiCompleter([completionSources.tabs]),
 };
 
-// A query dictionary for `chrome.tabs.query` that will return only the visible tabs.
-const visibleTabsQueryArgs = { currentWindow: true };
-if (bgUtils.isFirefox()) {
-  // Only Firefox supports hidden tabs.
-  visibleTabsQueryArgs.hidden = false;
+// The visible tabs of this tab's own window, found by its id: the last-focused window can have
+// changed by the time a command arrives. Only Firefox supports hidden tabs.
+function windowTabs(tab) {
+  return chrome.tabs.query({
+    windowId: tab.windowId,
+    ...(bgUtils.isFirefox() && { hidden: false }),
+  });
 }
 
 function onURLChange(details) {
@@ -276,7 +278,7 @@ function moveTab({ count, tab, registryEntry }) {
   if (registryEntry.command === "moveTabLeft") {
     count = -count;
   }
-  return chrome.tabs.query(visibleTabsQueryArgs, function (tabs) {
+  return windowTabs(tab).then((tabs) => {
     const pinnedCount = (tabs.filter((tab) => tab.pinned)).length;
     const minIndex = tab.pinned ? 0 : pinnedCount;
     const maxIndex = (tab.pinned ? pinnedCount : tabs.length) - 1;
@@ -370,14 +372,26 @@ const BackgroundCommands = {
   toggleMuteTab,
   // Alt+D. Each site (host) has its own switch, on this computer only: a local storage key per site
   // that is darkened, not synced with the settings. Session storage, which every page already
-  // listens to, tells the site's open tabs (dark_mode.js).
+  // listens to, tells the site's open tabs (dark_mode.js) and holds this browser session's latest
+  // switch. Private windows have their own switches, which start from the normal ones: all in one
+  // session key, removed with the last private window (forgetIncognitoData), as on Firefox session
+  // storage is local storage (utils.js).
   async toggleDarkMode({ tab, tabId }, sender) {
     const site = new URL(tab.url).hostname;
     const key = `darkMode:${site}`;
-    const enabled = !(await chrome.storage.local.get(key))[key];
-    if (enabled) await chrome.storage.local.set({ [key]: true });
-    else await chrome.storage.local.remove(key);
-    await chrome.storage.session.set({ [key]: enabled });
+    const [session, local] = await Promise.all([
+      chrome.storage.session.get([key, "darkModeIncognito"]),
+      chrome.storage.local.get(key),
+    ]);
+    const own = tab.incognito ? session.darkModeIncognito ?? {} : null;
+    const enabled = !(own?.[site] ?? session[key] ?? local[key]);
+    if (own) {
+      await chrome.storage.session.set({ darkModeIncognito: { ...own, [site]: enabled } });
+    } else {
+      if (enabled) await chrome.storage.local.set({ [key]: true });
+      else await chrome.storage.local.remove(key);
+      await chrome.storage.session.set({ [key]: enabled });
+    }
     chrome.tabs.sendMessage(tabId, {
       handler: "showMessage",
       message: `Dark mode ${enabled ? "on" : "off"} for ${site}`,
@@ -387,7 +401,7 @@ const BackgroundCommands = {
   moveTabRight: moveTab,
   // Alt+1..9: count is the tab's position; past the last tab, nothing happens.
   async selectTab({ count, tab }) {
-    const target = (await chrome.tabs.query(visibleTabsQueryArgs))[count - 1];
+    const target = (await windowTabs(tab))[count - 1];
     if (target && target.id !== tab.id) {
       await chrome.tabs.update(target.id, { active: true }).catch(() => {});
     }
@@ -423,11 +437,9 @@ const BackgroundCommands = {
 };
 
 async function forCountTabs(count, currentTab, callback) {
-  // The tab's own window, found by its id: the last-focused window, or the tab's position, can
-  // have changed by the time the command arrives. A tab that has gone is left alone.
-  const query = { windowId: currentTab.windowId };
-  if (bgUtils.isFirefox()) query.hidden = false;
-  const tabs = await chrome.tabs.query(query);
+  // The tab's position can have changed by the time the command arrives. A tab that has gone is
+  // left alone.
+  const tabs = await windowTabs(currentTab);
   const activeTabIndex = tabs.findIndex((tab) => tab.id === currentTab.id);
   if (activeTabIndex < 0) return;
   const startTabIndex = Math.max(0, Math.min(activeTabIndex, tabs.length - count));
@@ -802,24 +814,24 @@ Utils.addChromeRuntimeOnMessageListener(
   },
 );
 
-// Remove chrome.storage.local/findModeRawQueryListIncognito if there are no remaining
-// incognito-mode windows. Since the common case is that there are none to begin with, we first
-// check whether the key is set at all.
-chrome.tabs.onRemoved.addListener(async function () {
+// Remove private windows' find history and dark mode switches once none remain. Since the common
+// case is that there are none to begin with, we first check whether the keys are set at all.
+const incognitoKeys = ["findModeRawQueryListIncognito", "darkModeIncognito"];
+async function forgetIncognitoData() {
   try {
-    const items = await chrome.storage.session.get("findModeRawQueryListIncognito");
-    if (items?.findModeRawQueryListIncognito) {
+    const items = await chrome.storage.session.get(incognitoKeys);
+    if (incognitoKeys.some((key) => items?.[key])) {
       const windows = await chrome.windows?.getAll();
       for (const window of windows ?? []) {
         if (window.incognito) return;
       }
-      // There are no remaining incognito-mode tabs, and findModeRawQueryListIncognito is set.
-      await chrome.storage.session.remove("findModeRawQueryListIncognito");
+      await chrome.storage.session.remove(incognitoKeys);
     }
   } catch {
     // Windows or storage may be unavailable during browser shutdown.
   }
-});
+}
+chrome.tabs.onRemoved.addListener(forgetIncognitoData);
 
 //
 // Begin initialization.
@@ -922,6 +934,7 @@ Object.assign(globalThis, {
   closeTab,
   HintCoordinator,
   BackgroundCommands,
+  forgetIncognitoData,
   sendRequestHandlers,
   majorVersionHasIncreased,
   nextZoomLevel,

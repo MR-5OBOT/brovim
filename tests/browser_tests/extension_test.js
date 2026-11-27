@@ -4310,6 +4310,17 @@ try {
     assert(errors.length === before, errors.slice(before).join("\n"));
   });
 
+  await check("web pages can't ask the favicon endpoint which sites were visited", async () => {
+    await fresh();
+    const result = await page.evaluate(
+      (url) =>
+        fetch(`${url}/_favicon/?pageUrl=${encodeURIComponent(location.href)}&size=16`)
+          .then((response) => `answered ${response.status}`, () => "blocked"),
+      extensionUrl,
+    );
+    assert(result === "blocked", `The page's request was ${result}`);
+  });
+
   await check("watching a page settle never loads its preloaded images a second time", async () => {
     const thumbnail = await browser.newPage();
     const warnings = [];
